@@ -13,18 +13,39 @@
     .progress-bar { width:100%; max-width:480px; background:#1a1a1a; border-radius:14px; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; }
     .progress-label { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:#666; }
     .progress-value { font-size:1.6rem; font-weight:800; }
-    .camera-wrapper { position:relative; width:100%; max-width:480px; border-radius:16px; overflow:hidden; background:#1a1a1a; aspect-ratio:4/3; }
+    .camera-wrapper {
+      position:relative; width:100%; max-width:480px; border-radius:16px;
+      overflow:hidden; background:#1a1a1a; aspect-ratio:4/3;
+      border:3px solid #333; transition:border-color 0.4s;
+    }
+    .camera-wrapper.warn { border-color:#f59e0b; }
+    .camera-wrapper.good { border-color:#22c55e; }
     #video { width:100%; height:100%; object-fit:cover; display:block; }
     #canvas { display:none; }
     #preview { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:none; }
+    /* Banking-style positioning guide */
+    .cam-guide {
+      position:absolute; left:8%; right:8%; top:10%; bottom:10%;
+      border:2px dashed #444; border-radius:10px; pointer-events:none;
+      transition:border-color 0.4s, border-style 0.3s;
+    }
+    .camera-wrapper.warn .cam-guide { border-color:#f59e0b; border-style:solid; }
+    .camera-wrapper.good .cam-guide { border-color:#22c55e; border-style:solid; }
+    /* Corner accent marks */
+    .cam-guide::before, .cam-guide::after {
+      content:''; position:absolute; width:18px; height:18px; border-color:inherit;
+    }
+    .cam-guide::before { top:-1px; left:-1px; border-top:3px solid; border-left:3px solid; border-radius:4px 0 0 0; }
+    .cam-guide::after  { bottom:-1px; right:-1px; border-bottom:3px solid; border-right:3px solid; border-radius:0 0 4px 0; }
+    .guidance { font-size:0.85rem; text-align:center; min-height:1.3em; max-width:480px; color:#555; transition:color 0.3s; }
+    .guidance.warn { color:#f59e0b; }
+    .guidance.good { color:#22c55e; }
     .controls { display:flex; gap:10px; width:100%; max-width:480px; }
     button { flex:1; padding:14px; border:none; border-radius:12px; font-size:1rem; font-weight:600; cursor:pointer; transition:opacity 0.15s,transform 0.1s; }
     button:active { transform:scale(0.97); }
     button:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
     #scanBtn { background:#fff; color:#000; }
     #retakeBtn { background:#2a2a2a; color:#fff; display:none; }
-    .spinner { display:none; width:28px; height:28px; border:3px solid #333; border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; }
-    @keyframes spin { to { transform:rotate(360deg); } }
     .msg { font-size:0.9rem; text-align:center; display:none; max-width:480px; }
     .msg.error { color:#ff6b6b; }
     .msg.info  { color:#888; }
@@ -48,7 +69,7 @@
 <body>
   <header>
     <h1>Tile Catalog</h1>
-    <a href="index.html">← Home</a>
+    <a href="index.html">&#8592; Home</a>
   </header>
 
   <div class="progress-bar">
@@ -56,27 +77,29 @@
     <span class="progress-value" id="progress">0 / 91</span>
   </div>
 
-  <div class="camera-wrapper">
+  <div class="camera-wrapper" id="cameraWrapper">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
     <img id="preview" alt="" />
+    <div class="cam-guide" id="camGuide"></div>
   </div>
 
+  <p class="guidance" id="guidance">Loading vision library&#8230;</p>
+
   <div class="controls">
-    <button id="scanBtn">Scan Tile</button>
+    <button id="scanBtn" disabled>Loading&#8230;</button>
     <button id="retakeBtn">Retake</button>
   </div>
 
-  <div class="spinner" id="spinner"></div>
   <p class="msg error" id="error"></p>
-  <p class="msg info" id="info"></p>
+  <p class="msg info"  id="info"></p>
 
   <div class="confirm-card" id="confirmCard">
     <div class="tile-display" id="tileDisplay"></div>
-    <div class="tile-sub" id="tileSub"></div>
+    <div class="tile-sub"     id="tileSub"></div>
     <div class="correction">
       <label>Correct if needed:</label>
-      <input id="leftInput" type="number" min="0" max="12" />
+      <input id="leftInput"  type="number" min="0" max="12" />
       <span>|</span>
       <input id="rightInput" type="number" min="0" max="12" />
     </div>
@@ -86,111 +109,439 @@
   <div class="tile-grid" id="tileGrid"></div>
 
   <script src="config.js"></script>
+  <!-- OpenCV.js ~8 MB; loads async so UI stays responsive -->
+  <script async src="https://docs.opencv.org/4.10.0/opencv.js" onload="onCvReady()" onerror="onCvFail()"></script>
   <script>
-    const PROXY=window.PROXY_URL;
-    const OWNER="petr0n",REPO="japan-2026",CATALOG_PATH="domino-counter/catalog.json";
-    const GH=`${PROXY}/github`;
-    const GH_HEADERS={Accept:"application/vnd.github.v3+json","Content-Type":"application/json"};
+    // ── GitHub catalog ──────────────────────────────────────────────────────
+    const PROXY = window.PROXY_URL;
+    const OWNER = "petr0n", REPO = "japan-2026", CATALOG_PATH = "domino-counter/catalog.json";
+    const GH = `${PROXY}/github`;
+    const GH_HEADERS = { Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" };
 
-    let catalog={tiles:{},count:0};
-    let catalogSha=null;
+    let catalog = { tiles: {}, count: 0 };
+    let catalogSha = null;
 
-    const video=document.getElementById("video"),canvas=document.getElementById("canvas"),preview=document.getElementById("preview");
-    const scanBtn=document.getElementById("scanBtn"),retakeBtn=document.getElementById("retakeBtn"),spinner=document.getElementById("spinner");
-    const errorEl=document.getElementById("error"),infoEl=document.getElementById("info"),confirmCard=document.getElementById("confirmCard");
-    const tileDisplay=document.getElementById("tileDisplay"),tileSub=document.getElementById("tileSub");
-    const leftInput=document.getElementById("leftInput"),rightInput=document.getElementById("rightInput");
+    // ── DOM refs ────────────────────────────────────────────────────────────
+    const video         = document.getElementById("video");
+    const canvas        = document.getElementById("canvas");
+    const preview       = document.getElementById("preview");
+    const scanBtn       = document.getElementById("scanBtn");
+    const retakeBtn     = document.getElementById("retakeBtn");
+    const errorEl       = document.getElementById("error");
+    const infoEl        = document.getElementById("info");
+    const confirmCard   = document.getElementById("confirmCard");
+    const tileDisplay   = document.getElementById("tileDisplay");
+    const tileSub       = document.getElementById("tileSub");
+    const leftInput     = document.getElementById("leftInput");
+    const rightInput    = document.getElementById("rightInput");
+    const cameraWrapper = document.getElementById("cameraWrapper");
+    const guidanceEl    = document.getElementById("guidance");
+    const camGuide      = document.getElementById("camGuide");
 
+    // ── State ───────────────────────────────────────────────────────────────
+    let cvReady = false;
+    let analysing = false;
+    let vcap = null;
+    let analysisTimer = null;
+
+    // ── Startup ─────────────────────────────────────────────────────────────
     async function init() {
-      navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:960}},audio:false})
-        .then(s=>video.srcObject=s).catch(()=>showError("Camera access denied."));
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        video.addEventListener("loadedmetadata", () => {
+          if (cvReady) enableScanAndAnalyse();
+        }, { once: true });
+      } catch (e) {
+        showError("Camera access denied.");
+      }
       await loadCatalog();
     }
 
+    function onCvReady() {
+      cvReady = true;
+      if (video.videoWidth) enableScanAndAnalyse();
+      // else the loadedmetadata listener fires enableScanAndAnalyse
+    }
+
+    function onCvFail() {
+      guidanceEl.textContent = "Vision library failed to load — try refreshing.";
+      guidanceEl.className = "guidance";
+    }
+
+    function enableScanAndAnalyse() {
+      scanBtn.textContent = "Scan Tile";
+      scanBtn.disabled = false;
+      vcap = new cv.VideoCapture(video);
+      startAnalysis();
+    }
+
+    // ── Real-time frame guidance ─────────────────────────────────────────────
+    // Runs at ~2 fps; checks brightness + sharpness; colours the border.
+    // Keeping the live loop cheap: downsample + grayscale + Laplacian only.
+
+    function startAnalysis() {
+      if (analysing) return;
+      analysing = true;
+      scheduleAnalysis();
+    }
+
+    function stopAnalysis() {
+      analysing = false;
+      if (analysisTimer) { clearTimeout(analysisTimer); analysisTimer = null; }
+    }
+
+    function scheduleAnalysis() {
+      if (!analysing) return;
+      analysisTimer = setTimeout(runAnalysis, 450);
+    }
+
+    function runAnalysis() {
+      if (!analysing || !cvReady || !video.videoWidth) { scheduleAnalysis(); return; }
+
+      let src = null, small = null, gray = null, lap = null, mM = null, sM = null;
+      try {
+        src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
+        vcap.read(src);
+
+        // Downsample for speed
+        small = new cv.Mat();
+        cv.resize(src, small, new cv.Size(320, 240));
+
+        gray = new cv.Mat();
+        cv.cvtColor(small, gray, cv.COLOR_RGBA2GRAY);
+
+        // Brightness
+        mM = new cv.Mat(); sM = new cv.Mat();
+        cv.meanStdDev(gray, mM, sM);
+        const brightness = mM.data64F[0];
+        mM.delete(); sM.delete(); mM = null; sM = null;
+
+        // Sharpness via Laplacian std
+        lap = new cv.Mat();
+        cv.Laplacian(gray, lap, cv.CV_8U);
+        mM = new cv.Mat(); sM = new cv.Mat();
+        cv.meanStdDev(lap, mM, sM);
+        const sharpness = sM.data64F[0];
+        mM.delete(); sM.delete(); mM = null; sM = null;
+
+        // Decide state
+        let text, state;
+        if (brightness < 55) {
+          text = "Too dark — find better lighting"; state = "";
+        } else if (brightness > 215) {
+          text = "Too bright — reduce glare"; state = "";
+        } else if (sharpness < 4) {
+          text = "Hold steady — too blurry"; state = "";
+        } else if (sharpness < 9) {
+          text = "Almost there — hold steadier"; state = "warn";
+        } else {
+          text = "Good — tap Scan"; state = "good";
+        }
+
+        setGuidance(text, state);
+      } catch (_) {
+        // Ignore transient frame errors
+      } finally {
+        if (src)  src.delete();
+        if (small) small.delete();
+        if (gray) gray.delete();
+        if (lap)  lap.delete();
+        if (mM)   mM.delete();
+        if (sM)   sM.delete();
+      }
+      scheduleAnalysis();
+    }
+
+    function setGuidance(text, state) {
+      guidanceEl.textContent = text;
+      guidanceEl.className = "guidance" + (state ? " " + state : "");
+      cameraWrapper.className = "camera-wrapper" + (state ? " " + state : "");
+    }
+
+    // ── Scan button ──────────────────────────────────────────────────────────
+    scanBtn.addEventListener("click", () => {
+      if (!cvReady || !video.videoWidth) { showError("Not ready."); return; }
+      hideMsg();
+      confirmCard.classList.remove("visible");
+
+      // Freeze frame into canvas
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+
+      preview.src = canvas.toDataURL("image/jpeg", 0.92);
+      preview.style.display  = "block";
+      video.style.display    = "none";
+      camGuide.style.display = "none";
+      scanBtn.style.display  = "none";
+      retakeBtn.style.display = "block";
+      stopAnalysis();
+      setGuidance("", "");
+      showInfo("Counting pips…");
+      scanBtn.disabled = true;
+
+      try {
+        const result = countTile();
+        if (!result) throw new Error("Could not detect tile. Try better lighting or a flatter angle.");
+        const { left, right } = result;
+        leftInput.value  = left;
+        rightInput.value = right;
+        const k = tileKey(left, right);
+        tileDisplay.textContent = `${left} | ${right}`;
+        tileSub.textContent = catalog.tiles[k]
+          ? "Already cataloged — update?"
+          : `= ${left + right} dots`;
+        confirmCard.classList.add("visible");
+        hideMsg();
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        scanBtn.disabled = false;
+      }
+    });
+
+    // ── OpenCV pip-counting pipeline ─────────────────────────────────────────
+    //
+    // 1. Convert captured frame to grayscale.
+    // 2. Find the largest 4-corner contour (the tile outline).
+    // 3. Perspective-warp it to a standard rectangle.
+    // 4. Split at the midpoint of the longer axis -> two halves.
+    // 5. Adaptive-threshold (inverted) + morph-close each half.
+    // 6. Count contours whose area falls in the pip-sized range.
+    //
+    // Dark pips on a light tile surface — the most common case — produce
+    // white blobs after the inverted threshold. If pips are light-on-dark
+    // the count will be wrong; the user corrects via the number inputs.
+
+    function countTile() {
+      let src = null, gray = null, blurred = null, binary = null;
+      let contours = null, hier = null, bestApprox = null, warped = null;
+      try {
+        src = cv.imread(canvas);
+
+        gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+        blurred = new cv.Mat();
+        cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
+
+        binary = new cv.Mat();
+        cv.adaptiveThreshold(blurred, binary, 255,
+          cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 4);
+
+        contours = new cv.MatVector();
+        hier = new cv.Mat();
+        cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        const frameArea = canvas.width * canvas.height;
+        let bestArea = 0;
+
+        for (let i = 0; i < contours.size(); i++) {
+          const c    = contours.get(i);
+          const area = cv.contourArea(c);
+          if (area > frameArea * 0.05 && area < frameArea * 0.90 && area > bestArea) {
+            const peri   = cv.arcLength(c, true);
+            const approx = new cv.Mat();
+            cv.approxPolyDP(c, approx, 0.02 * peri, true);
+            if (approx.rows === 4) {
+              bestArea = area;
+              if (bestApprox) bestApprox.delete();
+              bestApprox = approx;
+            } else {
+              approx.delete();
+            }
+          }
+          c.delete();
+        }
+
+        warped = bestApprox
+          ? perspectiveWarp(gray, bestApprox)
+          : gray.clone();
+
+        const landscape = warped.cols >= warped.rows;
+        const mid = landscape
+          ? Math.floor(warped.cols / 2)
+          : Math.floor(warped.rows / 2);
+
+        let halfA, halfB;
+        if (landscape) {
+          halfA = warped.roi(new cv.Rect(0, 0, mid, warped.rows));
+          halfB = warped.roi(new cv.Rect(mid, 0, warped.cols - mid, warped.rows));
+        } else {
+          halfA = warped.roi(new cv.Rect(0, 0, warped.cols, mid));
+          halfB = warped.roi(new cv.Rect(0, mid, warped.cols, warped.rows - mid));
+        }
+
+        const left  = countPips(halfA);
+        const right = countPips(halfB);
+        halfA.delete();
+        halfB.delete();
+        return { left, right };
+
+      } finally {
+        if (src)        src.delete();
+        if (gray)       gray.delete();
+        if (blurred)    blurred.delete();
+        if (binary)     binary.delete();
+        if (contours)   contours.delete();
+        if (hier)       hier.delete();
+        if (bestApprox) bestApprox.delete();
+        if (warped)     warped.delete();
+      }
+    }
+
+    function perspectiveWarp(grayMat, approx) {
+      const d = approx.data32S;
+      let pts = [
+        { x: d[0], y: d[1] },
+        { x: d[2], y: d[3] },
+        { x: d[4], y: d[5] },
+        { x: d[6], y: d[7] }
+      ];
+      pts.sort((a, b) => a.y - b.y);
+      const [tl, tr] = pts.slice(0, 2).sort((a, b) => a.x - b.x);
+      const [bl, br] = pts.slice(2).sort((a, b) => a.x - b.x);
+
+      const edgeDist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+      const w = Math.max(edgeDist(tl, tr), edgeDist(bl, br));
+      const h = Math.max(edgeDist(tl, bl), edgeDist(tr, br));
+
+      const scale = 400 / Math.max(w, h);
+      const dstW  = Math.max(Math.round(w * scale), 40);
+      const dstH  = Math.max(Math.round(h * scale), 40);
+
+      const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2,
+        [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
+      const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2,
+        [0, 0, dstW, 0, dstW, dstH, 0, dstH]);
+      const M      = cv.getPerspectiveTransform(srcPts, dstPts);
+      const warped = new cv.Mat();
+      cv.warpPerspective(grayMat, warped, M, new cv.Size(dstW, dstH));
+
+      srcPts.delete(); dstPts.delete(); M.delete();
+      return warped;
+    }
+
+    function countPips(halfMat) {
+      // Trim a small inner border to exclude the dividing bar and tile edge
+      const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
+      const rw  = halfMat.cols - 2 * pad;
+      const rh  = halfMat.rows - 2 * pad;
+      if (rw < 10 || rh < 10) return 0;
+
+      const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
+      let thresh = null, kernel = null, closed = null, conts = null, hierP = null;
+      try {
+        thresh = new cv.Mat();
+        cv.adaptiveThreshold(inner, thresh, 255,
+          cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 3);
+
+        kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
+        closed = new cv.Mat();
+        cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel);
+
+        conts = new cv.MatVector();
+        hierP = new cv.Mat();
+        cv.findContours(closed, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        const regionArea = rw * rh;
+        const minPip = regionArea * 0.003;  // 0.3% of half-area minimum
+        const maxPip = regionArea * 0.08;   // 8%  of half-area maximum
+
+        let count = 0;
+        for (let i = 0; i < conts.size(); i++) {
+          const c    = conts.get(i);
+          const area = cv.contourArea(c);
+          c.delete();
+          if (area >= minPip && area <= maxPip) count++;
+        }
+        return Math.min(count, 12);
+      } finally {
+        inner.delete();
+        if (thresh) thresh.delete();
+        if (kernel) kernel.delete();
+        if (closed) closed.delete();
+        if (conts)  conts.delete();
+        if (hierP)  hierP.delete();
+      }
+    }
+
+    // ── Retake ───────────────────────────────────────────────────────────────
+    retakeBtn.addEventListener("click", () => {
+      preview.style.display   = "none";
+      video.style.display     = "block";
+      camGuide.style.display  = "block";
+      scanBtn.style.display   = "block";
+      retakeBtn.style.display = "none";
+      confirmCard.classList.remove("visible");
+      hideMsg();
+      startAnalysis();
+    });
+
+    // ── GitHub catalog helpers ───────────────────────────────────────────────
+    function tileKey(l, r) { return `${Math.min(l, r)}-${Math.max(l, r)}`; }
+
+    function renderGrid() {
+      const count = Object.keys(catalog.tiles).length;
+      document.getElementById("progress").textContent = `${count} / 91`;
+      let html = '<div class="grid-label">All tiles (green = cataloged)</div>';
+      for (let i = 0; i <= 12; i++) for (let j = i; j <= 12; j++) {
+        const k = `${i}-${j}`, done = !!catalog.tiles[k];
+        html += `<div class="tile-chip${done ? ' done' : ''}">${i}|${j}<div class="val">${done ? '= ' + (i + j) : '?'}</div></div>`;
+      }
+      document.getElementById("tileGrid").innerHTML = html;
+    }
+
     async function loadCatalog() {
-      const res=await fetch(`${GH}/repos/${OWNER}/${REPO}/contents/${CATALOG_PATH}`,{headers:GH_HEADERS});
-      if(res.ok){const j=await res.json();catalogSha=j.sha;catalog=JSON.parse(atob(j.content.replace(/\n/g,"")));}
+      const res = await fetch(`${GH}/repos/${OWNER}/${REPO}/contents/${CATALOG_PATH}`, { headers: GH_HEADERS });
+      if (res.ok) {
+        const j = await res.json();
+        catalogSha = j.sha;
+        catalog = JSON.parse(atob(j.content.replace(/\n/g, "")));
+      }
       renderGrid();
     }
 
-    function tileKey(l,r){return `${Math.min(l,r)}-${Math.max(l,r)}`;}
-
-    function renderGrid(){
-      const count=Object.keys(catalog.tiles).length;
-      document.getElementById("progress").textContent=`${count} / 91`;
-      let html='<div class="grid-label">All tiles (green = cataloged)</div>';
-      for(let i=0;i<=12;i++)for(let j=i;j<=12;j++){
-        const k=`${i}-${j}`,done=!!catalog.tiles[k];
-        html+=`<div class="tile-chip${done?' done':''}">${i}|${j}<div class="val">${done?'= '+(i+j):'?'}</div></div>`;
+    async function saveTile() {
+      const l = parseInt(leftInput.value), r = parseInt(rightInput.value);
+      if (isNaN(l) || isNaN(r) || l < 0 || l > 12 || r < 0 || r > 12) {
+        showError("Values must be 0–12."); return;
       }
-      document.getElementById("tileGrid").innerHTML=html;
-    }
-
-    scanBtn.addEventListener("click",async()=>{
-      if(!video.videoWidth){showError("Camera not ready.");return;}
-      hideMsg();confirmCard.classList.remove("visible");
-      canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-      canvas.getContext("2d").drawImage(video,0,0);
-      const dataUrl=canvas.toDataURL("image/jpeg",0.92),base64=dataUrl.split(",")[1];
-      preview.src=dataUrl;preview.style.display="block";video.style.display="none";
-      scanBtn.style.display="none";retakeBtn.style.display="block";
-      spinner.style.display="block";scanBtn.disabled=true;
-      try{
-        const res=await fetch(`${PROXY}/anthropic`,{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:8000,thinking:{type:"adaptive"},output_config:{effort:"high"},messages:[{role:"user",content:[
-            {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
-            {type:"text",text:"This photo shows a single domino tile from a double-12 set. The tile has two halves separated by a center dividing bar. Each half shows a pip count from 0 to 12.\n\nCount the pips:\n1. Find the center dividing bar.\n2. Count each pip in the LEFT half individually.\n3. Recount the LEFT half to verify — your two counts must agree.\n4. Count each pip in the RIGHT half individually.\n5. Recount the RIGHT half to verify — your two counts must agree.\n\nNeither half can exceed 12 pips. Reply ONLY with JSON: {\"left\": <0-12>, \"right\": <0-12>}"}
-          ]}]})
-        });
-        const data=await res.json();
-        if(!res.ok)throw new Error(data.error?.message||"API error");
-        const text=data.content.find(b=>b.type==="text")?.text||"";
-        const match=text.match(/\{[\s\S]*?\}/);
-        if(!match)throw new Error("Could not read tile.");
-        const {left,right}=JSON.parse(match[0]);
-        leftInput.value=left;rightInput.value=right;
-        const k=tileKey(left,right),existing=catalog.tiles[k];
-        tileDisplay.textContent=`${left} | ${right}`;
-        tileSub.textContent=existing?`Already cataloged — update?`:`= ${left+right} dots`;
-        confirmCard.classList.add("visible");
-      }catch(err){showError(err.message);}
-      finally{spinner.style.display="none";scanBtn.disabled=false;}
-    });
-
-    retakeBtn.addEventListener("click",()=>{
-      preview.style.display="none";video.style.display="block";
-      scanBtn.style.display="block";retakeBtn.style.display="none";
-      confirmCard.classList.remove("visible");hideMsg();
-    });
-
-    async function saveTile(){
-      const l=parseInt(leftInput.value),r=parseInt(rightInput.value);
-      if(isNaN(l)||isNaN(r)||l<0||l>12||r<0||r>12){showError("Values must be 0-12.");return;}
-      showInfo("Saving...");
-      const k=tileKey(l,r);
-      catalog.tiles[k]={left:l,right:r,value:l+r};
-      catalog.count=Object.keys(catalog.tiles).length;
-      const content=btoa(JSON.stringify(catalog));
-      const body={message:`catalog tile ${l}|${r}`,content};
-      if(catalogSha)body.sha=catalogSha;
-      const res=await fetch(`${GH}/repos/${OWNER}/${REPO}/contents/${CATALOG_PATH}`,{
-        method:"PUT",headers:GH_HEADERS,body:JSON.stringify(body)
+      showInfo("Saving…");
+      const k = tileKey(l, r);
+      catalog.tiles[k] = { left: l, right: r, value: l + r };
+      catalog.count    = Object.keys(catalog.tiles).length;
+      const body = { message: `catalog tile ${l}|${r}`, content: btoa(JSON.stringify(catalog)) };
+      if (catalogSha) body.sha = catalogSha;
+      const res = await fetch(`${GH}/repos/${OWNER}/${REPO}/contents/${CATALOG_PATH}`, {
+        method: "PUT", headers: GH_HEADERS, body: JSON.stringify(body)
       });
-      if(!res.ok){const e=await res.json();showError("Save failed: "+(e.message||res.status));return;}
-      const j=await res.json();catalogSha=j.content.sha;
+      if (!res.ok) {
+        const e = await res.json();
+        showError("Save failed: " + (e.message || res.status));
+        return;
+      }
+      const j = await res.json();
+      catalogSha = j.content.sha;
       renderGrid();
       showInfo(`Saved ${l}|${r}!`);
-      setTimeout(()=>infoEl.style.display="none",1200);
-      preview.style.display="none";video.style.display="block";
-      scanBtn.style.display="block";retakeBtn.style.display="none";
+      setTimeout(() => { infoEl.style.display = "none"; }, 1200);
+      preview.style.display   = "none";
+      video.style.display     = "block";
+      camGuide.style.display  = "block";
+      scanBtn.style.display   = "block";
+      retakeBtn.style.display = "none";
       confirmCard.classList.remove("visible");
+      startAnalysis();
     }
 
-    function showError(m){errorEl.textContent=m;errorEl.style.display="block";infoEl.style.display="none";}
-    function showInfo(m){infoEl.textContent=m;infoEl.style.display="block";errorEl.style.display="none";}
-    function hideMsg(){errorEl.style.display="none";infoEl.style.display="none";}
+    function showError(m) { errorEl.textContent = m; errorEl.style.display = "block"; infoEl.style.display = "none"; }
+    function showInfo(m)  { infoEl.textContent  = m; infoEl.style.display  = "block"; errorEl.style.display = "none"; }
+    function hideMsg()    { errorEl.style.display = "none"; infoEl.style.display = "none"; }
 
     init();
   </script>
