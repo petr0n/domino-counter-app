@@ -83,10 +83,10 @@
     <div class="cam-guide" id="camGuide"></div>
   </div>
 
-  <p class="guidance" id="guidance">Loading vision library&#8230;</p>
+  <p class="guidance" id="guidance">Lay tiles flat &#183; good lighting</p>
 
   <div class="controls">
-    <button id="scanBtn" disabled>Loading&#8230;</button>
+    <button id="scanBtn">Scan Tiles</button>
     <button id="retakeBtn">Retake</button>
   </div>
   <p class="msg error" id="error"></p>
@@ -109,15 +109,14 @@
   </div>
   <button class="reset-btn" onclick="resetAll()">Reset</button>
 
-  <!-- OpenCV.js ~8 MB, loads async -->
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onCvReady()" onerror="onCvFail()"></script>
   <script>
     const PROXY = window.PROXY_URL;
     const OWNER = "petr0n", REPO = "japan-2026";
 
     let catalog = { tiles: {} };
     let tiles = [], pendingTiles = [];
-    let cvReady = false, analysing = false, analysisTimer = null;
+    let cvReady = false, cvLoading = false, cvResolvers = [];
+    let analysing = false, analysisTimer = null;
     let vcap = null;
 
     const video         = document.getElementById("video");
@@ -144,28 +143,33 @@
     navigator.mediaDevices.getUserMedia({
       video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
       audio: false
-    }).then(s => {
-      video.srcObject = s;
-      video.addEventListener("loadedmetadata", () => {
-        if (cvReady) enableScanAndAnalyse();
-      }, { once: true });
-    }).catch(() => showError("Camera access denied."));
+    }).then(s => { video.srcObject = s; })
+      .catch(() => showError("Camera access denied."));
 
-    function onCvReady() {
-      cvReady = true;
-      if (video.videoWidth) enableScanAndAnalyse();
-    }
-
-    function onCvFail() {
-      guidanceEl.textContent = "Vision library failed to load — try refreshing.";
-      guidanceEl.className = "guidance";
-    }
-
-    function enableScanAndAnalyse() {
-      scanBtn.textContent = "Scan Tiles";
-      scanBtn.disabled = false;
-      vcap = new cv.VideoCapture(video);
-      startAnalysis();
+    // Lazy-load OpenCV on first scan. Subsequent calls resolve immediately.
+    function loadCV() {
+      if (cvReady) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        cvResolvers.push({ resolve, reject });
+        if (cvLoading) return;
+        cvLoading = true;
+        const s = document.createElement("script");
+        s.src = "https://docs.opencv.org/4.x/opencv.js";
+        s.onload = () => {
+          cvReady = true; cvLoading = false;
+          vcap = new cv.VideoCapture(video);
+          startAnalysis();
+          cvResolvers.forEach(r => r.resolve());
+          cvResolvers = [];
+        };
+        s.onerror = () => {
+          cvLoading = false;
+          const err = new Error("Vision library failed to load — check your connection.");
+          cvResolvers.forEach(r => r.reject(err));
+          cvResolvers = [];
+        };
+        document.head.appendChild(s);
+      });
     }
 
     // ── Real-time frame guidance ─────────────────────────────────────────────
@@ -276,8 +280,8 @@
     }
 
     // ── Scan button ──────────────────────────────────────────────────────────
-    scanBtn.addEventListener("click", () => {
-      if (!cvReady || !video.videoWidth) { showError("Not ready."); return; }
+    scanBtn.addEventListener("click", async () => {
+      if (!video.videoWidth) { showError("Camera not ready."); return; }
       hideMsg();
       reviewPanel.classList.remove("visible");
 
@@ -293,10 +297,11 @@
       retakeBtn.style.display = "block";
       stopAnalysis();
       setGuidance("", "");
-      showInfo("Counting pips…");
       scanBtn.disabled = true;
 
       try {
+        if (!cvReady) { showInfo("Loading vision library…"); await loadCV(); }
+        showInfo("Counting pips…");
         const found = scanWithCV();
         if (!found.length) throw new Error("No tiles found. Make sure tiles are fully in frame and well-lit.");
         pendingTiles = found;
