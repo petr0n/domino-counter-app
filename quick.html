@@ -24,15 +24,19 @@
     @keyframes spin { to { transform:rotate(360deg); } }
     .msg { font-size:0.9rem; text-align:center; display:none; max-width:480px; }
     .msg.error { color:#ff6b6b; } .msg.info { color:#888; }
-    .confirm-card { display:none; width:100%; max-width:480px; background:#1a1a1a; border-radius:16px; padding:20px; flex-direction:column; gap:14px; }
-    .confirm-card.visible { display:flex; }
-    .tile-display { font-size:2.4rem; font-weight:800; text-align:center; }
-    .tile-sub { font-size:0.85rem; color:#888; text-align:center; }
-    .correction { display:flex; gap:8px; align-items:center; }
-    .correction label { font-size:0.8rem; color:#888; white-space:nowrap; }
-    .correction input { width:56px; padding:8px; border-radius:8px; border:1px solid #333; background:#111; color:#fff; font-size:1rem; text-align:center; }
-    .correction span { color:#555; font-size:1.2rem; }
-    .btn-add { background:#7c3aed; color:#fff; font-weight:700; }
+    /* Review panel */
+    .review-panel { display:none; width:100%; max-width:480px; background:#1a1a1a; border-radius:16px; padding:16px; flex-direction:column; gap:10px; }
+    .review-panel.visible { display:flex; }
+    .review-title { font-size:0.9rem; font-weight:600; color:#aaa; }
+    .tile-row { display:flex; gap:8px; align-items:center; }
+    .tile-row input { width:52px; padding:8px; border-radius:8px; border:1px solid #333; background:#111; color:#fff; font-size:1rem; text-align:center; }
+    .tile-row .sep { color:#555; font-size:1.1rem; }
+    .tile-row .total { color:#666; font-size:0.9rem; flex:1; }
+    .tile-row .del { flex:none; width:28px; height:28px; padding:0; border-radius:6px; background:#2a2a2a; color:#666; font-size:0.8rem; }
+    .review-total { font-size:0.85rem; color:#888; text-align:right; }
+    .btn-confirm { background:#7c3aed; color:#fff; font-weight:700; padding:14px; border-radius:12px; border:none; width:100%; font-size:1rem; cursor:pointer; }
+    .btn-confirm:active { transform:scale(0.97); }
+    /* Running total */
     .total-bar { width:100%; max-width:480px; background:#1a1a1a; border-radius:16px; padding:16px 20px; display:flex; justify-content:space-between; align-items:center; }
     .total-label { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:#666; }
     .total-value { font-size:2.4rem; font-weight:800; }
@@ -42,7 +46,7 @@
     .history-item span { color:#aaa; }
     .history-item button { flex:none; width:28px; height:28px; padding:0; border-radius:6px; background:#2a2a2a; color:#666; font-size:0.8rem; }
     .empty { color:#444; font-size:0.85rem; text-align:center; padding:8px 0; }
-    .reset-btn { background:#2a2a2a; color:#888; font-size:0.85rem; padding:10px; border-radius:10px; border:none; cursor:pointer; width:100%; max-width:480px; }
+    .reset-btn { background:#1a1a1a; color:#555; font-size:0.85rem; padding:10px; border-radius:10px; border:none; cursor:pointer; width:100%; max-width:480px; }
   </style>
 </head>
 <body>
@@ -57,23 +61,18 @@
     <img id="preview" alt="" />
   </div>
   <div class="controls">
-    <button id="scanBtn">Scan Tile</button>
+    <button id="scanBtn">Scan Tiles</button>
     <button id="retakeBtn">Retake</button>
   </div>
   <div class="spinner" id="spinner"></div>
   <p class="msg error" id="error"></p>
   <p class="msg info" id="info"></p>
 
-  <div class="confirm-card" id="confirmCard">
-    <div class="tile-display" id="tileDisplay"></div>
-    <div class="tile-sub" id="tileSub"></div>
-    <div class="correction">
-      <label>Correct if needed:</label>
-      <input id="leftInput" type="number" min="0" max="12" />
-      <span>|</span>
-      <input id="rightInput" type="number" min="0" max="12" />
-    </div>
-    <button class="btn-add" onclick="addTile()">Add to Total</button>
+  <div class="review-panel" id="reviewPanel">
+    <div class="review-title">Review — correct any errors before adding</div>
+    <div id="tileRows"></div>
+    <div class="review-total" id="reviewTotal"></div>
+    <button class="btn-confirm" onclick="confirmAll()">Add All to Total</button>
   </div>
 
   <div class="total-bar">
@@ -90,19 +89,18 @@
     const _c1="c2stYW50LWFwaTAzLWtIT0xRcDFLUjhkRGsz",_c2="Vkd5R2dnc1VLckh2Q0RzaVNOaS1pUEhwS21a",_c3="a1lXZjFzY0EzMS1iRGlDOTVrNEJER0c5eEVz",_c4="c28tclhORlN0VkFLRnFST0VnLTEzSHZ1d0FB";
     const _ak=atob(_c1+_c2+_c3+_c4);
 
-    let tiles=[];
+    let tiles=[], pendingTiles=[];
     const video=document.getElementById("video"),canvas=document.getElementById("canvas"),preview=document.getElementById("preview");
     const scanBtn=document.getElementById("scanBtn"),retakeBtn=document.getElementById("retakeBtn");
     const spinner=document.getElementById("spinner"),errorEl=document.getElementById("error"),infoEl=document.getElementById("info");
-    const confirmCard=document.getElementById("confirmCard"),tileDisplay=document.getElementById("tileDisplay"),tileSub=document.getElementById("tileSub");
-    const leftInput=document.getElementById("leftInput"),rightInput=document.getElementById("rightInput");
+    const reviewPanel=document.getElementById("reviewPanel"),tileRows=document.getElementById("tileRows"),reviewTotal=document.getElementById("reviewTotal");
 
     navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:960}},audio:false})
       .then(s=>video.srcObject=s).catch(()=>showError("Camera access denied."));
 
     scanBtn.addEventListener("click",async()=>{
       if(!video.videoWidth){showError("Camera not ready.");return;}
-      hideMsg();confirmCard.classList.remove("visible");
+      hideMsg();reviewPanel.classList.remove("visible");
       canvas.width=video.videoWidth;canvas.height=video.videoHeight;
       canvas.getContext("2d").drawImage(video,0,0);
       const dataUrl=canvas.toDataURL("image/jpeg",0.92),base64=dataUrl.split(",")[1];
@@ -113,21 +111,21 @@
         const res=await fetch("https://api.anthropic.com/v1/messages",{
           method:"POST",
           headers:{"Content-Type":"application/json","x-api-key":_ak,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:256,messages:[{role:"user",content:[
+          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:2048,messages:[{role:"user",content:[
             {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
-            {type:"text",text:"This is a single domino tile from a double-12 set. Each half can show 0 to 12 dots. Identify the LEFT half value and the RIGHT half value. Reply ONLY with JSON: {\"left\": <0-12>, \"right\": <0-12>}"}
+            {type:"text",text:"These are domino tiles from a double-12 set. The dots are colored — each number 0-12 has its own color. Identify EVERY tile visible in the image. For each tile give the left half value and right half value based on dot count and color. Reply ONLY with JSON: {\"tiles\": [{\"left\": <0-12>, \"right\": <0-12>}, ...]}"}
           ]}]})
         });
         const data=await res.json();
         if(!res.ok)throw new Error(data.error?.message||"API error");
         const text=data.content.find(b=>b.type==="text")?.text||"";
-        const match=text.match(/\{[\s\S]*?\}/);
-        if(!match)throw new Error("Could not read tile.");
-        const {left,right}=JSON.parse(match[0]);
-        leftInput.value=left;rightInput.value=right;
-        tileDisplay.textContent=`${left} | ${right}`;
-        tileSub.textContent=`= ${left+right} dots`;
-        confirmCard.classList.add("visible");
+        const match=text.match(/\{[\s\S]*\}/);
+        if(!match)throw new Error("Could not read tiles.");
+        const parsed=JSON.parse(match[0]);
+        const found=parsed.tiles||[];
+        if(!found.length)throw new Error("No tiles found in image.");
+        pendingTiles=found.map(t=>({left:Number(t.left)||0,right:Number(t.right)||0}));
+        renderReview();reviewPanel.classList.add("visible");
       }catch(err){showError(err.message);}
       finally{spinner.style.display="none";scanBtn.disabled=false;}
     });
@@ -135,19 +133,33 @@
     retakeBtn.addEventListener("click",()=>{
       preview.style.display="none";video.style.display="block";
       scanBtn.style.display="block";retakeBtn.style.display="none";
-      confirmCard.classList.remove("visible");hideMsg();
+      reviewPanel.classList.remove("visible");hideMsg();
     });
 
-    function addTile(){
-      const l=parseInt(leftInput.value),r=parseInt(rightInput.value);
-      if(isNaN(l)||isNaN(r)||l<0||l>12||r<0||r>12){showError("Values must be 0-12.");return;}
-      tiles.push({left:l,right:r});renderHistory();
-      preview.style.display="none";video.style.display="block";
-      scanBtn.style.display="block";retakeBtn.style.display="none";
-      confirmCard.classList.remove("visible");hideMsg();
+    function renderReview(){
+      tileRows.innerHTML=pendingTiles.map((t,i)=>`
+        <div class="tile-row">
+          <input type="number" min="0" max="12" value="${t.left}" onchange="upd(${i},'left',this.value)" />
+          <span class="sep">|</span>
+          <input type="number" min="0" max="12" value="${t.right}" onchange="upd(${i},'right',this.value)" />
+          <span class="total">= ${t.left+t.right}</span>
+          <button class="del" onclick="rmv(${i})">&#x2715;</button>
+        </div>`).join("");
+      const sum=pendingTiles.reduce((s,t)=>s+t.left+t.right,0);
+      reviewTotal.textContent=`Total: ${sum} across ${pendingTiles.length} tile${pendingTiles.length!==1?'s':''}`;
     }
 
-    function removeItem(i){tiles.splice(i,1);renderHistory();}
+    function upd(i,side,val){pendingTiles[i][side]=parseInt(val)||0;renderReview();}
+    function rmv(i){pendingTiles.splice(i,1);if(!pendingTiles.length){reviewPanel.classList.remove("visible");return;}renderReview();}
+
+    function confirmAll(){
+      if(!pendingTiles.length)return;
+      tiles.push(...pendingTiles);pendingTiles=[];
+      renderHistory();
+      reviewPanel.classList.remove("visible");
+      preview.style.display="none";video.style.display="block";
+      scanBtn.style.display="block";retakeBtn.style.display="none";hideMsg();
+    }
 
     function renderHistory(){
       const total=tiles.reduce((s,t)=>s+t.left+t.right,0);
@@ -159,8 +171,9 @@
       }).join("");
     }
 
-    function resetAll(){tiles=[];renderHistory();}
-    function showError(m){errorEl.textContent=m;errorEl.style.display="block";infoEl.style.display="none";}
+    function removeItem(i){tiles.splice(i,1);renderHistory();}
+    function resetAll(){tiles=[];pendingTiles=[];renderHistory();reviewPanel.classList.remove("visible");}
+    function showError(m){errorEl.textContent=m;errorEl.style.display="block";}
     function hideMsg(){errorEl.style.display="none";infoEl.style.display="none";}
   </script>
 </body>
