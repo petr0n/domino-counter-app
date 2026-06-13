@@ -10,20 +10,37 @@
     header { width:100%; max-width:480px; display:flex; align-items:center; justify-content:space-between; }
     h1 { font-size:1.4rem; font-weight:700; }
     a { color:#888; font-size:0.85rem; text-decoration:none; }
-    .camera-wrapper { position:relative; width:100%; max-width:480px; border-radius:16px; overflow:hidden; background:#1a1a1a; aspect-ratio:4/3; }
+    .camera-wrapper {
+      position:relative; width:100%; max-width:480px; border-radius:16px;
+      overflow:hidden; background:#1a1a1a; aspect-ratio:4/3;
+      border:3px solid #333; transition:border-color 0.4s;
+    }
+    .camera-wrapper.warn { border-color:#f59e0b; }
+    .camera-wrapper.good { border-color:#22c55e; }
     #video { width:100%; height:100%; object-fit:cover; display:block; }
     #canvas { display:none; }
     #preview { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:none; }
-    .cam-guide { position:absolute; top:8%; left:8%; width:84%; height:84%; border:2px dashed rgba(255,255,255,0.35); border-radius:10px; pointer-events:none; }
-    .cam-tip { font-size:0.75rem; color:#555; text-align:center; max-width:480px; }
+    .cam-guide {
+      position:absolute; top:8%; left:8%; width:84%; height:84%;
+      border:2px dashed #444; border-radius:10px; pointer-events:none;
+      transition:border-color 0.4s, border-style 0.3s;
+    }
+    .camera-wrapper.warn .cam-guide { border-color:#f59e0b; border-style:solid; }
+    .camera-wrapper.good .cam-guide { border-color:#22c55e; border-style:solid; }
+    .cam-guide::before, .cam-guide::after {
+      content:''; position:absolute; width:18px; height:18px; border-color:inherit;
+    }
+    .cam-guide::before { top:-1px; left:-1px; border-top:3px solid; border-left:3px solid; border-radius:4px 0 0 0; }
+    .cam-guide::after  { bottom:-1px; right:-1px; border-bottom:3px solid; border-right:3px solid; border-radius:0 0 4px 0; }
+    .guidance { font-size:0.85rem; text-align:center; min-height:1.3em; max-width:480px; color:#555; transition:color 0.3s; }
+    .guidance.warn { color:#f59e0b; }
+    .guidance.good { color:#22c55e; }
     .controls { display:flex; gap:10px; width:100%; max-width:480px; }
     button { flex:1; padding:14px; border:none; border-radius:12px; font-size:1rem; font-weight:600; cursor:pointer; transition:opacity 0.15s,transform 0.1s; }
     button:active { transform:scale(0.97); }
     button:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
     #scanBtn { background:#fff; color:#000; }
     #retakeBtn { background:#2a2a2a; color:#fff; display:none; }
-    .spinner { display:none; width:28px; height:28px; border:3px solid #333; border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; }
-    @keyframes spin { to { transform:rotate(360deg); } }
     .msg { font-size:0.9rem; text-align:center; display:none; max-width:480px; }
     .msg.error { color:#ff6b6b; } .msg.info { color:#888; }
     .review-panel { display:none; width:100%; max-width:480px; background:#1a1a1a; border-radius:16px; padding:16px; flex-direction:column; gap:10px; }
@@ -56,26 +73,27 @@
 <body>
   <header>
     <h1>Quick Scan</h1>
-    <a href="index.html">← Home</a>
+    <a href="index.html">&#8592; Home</a>
   </header>
 
-  <div class="camera-wrapper">
+  <div class="camera-wrapper" id="cameraWrapper">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
     <img id="preview" alt="" />
     <div class="cam-guide" id="camGuide"></div>
   </div>
-  <p class="cam-tip">Lay tiles flat · shoot from above · good lighting</p>
+
+  <p class="guidance" id="guidance">Loading vision library&#8230;</p>
+
   <div class="controls">
-    <button id="scanBtn">Scan Tiles</button>
+    <button id="scanBtn" disabled>Loading&#8230;</button>
     <button id="retakeBtn">Retake</button>
   </div>
-  <div class="spinner" id="spinner"></div>
   <p class="msg error" id="error"></p>
-  <p class="msg info" id="info"></p>
+  <p class="msg info"  id="info"></p>
 
   <div class="review-panel" id="reviewPanel">
-    <div class="review-title">Review — correct any errors before adding</div>
+    <div class="review-title">Review &#8212; correct any errors before adding</div>
     <div id="tileRows"></div>
     <div class="review-total" id="reviewTotal"></div>
     <button class="btn-confirm" onclick="confirmAll()">Add All to Total</button>
@@ -91,121 +109,472 @@
   </div>
   <button class="reset-btn" onclick="resetAll()">Reset</button>
 
+  <!-- OpenCV.js ~8 MB, loads async -->
+  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onCvReady()" onerror="onCvFail()"></script>
   <script>
-    const PROXY=window.PROXY_URL;
-    const OWNER="petr0n",REPO="japan-2026";
+    const PROXY = window.PROXY_URL;
+    const OWNER = "petr0n", REPO = "japan-2026";
 
-    let catalog={tiles:{}}, tiles=[], pendingTiles=[];
-    const video=document.getElementById("video"),canvas=document.getElementById("canvas"),preview=document.getElementById("preview");
-    const scanBtn=document.getElementById("scanBtn"),retakeBtn=document.getElementById("retakeBtn");
-    const spinner=document.getElementById("spinner"),errorEl=document.getElementById("error"),infoEl=document.getElementById("info");
-    const reviewPanel=document.getElementById("reviewPanel"),tileRows=document.getElementById("tileRows"),reviewTotal=document.getElementById("reviewTotal");
+    let catalog = { tiles: {} };
+    let tiles = [], pendingTiles = [];
+    let cvReady = false, analysing = false, analysisTimer = null;
+    let vcap = null;
 
-    // Load catalog in background so scans can cross-reference it
-    fetch(`${PROXY}/github/repos/${OWNER}/${REPO}/contents/domino-counter/catalog.json`,{
-      headers:{Accept:"application/vnd.github.v3+json"}
-    }).then(r=>r.ok?r.json():null).then(j=>{
-      if(j) catalog=JSON.parse(atob(j.content.replace(/\n/g,"")));
-    }).catch(()=>{});
+    const video         = document.getElementById("video");
+    const canvas        = document.getElementById("canvas");
+    const preview       = document.getElementById("preview");
+    const scanBtn       = document.getElementById("scanBtn");
+    const retakeBtn     = document.getElementById("retakeBtn");
+    const errorEl       = document.getElementById("error");
+    const infoEl        = document.getElementById("info");
+    const reviewPanel   = document.getElementById("reviewPanel");
+    const tileRows      = document.getElementById("tileRows");
+    const reviewTotal   = document.getElementById("reviewTotal");
+    const cameraWrapper = document.getElementById("cameraWrapper");
+    const guidanceEl    = document.getElementById("guidance");
+    const camGuide      = document.getElementById("camGuide");
 
-    navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:960}},audio:false})
-      .then(s=>video.srcObject=s).catch(()=>showError("Camera access denied."));
+    // Load catalog in background for cross-reference
+    fetch(`${PROXY}/github/repos/${OWNER}/${REPO}/contents/domino-counter/catalog.json`, {
+      headers: { Accept: "application/vnd.github.v3+json" }
+    }).then(r => r.ok ? r.json() : null)
+      .then(j => { if (j) catalog = JSON.parse(atob(j.content.replace(/\n/g, ""))); })
+      .catch(() => {});
 
-    function tileKey(l,r){return `${Math.min(l,r)}-${Math.max(l,r)}`;}
-    function inCatalog(l,r){return !!catalog.tiles?.[tileKey(l,r)];}
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    }).then(s => {
+      video.srcObject = s;
+      video.addEventListener("loadedmetadata", () => {
+        if (cvReady) enableScanAndAnalyse();
+      }, { once: true });
+    }).catch(() => showError("Camera access denied."));
 
-    async function scanWithClaude(b64){
-      const res=await fetch(`${PROXY}/anthropic`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-opus-4-8",max_tokens:8000,thinking:{type:"adaptive"},output_config:{effort:"high"},messages:[{role:"user",content:[
-          {type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},
-          {type:"text",text:"This photo shows domino tiles from a double-12 set. Each tile is a rectangle split into two halves by a center bar. Each half has 0–12 pip dots.\n\nDo this in order:\n\nSTEP 1 — FIND ALL TILES: Scan the entire photo. Count every distinct domino tile you can see. Note how many there are.\n\nSTEP 2 — COUNT EACH TILE: For every tile found in Step 1:\n  a. Locate the center bar that divides it into two halves.\n  b. Count every pip in the first half, one by one.\n  c. Count again independently. If the two counts differ, count a third time.\n  d. Do the same for the second half.\n  e. Neither half can exceed 12. If it does, you are accidentally counting pips from a neighboring tile.\n\nSTEP 3 — OUTPUT: Return one entry per tile found in Step 1 — do not skip any tile.\n\nReply ONLY with JSON (no other text): {\"tiles\":[{\"left\":<0-12>,\"right\":<0-12>},...]}"}
-        ]}]})
-      });
-      const data=await res.json();
-      if(!res.ok) throw new Error(data.error?.message||"API error");
-      const text=data.content.find(b=>b.type==="text")?.text||"";
-      const m=text.match(/\{[\s\S]*?\}(?:\s*$|\s*\n)/s)||text.match(/\{[\s\S]*\}/);
-      if(!m) return null;
-      return (JSON.parse(m[0]).tiles||[])
-        .map(t=>({left:Number(t.left)||0,right:Number(t.right)||0}))
-        .map(t=>({left:Math.min(12,Math.max(0,t.left)),right:Math.min(12,Math.max(0,t.right))}));
+    function onCvReady() {
+      cvReady = true;
+      if (video.videoWidth) enableScanAndAnalyse();
     }
 
-    scanBtn.addEventListener("click",async()=>{
-      if(!video.videoWidth){showError("Camera not ready.");return;}
-      hideMsg();reviewPanel.classList.remove("visible");
-      canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-      canvas.getContext("2d").drawImage(video,0,0);
-      // Send the clean, unfiltered photo — vision models read natural images best
-      preview.src=canvas.toDataURL("image/jpeg",0.92);
-      preview.style.display="block";video.style.display="none";
-      document.getElementById("camGuide").style.display="none";
-      scanBtn.style.display="none";retakeBtn.style.display="block";
-      spinner.style.display="block";scanBtn.disabled=true;
-      try{
-        showInfo("Identifying tiles…");
-        const found=await scanWithClaude(preview.src.split(",")[1]);
-        if(!found||!found.length) throw new Error("No tiles found. Try better lighting or hold the camera closer.");
-        pendingTiles=found;
-        renderReview();reviewPanel.classList.add("visible");
+    function onCvFail() {
+      guidanceEl.textContent = "Vision library failed to load — try refreshing.";
+      guidanceEl.className = "guidance";
+    }
+
+    function enableScanAndAnalyse() {
+      scanBtn.textContent = "Scan Tiles";
+      scanBtn.disabled = false;
+      vcap = new cv.VideoCapture(video);
+      startAnalysis();
+    }
+
+    // ── Real-time frame guidance ─────────────────────────────────────────────
+    // Checks brightness, sharpness, and estimates tile count in frame.
+
+    function startAnalysis() {
+      if (analysing) return;
+      analysing = true;
+      scheduleAnalysis();
+    }
+
+    function stopAnalysis() {
+      analysing = false;
+      if (analysisTimer) { clearTimeout(analysisTimer); analysisTimer = null; }
+    }
+
+    function scheduleAnalysis() {
+      if (!analysing) return;
+      analysisTimer = setTimeout(runAnalysis, 450);
+    }
+
+    function runAnalysis() {
+      if (!analysing || !cvReady || !video.videoWidth) { scheduleAnalysis(); return; }
+
+      let src = null, small = null, gray = null, lap = null, mM = null, sM = null;
+      let binary = null, contours = null, hier = null;
+      try {
+        src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
+        vcap.read(src);
+
+        small = new cv.Mat();
+        cv.resize(src, small, new cv.Size(320, 240));
+
+        gray = new cv.Mat();
+        cv.cvtColor(small, gray, cv.COLOR_RGBA2GRAY);
+
+        // Brightness
+        mM = new cv.Mat(); sM = new cv.Mat();
+        cv.meanStdDev(gray, mM, sM);
+        const brightness = mM.data64F[0];
+        mM.delete(); sM.delete(); mM = null; sM = null;
+
+        // Sharpness
+        lap = new cv.Mat();
+        cv.Laplacian(gray, lap, cv.CV_8U);
+        mM = new cv.Mat(); sM = new cv.Mat();
+        cv.meanStdDev(lap, mM, sM);
+        const sharpness = sM.data64F[0];
+        mM.delete(); sM.delete(); mM = null; sM = null;
+
+        // Quick tile-count estimate on the downsampled frame
+        let tileCount = 0;
+        if (brightness >= 55 && brightness <= 215 && sharpness >= 4) {
+          let blurSmall = new cv.Mat();
+          cv.GaussianBlur(gray, blurSmall, new cv.Size(5, 5), 0);
+          binary = new cv.Mat();
+          cv.adaptiveThreshold(blurSmall, binary, 255,
+            cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 4);
+          blurSmall.delete();
+          contours = new cv.MatVector();
+          hier = new cv.Mat();
+          cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+          const smallArea = 320 * 240;
+          for (let i = 0; i < contours.size(); i++) {
+            const c = contours.get(i);
+            const a = cv.contourArea(c);
+            c.delete();
+            if (a > smallArea * 0.03 && a < smallArea * 0.60) tileCount++;
+          }
+          tileCount = Math.min(tileCount, 9);
+        }
+
+        let text, state;
+        if (brightness < 55) {
+          text = "Too dark — find better lighting"; state = "";
+        } else if (brightness > 215) {
+          text = "Too bright — reduce glare"; state = "";
+        } else if (sharpness < 4) {
+          text = "Hold steady — too blurry"; state = "";
+        } else if (tileCount === 0) {
+          text = "Point camera at tiles"; state = "";
+        } else if (sharpness < 9) {
+          text = `${tileCount} tile${tileCount !== 1 ? "s" : ""} detected — hold steadier`; state = "warn";
+        } else {
+          text = `${tileCount} tile${tileCount !== 1 ? "s" : ""} detected — tap Scan`; state = "good";
+        }
+
+        setGuidance(text, state);
+      } catch (_) {
+      } finally {
+        if (src)      src.delete();
+        if (small)    small.delete();
+        if (gray)     gray.delete();
+        if (lap)      lap.delete();
+        if (mM)       mM.delete();
+        if (sM)       sM.delete();
+        if (binary)   binary.delete();
+        if (contours) contours.delete();
+        if (hier)     hier.delete();
+      }
+      scheduleAnalysis();
+    }
+
+    function setGuidance(text, state) {
+      guidanceEl.textContent = text;
+      guidanceEl.className = "guidance" + (state ? " " + state : "");
+      cameraWrapper.className = "camera-wrapper" + (state ? " " + state : "");
+    }
+
+    // ── Scan button ──────────────────────────────────────────────────────────
+    scanBtn.addEventListener("click", () => {
+      if (!cvReady || !video.videoWidth) { showError("Not ready."); return; }
+      hideMsg();
+      reviewPanel.classList.remove("visible");
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+
+      preview.src = canvas.toDataURL("image/jpeg", 0.92);
+      preview.style.display  = "block";
+      video.style.display    = "none";
+      camGuide.style.display = "none";
+      scanBtn.style.display  = "none";
+      retakeBtn.style.display = "block";
+      stopAnalysis();
+      setGuidance("", "");
+      showInfo("Counting pips…");
+      scanBtn.disabled = true;
+
+      try {
+        const found = scanWithCV();
+        if (!found.length) throw new Error("No tiles found. Make sure tiles are fully in frame and well-lit.");
+        pendingTiles = found;
+        renderReview();
+        reviewPanel.classList.add("visible");
         hideMsg();
-      }catch(err){showError(err.message);}
-      finally{spinner.style.display="none";scanBtn.disabled=false;}
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        scanBtn.disabled = false;
+      }
     });
 
-    retakeBtn.addEventListener("click",()=>{
-      preview.style.display="none";video.style.display="block";
-      document.getElementById("camGuide").style.display="block";
-      scanBtn.style.display="block";retakeBtn.style.display="none";
-      reviewPanel.classList.remove("visible");hideMsg();
+    // ── OpenCV multi-tile detection ──────────────────────────────────────────
+    //
+    // 1. Grayscale + blur the full-res captured frame.
+    // 2. Adaptive threshold (inverted) to find rectangles.
+    // 3. For each quadrilateral contour in the right area range that is fully
+    //    inside the frame: extract corner points, perspective-warp, count pips.
+    // 4. Deduplicate by centroid distance (same tile detected twice → keep larger).
+    // 5. Sort tiles top-to-bottom, left-to-right.
+
+    function scanWithCV() {
+      let src = null, gray = null, blurred = null, binary = null;
+      let contours = null, hier = null;
+      const results = [];
+
+      try {
+        src = cv.imread(canvas);
+
+        gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+        blurred = new cv.Mat();
+        cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
+
+        binary = new cv.Mat();
+        cv.adaptiveThreshold(blurred, binary, 255,
+          cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 4);
+
+        contours = new cv.MatVector();
+        hier = new cv.Mat();
+        cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        const frameArea = canvas.width * canvas.height;
+        const minArea   = frameArea * 0.03;
+        const maxArea   = frameArea * 0.60;
+        // Tiles cut off at the frame edge give wrong pip counts — skip them
+        const edgeMargin = Math.min(canvas.width, canvas.height) * 0.04;
+
+        const quads = [];
+        for (let i = 0; i < contours.size(); i++) {
+          const c    = contours.get(i);
+          const area = cv.contourArea(c);
+          if (area >= minArea && area <= maxArea) {
+            const peri   = cv.arcLength(c, true);
+            const approx = new cv.Mat();
+            cv.approxPolyDP(c, approx, 0.02 * peri, true);
+            if (approx.rows === 4) {
+              const d   = approx.data32S;
+              const pts = [
+                { x: d[0], y: d[1] },
+                { x: d[2], y: d[3] },
+                { x: d[4], y: d[5] },
+                { x: d[6], y: d[7] }
+              ];
+              const atEdge = pts.some(p =>
+                p.x < edgeMargin || p.x > canvas.width  - edgeMargin ||
+                p.y < edgeMargin || p.y > canvas.height - edgeMargin
+              );
+              if (!atEdge) {
+                const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
+                const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
+                quads.push({ pts, area, cx, cy });
+              }
+            }
+            approx.delete();
+          }
+          c.delete();
+        }
+
+        // Deduplicate: if two centroids are closer than half the side of the
+        // smaller tile, they're the same tile — keep the larger contour.
+        const keep = new Array(quads.length).fill(true);
+        for (let i = 0; i < quads.length; i++) {
+          for (let j = i + 1; j < quads.length; j++) {
+            if (!keep[i] || !keep[j]) continue;
+            const d = Math.hypot(quads[i].cx - quads[j].cx, quads[i].cy - quads[j].cy);
+            if (d < Math.sqrt(Math.min(quads[i].area, quads[j].area)) * 0.5) {
+              keep[quads[i].area >= quads[j].area ? j : i] = false;
+            }
+          }
+        }
+
+        // Sort top-to-bottom, left-to-right
+        const selected = quads
+          .filter((_, i) => keep[i])
+          .sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
+
+        for (const quad of selected) {
+          let warped = null;
+          try {
+            warped = perspectiveWarp(gray, quad.pts);
+            const landscape = warped.cols >= warped.rows;
+            const mid = landscape
+              ? Math.floor(warped.cols / 2)
+              : Math.floor(warped.rows / 2);
+
+            let halfA, halfB;
+            if (landscape) {
+              halfA = warped.roi(new cv.Rect(0, 0, mid, warped.rows));
+              halfB = warped.roi(new cv.Rect(mid, 0, warped.cols - mid, warped.rows));
+            } else {
+              halfA = warped.roi(new cv.Rect(0, 0, warped.cols, mid));
+              halfB = warped.roi(new cv.Rect(0, mid, warped.cols, warped.rows - mid));
+            }
+            const left  = countPips(halfA);
+            const right = countPips(halfB);
+            halfA.delete();
+            halfB.delete();
+            results.push({ left, right });
+          } finally {
+            if (warped) warped.delete();
+          }
+        }
+
+      } finally {
+        if (src)      src.delete();
+        if (gray)     gray.delete();
+        if (blurred)  blurred.delete();
+        if (binary)   binary.delete();
+        if (contours) contours.delete();
+        if (hier)     hier.delete();
+      }
+
+      return results;
+    }
+
+    function perspectiveWarp(grayMat, pts) {
+      const sorted = [...pts].sort((a, b) => a.y - b.y);
+      const [tl, tr] = sorted.slice(0, 2).sort((a, b) => a.x - b.x);
+      const [bl, br] = sorted.slice(2).sort((a, b) => a.x - b.x);
+
+      const edgeDist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+      const w = Math.max(edgeDist(tl, tr), edgeDist(bl, br));
+      const h = Math.max(edgeDist(tl, bl), edgeDist(tr, br));
+
+      const scale = 400 / Math.max(w, h);
+      const dstW  = Math.max(Math.round(w * scale), 40);
+      const dstH  = Math.max(Math.round(h * scale), 40);
+
+      const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2,
+        [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
+      const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2,
+        [0, 0, dstW, 0, dstW, dstH, 0, dstH]);
+      const M      = cv.getPerspectiveTransform(srcPts, dstPts);
+      const warped = new cv.Mat();
+      cv.warpPerspective(grayMat, warped, M, new cv.Size(dstW, dstH));
+
+      srcPts.delete(); dstPts.delete(); M.delete();
+      return warped;
+    }
+
+    function countPips(halfMat) {
+      const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
+      const rw  = halfMat.cols - 2 * pad;
+      const rh  = halfMat.rows - 2 * pad;
+      if (rw < 10 || rh < 10) return 0;
+
+      const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
+      let thresh = null, kernel = null, closed = null, conts = null, hierP = null;
+      try {
+        thresh = new cv.Mat();
+        cv.adaptiveThreshold(inner, thresh, 255,
+          cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 3);
+
+        kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
+        closed = new cv.Mat();
+        cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel);
+
+        conts = new cv.MatVector();
+        hierP = new cv.Mat();
+        cv.findContours(closed, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        const regionArea = rw * rh;
+        const minPip = regionArea * 0.003;
+        const maxPip = regionArea * 0.08;
+
+        let count = 0;
+        for (let i = 0; i < conts.size(); i++) {
+          const c    = conts.get(i);
+          const area = cv.contourArea(c);
+          c.delete();
+          if (area >= minPip && area <= maxPip) count++;
+        }
+        return Math.min(count, 12);
+      } finally {
+        inner.delete();
+        if (thresh) thresh.delete();
+        if (kernel) kernel.delete();
+        if (closed) closed.delete();
+        if (conts)  conts.delete();
+        if (hierP)  hierP.delete();
+      }
+    }
+
+    // ── Retake ───────────────────────────────────────────────────────────────
+    retakeBtn.addEventListener("click", () => {
+      preview.style.display   = "none";
+      video.style.display     = "block";
+      camGuide.style.display  = "block";
+      scanBtn.style.display   = "block";
+      retakeBtn.style.display = "none";
+      reviewPanel.classList.remove("visible");
+      hideMsg();
+      startAnalysis();
     });
 
-    function renderReview(){
-      tileRows.innerHTML=pendingTiles.map((t,i)=>{
-        const ok=inCatalog(t.left,t.right);
-        const badge=ok ? `<span class="badge ok">✓ catalog</span>` : `<span class="badge unk">? check</span>`;
+    // ── Review panel helpers ─────────────────────────────────────────────────
+    function tileKey(l, r) { return `${Math.min(l, r)}-${Math.max(l, r)}`; }
+    function inCatalog(l, r) { return !!catalog.tiles?.[tileKey(l, r)]; }
+
+    function renderReview() {
+      tileRows.innerHTML = pendingTiles.map((t, i) => {
+        const ok    = inCatalog(t.left, t.right);
+        const badge = ok
+          ? `<span class="badge ok">&#x2713; catalog</span>`
+          : `<span class="badge unk">? check</span>`;
         return `<div class="tile-row">
-          <input type="number" min="0" max="12" value="${t.left}" onchange="upd(${i},'left',this.value)" />
+          <input type="number" min="0" max="12" value="${t.left}"  onchange="upd(${i},'left',this.value)" />
           <span class="sep">|</span>
           <input type="number" min="0" max="12" value="${t.right}" onchange="upd(${i},'right',this.value)" />
-          <span class="total">= ${t.left+t.right}</span>
+          <span class="total">= ${t.left + t.right}</span>
           ${badge}
           <button class="del" onclick="rmv(${i})">&#x2715;</button>
         </div>`;
       }).join("");
-      const sum=pendingTiles.reduce((s,t)=>s+t.left+t.right,0);
-      reviewTotal.textContent=`Total: ${sum} across ${pendingTiles.length} tile${pendingTiles.length!==1?'s':''}`;
+      const sum = pendingTiles.reduce((s, t) => s + t.left + t.right, 0);
+      reviewTotal.textContent = `Total: ${sum} across ${pendingTiles.length} tile${pendingTiles.length !== 1 ? "s" : ""}`;
     }
 
-    function upd(i,side,val){pendingTiles[i][side]=parseInt(val)||0;renderReview();}
-    function rmv(i){pendingTiles.splice(i,1);if(!pendingTiles.length){reviewPanel.classList.remove("visible");return;}renderReview();}
+    function upd(i, side, val) { pendingTiles[i][side] = parseInt(val) || 0; renderReview(); }
+    function rmv(i) { pendingTiles.splice(i, 1); if (!pendingTiles.length) { reviewPanel.classList.remove("visible"); return; } renderReview(); }
 
-    function confirmAll(){
-      if(!pendingTiles.length)return;
-      tiles.push(...pendingTiles);pendingTiles=[];
+    function confirmAll() {
+      if (!pendingTiles.length) return;
+      tiles.push(...pendingTiles);
+      pendingTiles = [];
       renderHistory();
       reviewPanel.classList.remove("visible");
-      preview.style.display="none";video.style.display="block";
-      scanBtn.style.display="block";retakeBtn.style.display="none";hideMsg();
+      preview.style.display   = "none";
+      video.style.display     = "block";
+      camGuide.style.display  = "block";
+      scanBtn.style.display   = "block";
+      retakeBtn.style.display = "none";
+      hideMsg();
+      startAnalysis();
     }
 
-    function renderHistory(){
-      const total=tiles.reduce((s,t)=>s+t.left+t.right,0);
-      document.getElementById("runningTotal").textContent=total;
-      if(!tiles.length){document.getElementById("historyList").innerHTML='<p class="empty">No tiles yet</p>';return;}
-      document.getElementById("historyList").innerHTML=[...tiles].reverse().map((t,ri)=>{
-        const i=tiles.length-1-ri;
-        return `<div class="history-item"><strong>${t.left} | ${t.right}</strong><span>= ${t.left+t.right}</span><button onclick="removeItem(${i})">&#x2715;</button></div>`;
+    function renderHistory() {
+      const total = tiles.reduce((s, t) => s + t.left + t.right, 0);
+      document.getElementById("runningTotal").textContent = total;
+      if (!tiles.length) {
+        document.getElementById("historyList").innerHTML = '<p class="empty">No tiles yet</p>';
+        return;
+      }
+      document.getElementById("historyList").innerHTML = [...tiles].reverse().map((t, ri) => {
+        const i = tiles.length - 1 - ri;
+        return `<div class="history-item"><strong>${t.left} | ${t.right}</strong><span>= ${t.left + t.right}</span><button onclick="removeItem(${i})">&#x2715;</button></div>`;
       }).join("");
     }
 
-    function removeItem(i){tiles.splice(i,1);renderHistory();}
-    function resetAll(){tiles=[];pendingTiles=[];renderHistory();reviewPanel.classList.remove("visible");}
-    function showError(m){errorEl.textContent=m;errorEl.style.display="block";infoEl.style.display="none";}
-    function showInfo(m){infoEl.textContent=m;infoEl.style.display="block";errorEl.style.display="none";}
-    function hideMsg(){errorEl.style.display="none";infoEl.style.display="none";}
+    function removeItem(i) { tiles.splice(i, 1); renderHistory(); }
+    function resetAll() { tiles = []; pendingTiles = []; renderHistory(); reviewPanel.classList.remove("visible"); }
+
+    function showError(m) { errorEl.textContent = m; errorEl.style.display = "block"; infoEl.style.display = "none"; }
+    function showInfo(m)  { infoEl.textContent  = m; infoEl.style.display  = "block"; errorEl.style.display = "none"; }
+    function hideMsg()    { errorEl.style.display = "none"; infoEl.style.display = "none"; }
   </script>
 </body>
 </html>
