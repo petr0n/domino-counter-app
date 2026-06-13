@@ -224,9 +224,9 @@
       const res=await fetch(`${PROXY}/anthropic`,{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-opus-4-8",max_tokens:4096,thinking:{type:"adaptive"},messages:[{role:"user",content:[
+        body:JSON.stringify({model:"claude-opus-4-8",max_tokens:7000,thinking:{type:"enabled",budget_tokens:5000},messages:[{role:"user",content:[
           {type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},
-          {type:"text",text:"These are domino tiles from a double-12 set. Each half can show 0 to 12 dots. For every tile in the image, count each half's dots by going row by row — e.g. top row: 3, middle row: 3, bottom row: 2 → 8. Then count each half a second time independently to verify. If the two counts disagree, recount until you are certain. Record your row-by-row working and the final verified total for each half. Reply ONLY with this JSON (no other text): {\"tiles\": [{\"left\": <number>, \"left_rows\": \"<e.g. 3+3+2=8>\", \"right\": <number>, \"right_rows\": \"<e.g. 3+3=6>\"}, ...]}"}
+          {type:"text",text:"This photo shows one or more domino tiles from a double-12 set. Each tile has two halves separated by a center dividing bar. Each half shows a pip count from 0 to 12.\n\nFor EACH separate tile in the photo:\n1. Identify the tile boundaries and center dividing bar.\n2. Count the pips in each half individually — examine each dot one by one.\n3. Recount each half to verify. If your two counts disagree, count a third time until certain.\n4. Each half must be 0-12. If you count more than 12, you are merging two tiles — recount only that half in isolation.\n\nReturn every distinct tile. Reply ONLY with JSON: {\"tiles\":[{\"left\":<0-12>,\"right\":<0-12>},...]}"}
         ]}]})
       });
       const data=await res.json();
@@ -234,7 +234,10 @@
       const text=data.content.find(b=>b.type==="text")?.text||"";
       const match=text.match(/\{[\s\S]*\}/);
       if(!match)return null;
-      return (JSON.parse(match[0]).tiles||[]).map(t=>({left:Number(t.left)||0,right:Number(t.right)||0}));
+      return (JSON.parse(match[0]).tiles||[]).map(t=>({
+        left:Math.min(12,Math.max(0,Number(t.left)||0)),
+        right:Math.min(12,Math.max(0,Number(t.right)||0))
+      }));
     }
 
     scanBtn.addEventListener("click",async()=>{
@@ -243,36 +246,18 @@
       if(!video.videoWidth){showError("Camera not ready.");return;}
       hideMsg();reviewPanel.classList.remove("visible");
       canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-      const ctx2d=canvas.getContext("2d");
-      ctx2d.drawImage(video,0,0);
-      const id=ctx2d.getImageData(0,0,canvas.width,canvas.height),px=id.data;
-      for(let i=0;i<px.length;i+=4){
-        const r=px[i],g=px[i+1],b=px[i+2];
-        const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
-        const sat=mx>0?(mx-mn)/mx:0;
-        const lum=0.299*r+0.587*g+0.114*b;
-        const v=Math.min(255,Math.max(0,lum-sat*210));
-        px[i]=px[i+1]=px[i+2]=Math.round(v);
-      }
-      ctx2d.putImageData(id,0,0);
+      canvas.getContext("2d").drawImage(video,0,0);
       const dataUrl=canvas.toDataURL("image/jpeg",0.92),base64=dataUrl.split(",")[1];
       preview.src=dataUrl;preview.style.display="block";video.style.display="none";
       scanBtn.style.display="none";retakeBtn.style.display="block";
       spinner.style.display="block";scanBtn.disabled=true;
       try{
-        const [r1,r2]=await Promise.all([callClaude(base64),callClaude(base64)]);
-        if(!r1&&!r2)throw new Error("No tiles found in image.");
-        const a=r1||[],b=r2||[];
-        const base=a.length>0&&(a.length<=b.length||b.length===0)?a:b;
-        const alt=base===a?b:a;
-        pendingTiles=base.map((t,i)=>{
-          const o=alt[i];
-          if(!o)return{left:t.left,right:t.right,uncertain:true};
-          const ld=Math.abs(t.left-o.left),rd=Math.abs(t.right-o.right);
-          return{left:Math.round((t.left+o.left)/2),right:Math.round((t.right+o.right)/2),uncertain:ld>1||rd>1};
-        });
-        if(!pendingTiles.length)throw new Error("No tiles found in image.");
+        showInfo("Identifying tiles…");
+        const result=await callClaude(base64);
+        if(!result||!result.length)throw new Error("No tiles found in image.");
+        pendingTiles=result;
         renderReview();reviewPanel.classList.add("visible");
+        hideMsg();
       }catch(err){showError(err.message);}
       finally{spinner.style.display="none";scanBtn.disabled=false;}
     });
@@ -287,13 +272,12 @@
       let html="";
       pendingTiles.forEach((t,i)=>{
         const v=isVerified(t.left,t.right);
-        html+=`<div class="tile-row${t.uncertain?' uncertain':''}">
+        html+=`<div class="tile-row">
           <input type="number" min="0" max="12" value="${t.left}" onchange="updatePending(${i},'left',this.value)" />
           <span class="sep">|</span>
           <input type="number" min="0" max="12" value="${t.right}" onchange="updatePending(${i},'right',this.value)" />
           <span class="total">= ${t.left+t.right}</span>
-          <span class="${v?'verified':'unverified'}">${v?'✓':'?'}</span>
-          ${t.uncertain?'<span class="chk">check</span>':''}
+          <span class="${v?'verified':'unverified'}">${v?'✓ catalog':'? check'}</span>
           <button class="del" onclick="removePending(${i})">&#x2715;</button>
         </div>`;
       });

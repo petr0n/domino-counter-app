@@ -139,9 +139,9 @@
         const res=await fetch(`${PROXY}/anthropic`,{
           method:"POST",
           headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:2048,thinking:{type:"adaptive"},output_config:{effort:"high"},messages:[{role:"user",content:[
+          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:5000,thinking:{type:"enabled",budget_tokens:4000},messages:[{role:"user",content:[
             {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
-            {type:"text",text:"This is a single domino tile from a double-12 set. It is split into two halves by a line; each half shows 0 to 12 pips. Count the pips on the LEFT half and the RIGHT half carefully, then recount each to verify. Neither half can exceed 12. Reply with ONLY this JSON: {\"left\": <0-12>, \"right\": <0-12>}"}
+            {type:"text",text:"This photo shows a single domino tile from a double-12 set. The tile has two halves separated by a center dividing bar. Each half shows a pip count from 0 to 12.\n\nCount the pips:\n1. Find the center dividing bar.\n2. Count each pip in the LEFT half individually.\n3. Recount the LEFT half to verify — your two counts must agree.\n4. Count each pip in the RIGHT half individually.\n5. Recount the RIGHT half to verify — your two counts must agree.\n\nNeither half can exceed 12 pips. Reply ONLY with JSON: {\"left\": <0-12>, \"right\": <0-12>}"}
           ]}]})
         });
         const data=await res.json();
