@@ -226,7 +226,16 @@
       if(!video.videoWidth){showError("Camera not ready.");return;}
       hideMsg();reviewPanel.classList.remove("visible");
       canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-      canvas.getContext("2d").drawImage(video,0,0);
+      const ctx2d=canvas.getContext("2d");
+      ctx2d.drawImage(video,0,0);
+      const id=ctx2d.getImageData(0,0,canvas.width,canvas.height),px=id.data;
+      const cf=(259*(70+255))/(255*(259-70));
+      for(let i=0;i<px.length;i+=4){
+        px[i]  =Math.min(255,Math.max(0,cf*(px[i]  -128)+128));
+        px[i+1]=Math.min(255,Math.max(0,cf*(px[i+1]-128)+128));
+        px[i+2]=Math.min(255,Math.max(0,cf*(px[i+2]-128)+128));
+      }
+      ctx2d.putImageData(id,0,0);
       const dataUrl=canvas.toDataURL("image/jpeg",0.92),base64=dataUrl.split(",")[1];
       preview.src=dataUrl;preview.style.display="block";video.style.display="none";
       scanBtn.style.display="none";retakeBtn.style.display="block";
