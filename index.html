@@ -18,7 +18,15 @@
       font-family: system-ui, sans-serif;
       padding: 20px;
     }
+    header {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
     h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+    a { color: #888; font-size: 0.85rem; text-decoration: none; }
     .camera-wrapper {
       position: relative;
       width: 100%;
@@ -73,7 +81,10 @@
   </style>
 </head>
 <body>
-  <h1>Domino Dot Counter</h1>
+  <header>
+    <h1>Domino Dot Counter</h1>
+    <a href="scan.html">Tile Scanner →</a>
+  </header>
 
   <div class="camera-wrapper">
     <video id="video" autoplay playsinline muted></video>
