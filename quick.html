@@ -14,6 +14,8 @@
     #video { width:100%; height:100%; object-fit:cover; display:block; }
     #canvas { display:none; }
     #preview { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:none; }
+    .cam-guide { position:absolute; top:8%; left:8%; width:84%; height:84%; border:2px dashed rgba(255,255,255,0.35); border-radius:10px; pointer-events:none; }
+    .cam-tip { font-size:0.75rem; color:#555; text-align:center; max-width:480px; }
     .controls { display:flex; gap:10px; width:100%; max-width:480px; }
     button { flex:1; padding:14px; border:none; border-radius:12px; font-size:1rem; font-weight:600; cursor:pointer; transition:opacity 0.15s,transform 0.1s; }
     button:active { transform:scale(0.97); }
@@ -61,7 +63,9 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
     <img id="preview" alt="" />
+    <div class="cam-guide" id="camGuide"></div>
   </div>
+  <p class="cam-tip">Lay tiles flat · shoot from above · good lighting</p>
   <div class="controls">
     <button id="scanBtn">Scan Tiles</button>
     <button id="retakeBtn">Retake</button>
@@ -116,13 +120,13 @@
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({model:"claude-opus-4-8",max_tokens:7000,thinking:{type:"enabled",budget_tokens:5000},messages:[{role:"user",content:[
           {type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},
-          {type:"text",text:"This photo shows one or more domino tiles from a double-12 set. Each tile has two halves separated by a center dividing bar. Each half shows a pip count from 0 to 12.\n\nFor EACH separate tile in the photo:\n1. Identify the tile boundaries and center dividing bar.\n2. Count the pips in each half individually — examine each dot one by one.\n3. Recount each half to verify. If your two counts disagree, count a third time until certain.\n4. Each half must be 0-12. If you count more than 12, you are merging two tiles — recount only that half in isolation.\n\nReturn every distinct tile. Reply ONLY with JSON: {\"tiles\":[{\"left\":<0-12>,\"right\":<0-12>},...]}"}
+          {type:"text",text:"This photo shows domino tiles from a double-12 set. Each tile is a rectangle split into two halves by a center bar. Each half has 0–12 pip dots.\n\nDo this in order:\n\nSTEP 1 — FIND ALL TILES: Scan the entire photo. Count every distinct domino tile you can see. Note how many there are.\n\nSTEP 2 — COUNT EACH TILE: For every tile found in Step 1:\n  a. Locate the center bar that divides it into two halves.\n  b. Count every pip in the first half, one by one.\n  c. Count again independently. If the two counts differ, count a third time.\n  d. Do the same for the second half.\n  e. Neither half can exceed 12. If it does, you are accidentally counting pips from a neighboring tile.\n\nSTEP 3 — OUTPUT: Return one entry per tile found in Step 1 — do not skip any tile.\n\nReply ONLY with JSON (no other text): {\"tiles\":[{\"left\":<0-12>,\"right\":<0-12>},...]}"}
         ]}]})
       });
       const data=await res.json();
       if(!res.ok) throw new Error(data.error?.message||"API error");
       const text=data.content.find(b=>b.type==="text")?.text||"";
-      const m=text.match(/\{[\s\S]*\}/);
+      const m=text.match(/\{[\s\S]*?\}(?:\s*$|\s*\n)/s)||text.match(/\{[\s\S]*\}/);
       if(!m) return null;
       return (JSON.parse(m[0]).tiles||[])
         .map(t=>({left:Number(t.left)||0,right:Number(t.right)||0}))
@@ -137,6 +141,7 @@
       // Send the clean, unfiltered photo — vision models read natural images best
       preview.src=canvas.toDataURL("image/jpeg",0.92);
       preview.style.display="block";video.style.display="none";
+      document.getElementById("camGuide").style.display="none";
       scanBtn.style.display="none";retakeBtn.style.display="block";
       spinner.style.display="block";scanBtn.disabled=true;
       try{
@@ -152,6 +157,7 @@
 
     retakeBtn.addEventListener("click",()=>{
       preview.style.display="none";video.style.display="block";
+      document.getElementById("camGuide").style.display="block";
       scanBtn.style.display="block";retakeBtn.style.display="none";
       reviewPanel.classList.remove("visible");hideMsg();
     });
