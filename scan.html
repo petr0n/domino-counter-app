@@ -6,19 +6,35 @@
   <title>Tile Scanner</title>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-    body { min-height:100dvh; display:flex; flex-direction:column; align-items:center; gap:14px; background:#0f0f0f; color:#f0f0f0; font-family:system-ui,sans-serif; padding:20px; }
+    body { min-height:100dvh; display:flex; flex-direction:column; align-items:center; gap:14px; background:#0f0f0f; color:#f0f0f0; font-family:system-ui,sans-serif; padding:20px 20px 40px; }
     header { width:100%; max-width:480px; display:flex; align-items:center; justify-content:space-between; }
     h1 { font-size:1.4rem; font-weight:700; }
     nav { display:flex; gap:12px; }
     a { color:#888; font-size:0.85rem; text-decoration:none; }
-    .session-bar { width:100%; max-width:480px; background:#1a1a1a; border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
-    .session-row { display:flex; gap:8px; align-items:center; }
-    .session-code { font-size:1.6rem; font-weight:800; letter-spacing:0.12em; color:#555; }
-    .session-bar input { flex:1; padding:10px 12px; border-radius:8px; border:1px solid #333; background:#111; color:#fff; font-size:1rem; text-transform:uppercase; letter-spacing:0.1em; }
+
+    /* Setup card */
+    .setup-card { width:100%; max-width:480px; background:#1a1a1a; border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:10px; }
+    .setup-card input { width:100%; padding:10px 12px; border-radius:8px; border:1px solid #333; background:#111; color:#fff; font-size:1rem; }
+    .setup-card input::placeholder { color:#555; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .code-display { font-size:1.5rem; font-weight:800; letter-spacing:0.12em; color:#555; flex:1; }
+    .code-display.active { color:#fff; }
     .btn-sm { padding:10px 14px; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer; white-space:nowrap; }
     .btn-new { background:#fff; color:#000; }
     .btn-join { background:#3b82f6; color:#fff; }
     .btn-refresh { background:#2a2a2a; color:#aaa; }
+
+    /* Scoreboard */
+    .scoreboard { width:100%; max-width:480px; background:#1a1a1a; border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:8px; }
+    .scoreboard-title { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:#444; }
+    .score-row { display:flex; justify-content:space-between; align-items:center; }
+    .score-name { font-size:1rem; font-weight:600; }
+    .score-name.me { color:#22c55e; }
+    .score-val { font-size:1.6rem; font-weight:800; }
+    .score-tiles { font-size:0.75rem; color:#555; }
+    .no-scores { color:#444; font-size:0.85rem; text-align:center; padding:4px 0; }
+
+    /* Camera */
     .camera-wrapper { position:relative; width:100%; max-width:480px; border-radius:16px; overflow:hidden; background:#1a1a1a; aspect-ratio:4/3; }
     #video { width:100%; height:100%; object-fit:cover; display:block; }
     #canvas { display:none; }
@@ -33,26 +49,21 @@
     @keyframes spin { to { transform:rotate(360deg); } }
     .msg { font-size:0.9rem; text-align:center; display:none; max-width:480px; }
     .msg.error { color:#ff6b6b; } .msg.info { color:#888; }
-    .confirm-card { display:none; width:100%; max-width:480px; background:#1a1a1a; border-radius:16px; padding:20px; flex-direction:column; gap:14px; }
-    .confirm-card.visible { display:flex; }
-    .tile-display { font-size:2.2rem; font-weight:800; text-align:center; }
-    .tile-sub { font-size:0.85rem; text-align:center; }
-    .tile-sub.verified { color:#22c55e; } .tile-sub.unverified { color:#f59e0b; }
-    .correction { display:flex; gap:8px; align-items:center; }
-    .correction label { font-size:0.8rem; color:#888; white-space:nowrap; }
-    .correction input { width:56px; padding:8px; border-radius:8px; border:1px solid #333; background:#111; color:#fff; font-size:1rem; text-align:center; }
-    .correction span { color:#555; font-size:1.2rem; }
-    .btn-add { background:#22c55e; color:#000; font-weight:700; }
-    .total-bar { width:100%; max-width:480px; background:#1a1a1a; border-radius:16px; padding:16px 20px; display:flex; justify-content:space-between; align-items:center; }
-    .total-label { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:#666; }
-    .total-value { font-size:2.4rem; font-weight:800; }
-    .history { width:100%; max-width:480px; display:flex; flex-direction:column; gap:6px; padding-bottom:24px; }
-    .history-label { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:#444; margin-bottom:2px; }
-    .history-item { display:flex; justify-content:space-between; align-items:center; background:#1a1a1a; border-radius:10px; padding:10px 14px; font-size:0.95rem; }
-    .history-item span { color:#aaa; }
-    .history-item .verified-badge { font-size:0.7rem; color:#22c55e; margin-left:6px; }
-    .history-item button { flex:none; width:28px; height:28px; padding:0; border-radius:6px; background:#2a2a2a; color:#666; font-size:0.8rem; }
-    .empty { color:#444; font-size:0.85rem; text-align:center; padding:8px 0; }
+
+    /* Review panel */
+    .review-panel { display:none; width:100%; max-width:480px; background:#1a1a1a; border-radius:16px; padding:16px; flex-direction:column; gap:10px; }
+    .review-panel.visible { display:flex; }
+    .review-title { font-size:0.9rem; font-weight:600; color:#aaa; }
+    .tile-row { display:flex; gap:8px; align-items:center; }
+    .tile-row input { width:52px; padding:8px; border-radius:8px; border:1px solid #333; background:#111; color:#fff; font-size:1rem; text-align:center; }
+    .tile-row .sep { color:#555; font-size:1.1rem; }
+    .tile-row .total { color:#666; font-size:0.9rem; flex:1; }
+    .tile-row .verified { color:#22c55e; font-size:0.75rem; }
+    .tile-row .unverified { color:#f59e0b; font-size:0.75rem; }
+    .tile-row .del { flex:none; width:28px; height:28px; padding:0; border-radius:6px; background:#2a2a2a; color:#666; font-size:0.8rem; }
+    .review-total { font-size:0.85rem; color:#888; text-align:right; }
+    .btn-confirm { background:#22c55e; color:#000; font-weight:700; padding:14px; border-radius:12px; border:none; width:100%; font-size:1rem; cursor:pointer; }
+    .btn-confirm:active { transform:scale(0.97); }
   </style>
 </head>
 <body>
@@ -61,16 +72,22 @@
     <nav><a href="catalog.html">Catalog</a><a href="index.html">← Home</a></nav>
   </header>
 
-  <div class="session-bar">
-    <div class="session-row">
-      <span id="codeDisplay" class="session-code">------</span>
+  <div class="setup-card">
+    <input id="nameInput" placeholder="Your name" />
+    <div class="row">
+      <span id="codeDisplay" class="code-display">------</span>
       <button class="btn-sm btn-new" onclick="newGame()">New Game</button>
       <button class="btn-sm btn-refresh" onclick="loadSession()">Refresh</button>
     </div>
-    <div class="session-row">
-      <input id="joinInput" placeholder="Enter game code" maxlength="6" />
+    <div class="row">
+      <input id="joinInput" placeholder="Game code" maxlength="6" style="text-transform:uppercase;letter-spacing:0.1em" />
       <button class="btn-sm btn-join" onclick="joinGame()">Join</button>
     </div>
+  </div>
+
+  <div class="scoreboard" id="scoreboard">
+    <div class="scoreboard-title">Scoreboard</div>
+    <div id="scoreRows"><p class="no-scores">No game yet</p></div>
   </div>
 
   <div class="camera-wrapper">
@@ -79,32 +96,18 @@
     <img id="preview" alt="" />
   </div>
   <div class="controls">
-    <button id="scanBtn" disabled>Scan Tile</button>
+    <button id="scanBtn" disabled>Scan My Tiles</button>
     <button id="retakeBtn">Retake</button>
   </div>
   <div class="spinner" id="spinner"></div>
   <p class="msg error" id="error"></p>
   <p class="msg info" id="info"></p>
 
-  <div class="confirm-card" id="confirmCard">
-    <div class="tile-display" id="tileDisplay"></div>
-    <div class="tile-sub" id="tileSub"></div>
-    <div class="correction">
-      <label>Correct if needed:</label>
-      <input id="leftInput" type="number" min="0" max="12" />
-      <span>|</span>
-      <input id="rightInput" type="number" min="0" max="12" />
-    </div>
-    <button class="btn-add" onclick="addTile()">Add to Score</button>
-  </div>
-
-  <div class="total-bar">
-    <span class="total-label">Running Total</span>
-    <span class="total-value" id="runningTotal">0</span>
-  </div>
-  <div class="history">
-    <div class="history-label">Scanned tiles</div>
-    <div id="historyList"><p class="empty">No tiles yet</p></div>
+  <div class="review-panel" id="reviewPanel">
+    <div class="review-title">Review — correct any errors before saving</div>
+    <div id="tileRows"></div>
+    <div class="review-total" id="reviewTotal"></div>
+    <button class="btn-confirm" onclick="confirmAll()">Add All to My Score</button>
   </div>
 
   <script>
@@ -112,91 +115,107 @@
     const _ak=atob(_c1+_c2+_c3+_c4);
     const _g1="Z2hwX2hDOXZwRl",_g2="BlcnJza1R0NXNJ",_g3="cDVHSmpuc0VlWG",_g4="1IcTMzVTV3Vg==";
     const _gk=atob(_g1+_g2+_g3+_g4);
-    const OWNER="petr0n",REPO="japan-2026",SESSIONS_PATH="domino-counter/sessions",CATALOG_PATH="domino-counter/catalog.json";
+    const OWNER="petr0n",REPO="japan-2026";
     const GH="https://api.github.com";
-    const GH_HEADERS={Authorization:`token ${_gk}`,Accept:"application/vnd.github.v3+json","Content-Type":"application/json"};
+    const GH_H={Authorization:`token ${_gk}`,Accept:"application/vnd.github.v3+json","Content-Type":"application/json"};
 
-    let gameCode=null,tiles=[],catalog={tiles:{}};
+    let gameCode=null, playerName="", tiles=[], catalog={tiles:{}}, pendingTiles=[];
 
     const video=document.getElementById("video"),canvas=document.getElementById("canvas"),preview=document.getElementById("preview");
-    const scanBtn=document.getElementById("scanBtn"),retakeBtn=document.getElementById("retakeBtn"),spinner=document.getElementById("spinner");
-    const errorEl=document.getElementById("error"),infoEl=document.getElementById("info"),confirmCard=document.getElementById("confirmCard");
-    const tileDisplay=document.getElementById("tileDisplay"),tileSub=document.getElementById("tileSub");
-    const leftInput=document.getElementById("leftInput"),rightInput=document.getElementById("rightInput");
-    const totalEl=document.getElementById("runningTotal"),historyList=document.getElementById("historyList");
+    const scanBtn=document.getElementById("scanBtn"),retakeBtn=document.getElementById("retakeBtn");
+    const spinner=document.getElementById("spinner"),errorEl=document.getElementById("error"),infoEl=document.getElementById("info");
+    const reviewPanel=document.getElementById("reviewPanel"),tileRows=document.getElementById("tileRows"),reviewTotal=document.getElementById("reviewTotal");
 
-    async function init(){
-      navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:960}},audio:false})
-        .then(s=>video.srcObject=s).catch(()=>showError("Camera access denied."));
-      await loadCatalog();
-    }
+    // Camera
+    navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:960}},audio:false})
+      .then(s=>video.srcObject=s).catch(()=>showError("Camera access denied."));
 
-    async function loadCatalog(){
-      const res=await fetch(`${GH}/repos/${OWNER}/${REPO}/contents/${CATALOG_PATH}`,{headers:GH_HEADERS});
-      if(res.ok){const j=await res.json();catalog=JSON.parse(atob(j.content.replace(/\n/g,"")));}
-    }
+    // Load catalog
+    fetch(`${GH}/repos/${OWNER}/${REPO}/contents/domino-counter/catalog.json`,{headers:GH_H})
+      .then(r=>r.ok?r.json():null).then(j=>{if(j)catalog=JSON.parse(atob(j.content.replace(/\n/g,"")));});
 
     function tileKey(l,r){return `${Math.min(l,r)}-${Math.max(l,r)}`;}
     function isVerified(l,r){return !!catalog.tiles?.[tileKey(l,r)];}
-
     function genCode(){return Math.random().toString(36).substring(2,8).toUpperCase();}
+    function getName(){return document.getElementById("nameInput").value.trim();}
 
     async function newGame(){
-      const code=genCode();showInfo("Creating game...");
+      const name=getName();if(!name){showError("Enter your name first.");return;}
+      playerName=name;const code=genCode();showInfo("Creating...");
       const ok=await writeSession(code,[]);if(!ok)return;
       setGame(code,[]);showInfo("Share code: "+code);
     }
 
     async function joinGame(){
+      const name=getName();if(!name){showError("Enter your name first.");return;}
       const code=document.getElementById("joinInput").value.trim().toUpperCase();
       if(code.length!==6){showError("Enter a 6-letter code.");return;}
-      showInfo("Joining...");
-      const data=await readSession(code);
-      if(data===null){showError("Game not found.");return;}
+      playerName=name;showInfo("Joining...");
+      const data=await readSession(code);if(data===null){showError("Game not found.");return;}
       setGame(code,data.tiles||[]);showInfo("Joined "+code);
     }
 
     async function loadSession(){
       if(!gameCode){showError("Join or create a game first.");return;}
       showInfo("Refreshing...");
-      const data=await readSession(gameCode);
-      if(data===null){showError("Could not load session.");return;}
-      tiles=data.tiles||[];renderHistory();showInfo("Updated!");
-      setTimeout(()=>infoEl.style.display="none",1200);
+      const data=await readSession(gameCode);if(data===null){showError("Could not load.");return;}
+      tiles=data.tiles||[];renderScoreboard();
+      showInfo("Updated!");setTimeout(()=>infoEl.style.display="none",1200);
     }
 
     function setGame(code,t){
       gameCode=code;tiles=t;
       const el=document.getElementById("codeDisplay");
-      el.textContent=code;el.style.color="#fff";
-      scanBtn.disabled=false;renderHistory();
+      el.textContent=code;el.classList.add("active");
+      scanBtn.disabled=false;renderScoreboard();
+    }
+
+    function renderScoreboard(){
+      const scores={};
+      for(const t of tiles){
+        if(!scores[t.player])scores[t.player]={total:0,count:0};
+        scores[t.player].total+=t.left+t.right;
+        scores[t.player].count++;
+      }
+      const names=Object.keys(scores);
+      if(!names.length){document.getElementById("scoreRows").innerHTML='<p class="no-scores">No tiles yet</p>';return;}
+      names.sort((a,b)=>scores[b].total-scores[a].total);
+      document.getElementById("scoreRows").innerHTML=names.map(n=>`
+        <div class="score-row">
+          <div>
+            <div class="score-name${n===playerName?' me':''}">${n}${n===playerName?' (you)':''}</div>
+            <div class="score-tiles">${scores[n].count} tile${scores[n].count!==1?'s':''}</div>
+          </div>
+          <span class="score-val">${scores[n].total}</span>
+        </div>
+      `).join("");
     }
 
     async function readSession(code){
-      const res=await fetch(`${GH}/repos/${OWNER}/${REPO}/contents/${SESSIONS_PATH}/${code}.json`,{headers:GH_HEADERS});
+      const res=await fetch(`${GH}/repos/${OWNER}/${REPO}/contents/domino-counter/sessions/${code}.json`,{headers:GH_H});
       if(res.status===404)return null;
       const j=await res.json();
       return JSON.parse(atob(j.content.replace(/\n/g,"")));
     }
 
     async function writeSession(code,t){
-      const path=`${SESSIONS_PATH}/${code}.json`;
+      const path=`domino-counter/sessions/${code}.json`;
       const url=`${GH}/repos/${OWNER}/${REPO}/contents/${path}`;
       const content=btoa(JSON.stringify({tiles:t}));
-      let sha;
-      const check=await fetch(url,{headers:GH_HEADERS});
+      let sha;const check=await fetch(url,{headers:GH_H});
       if(check.ok){const j=await check.json();sha=j.sha;}
-      const body={message:`update session ${code}`,content};
-      if(sha)body.sha=sha;
-      const res=await fetch(url,{method:"PUT",headers:GH_HEADERS,body:JSON.stringify(body)});
+      const body={message:`update session ${code}`,content};if(sha)body.sha=sha;
+      const res=await fetch(url,{method:"PUT",headers:GH_H,body:JSON.stringify(body)});
       if(!res.ok){const e=await res.json();showError("Save failed: "+(e.message||res.status));return false;}
       return true;
     }
 
+    // Scan all tiles at once
     scanBtn.addEventListener("click",async()=>{
       if(!gameCode){showError("Join or create a game first.");return;}
+      if(!playerName){playerName=getName();if(!playerName){showError("Enter your name first.");return;}}
       if(!video.videoWidth){showError("Camera not ready.");return;}
-      hideMsg();confirmCard.classList.remove("visible");
+      hideMsg();reviewPanel.classList.remove("visible");
       canvas.width=video.videoWidth;canvas.height=video.videoHeight;
       canvas.getContext("2d").drawImage(video,0,0);
       const dataUrl=canvas.toDataURL("image/jpeg",0.92),base64=dataUrl.split(",")[1];
@@ -207,23 +226,21 @@
         const res=await fetch("https://api.anthropic.com/v1/messages",{
           method:"POST",
           headers:{"Content-Type":"application/json","x-api-key":_ak,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:256,messages:[{role:"user",content:[
+          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:1024,messages:[{role:"user",content:[
             {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
-            {type:"text",text:"This is a single domino tile from a double-12 set. Each half can show 0 to 12 dots. Identify the LEFT half value and the RIGHT half value. Reply ONLY with JSON: {\"left\": <0-12>, \"right\": <0-12>}"}
+            {type:"text",text:"These are domino tiles from a double-12 set. Each half shows 0 to 12 dots. Identify EVERY tile in the image. For each tile give the left half value and right half value. Reply ONLY with JSON: {\"tiles\": [{\"left\": <0-12>, \"right\": <0-12>}, ...]}"}
           ]}]})
         });
         const data=await res.json();
         if(!res.ok)throw new Error(data.error?.message||"API error");
         const text=data.content.find(b=>b.type==="text")?.text||"";
-        const match=text.match(/\{[\s\S]*?\}/);
-        if(!match)throw new Error("Could not read tile.");
-        const {left,right}=JSON.parse(match[0]);
-        leftInput.value=left;rightInput.value=right;
-        tileDisplay.textContent=`${left} | ${right}`;
-        const verified=isVerified(left,right);
-        tileSub.textContent=verified?"✓ Verified in catalog":"Not in catalog — correct if needed";
-        tileSub.className="tile-sub "+(verified?"verified":"unverified");
-        confirmCard.classList.add("visible");
+        const match=text.match(/\{[\s\S]*\}/);
+        if(!match)throw new Error("Could not read tiles.");
+        const {tiles:found}=JSON.parse(match[0]);
+        if(!found||!found.length)throw new Error("No tiles found in image.");
+        pendingTiles=found.map(t=>({left:t.left,right:t.right}));
+        renderReview();
+        reviewPanel.classList.add("visible");
       }catch(err){showError(err.message);}
       finally{spinner.style.display="none";scanBtn.disabled=false;}
     });
@@ -231,45 +248,56 @@
     retakeBtn.addEventListener("click",()=>{
       preview.style.display="none";video.style.display="block";
       scanBtn.style.display="block";retakeBtn.style.display="none";
-      confirmCard.classList.remove("visible");hideMsg();
+      reviewPanel.classList.remove("visible");hideMsg();
     });
 
-    async function addTile(){
-      const l=parseInt(leftInput.value),r=parseInt(rightInput.value);
-      if(isNaN(l)||isNaN(r)||l<0||l>12||r<0||r>12){showError("Values must be 0-12.");return;}
+    function renderReview(){
+      let html="";
+      pendingTiles.forEach((t,i)=>{
+        const v=isVerified(t.left,t.right);
+        html+=`<div class="tile-row" id="trow-${i}">
+          <input type="number" min="0" max="12" value="${t.left}" onchange="updatePending(${i},'left',this.value)" />
+          <span class="sep">|</span>
+          <input type="number" min="0" max="12" value="${t.right}" onchange="updatePending(${i},'right',this.value)" />
+          <span class="total">= ${t.left+t.right}</span>
+          <span class="${v?'verified':'unverified'}">${v?'✓':'?'}</span>
+          <button class="del" onclick="removePending(${i})">&#x2715;</button>
+        </div>`;
+      });
+      tileRows.innerHTML=html;
+      const sum=pendingTiles.reduce((s,t)=>s+t.left+t.right,0);
+      reviewTotal.textContent=`Total: ${sum} dots across ${pendingTiles.length} tile${pendingTiles.length!==1?'s':''}`;
+    }
+
+    function updatePending(i,side,val){
+      pendingTiles[i][side]=parseInt(val)||0;
+      renderReview();
+    }
+
+    function removePending(i){
+      pendingTiles.splice(i,1);
+      if(!pendingTiles.length){reviewPanel.classList.remove("visible");return;}
+      renderReview();
+    }
+
+    async function confirmAll(){
+      if(!pendingTiles.length)return;
       showInfo("Saving...");
-      const verified=isVerified(l,r);
-      tiles.push({left:l,right:r,verified});
-      const ok=await writeSession(gameCode,tiles);
-      if(!ok){tiles.pop();return;}
-      renderHistory();showInfo("Added!");
-      setTimeout(()=>infoEl.style.display="none",1000);
+      const newTiles=pendingTiles.map(t=>({left:t.left,right:t.right,player:playerName,verified:isVerified(t.left,t.right)}));
+      const merged=[...tiles,...newTiles];
+      const ok=await writeSession(gameCode,merged);
+      if(!ok)return;
+      tiles=merged;renderScoreboard();
+      showInfo("Saved!");setTimeout(()=>infoEl.style.display="none",1200);
+      pendingTiles=[];reviewPanel.classList.remove("visible");
       preview.style.display="none";video.style.display="block";
       scanBtn.style.display="block";retakeBtn.style.display="none";
-      confirmCard.classList.remove("visible");hideMsg();
-    }
-
-    async function removeTile(i){
-      tiles.splice(i,1);
-      await writeSession(gameCode,tiles);
-      renderHistory();
-    }
-
-    function renderHistory(){
-      const total=tiles.reduce((s,t)=>s+t.left+t.right,0);
-      totalEl.textContent=total;
-      if(!tiles.length){historyList.innerHTML='<p class="empty">No tiles yet</p>';return;}
-      historyList.innerHTML=[...tiles].reverse().map((t,ri)=>{
-        const i=tiles.length-1-ri;
-        return `<div class="history-item"><strong>${t.left} | ${t.right}${t.verified?'<span class="verified-badge">✓</span>':''}</strong><span>= ${t.left+t.right}</span><button onclick="removeTile(${i})">&#x2715;</button></div>`;
-      }).join("");
+      hideMsg();
     }
 
     function showError(m){errorEl.textContent=m;errorEl.style.display="block";infoEl.style.display="none";}
     function showInfo(m){infoEl.textContent=m;infoEl.style.display="block";errorEl.style.display="none";}
     function hideMsg(){errorEl.style.display="none";infoEl.style.display="none";}
-
-    init();
   </script>
 </body>
 </html>
