@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Domino Dot Counter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      background: #0f0f0f;
+      color: #f0f0f0;
+      font-family: system-ui, sans-serif;
+      padding: 20px;
+    }
+    h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+    #setup { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 12px; }
+    #setup p { font-size: 0.9rem; color: #aaa; }
+    #setup input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 0.95rem;
+    }
+    #app { width: 100%; max-width: 480px; display: none; flex-direction: column; gap: 16px; align-items: center; }
+    .camera-wrapper {
+      position: relative;
+      width: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #1a1a1a;
+      aspect-ratio: 4/3;
+    }
+    #video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    #canvas { display: none; }
+    #preview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+    .controls { display: flex; gap: 10px; width: 100%; }
+    button {
+      flex: 1;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    #captureBtn { background: #fff; color: #000; }
+    #retakeBtn  { background: #2a2a2a; color: #fff; display: none; }
+    .spinner {
+      display: none;
+      width: 28px; height: 28px;
+      border: 3px solid #333;
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error { color: #ff6b6b; font-size: 0.9rem; text-align: center; display: none; }
+    .result-card {
+      width: 100%;
+      background: #1a1a1a;
+      border-radius: 16px;
+      padding: 20px 24px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .result-card.visible { display: flex; }
+    .result-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #666; }
+    .result-total { font-size: 4.5rem; font-weight: 800; line-height: 1; color: #fff; }
+    .result-breakdown { font-size: 0.9rem; color: #aaa; line-height: 1.5; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Domino Dot Counter</h1>
+
+  <div id="setup">
+    <p>Enter your Anthropic API key to get started. It's saved only in this browser.</p>
+    <input id="keyInput" type="password" placeholder="sk-ant-..." autocomplete="off" />
+    <button onclick="saveKey()" style="background:#fff;color:#000;border-radius:10px;padding:12px;border:none;font-weight:600;font-size:1rem;cursor:pointer;">
+      Continue
+    </button>
+  </div>
+
+  <div id="app">
+    <div class="camera-wrapper">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas"></canvas>
+      <img id="preview" alt="Captured frame" />
+    </div>
+    <div class="controls">
+      <button id="captureBtn">Count Dots</button>
+      <button id="retakeBtn">Retake</button>
+    </div>
+    <div class="spinner" id="spinner"></div>
+    <p class="error" id="error"></p>
+    <div class="result-card" id="resultCard">
+      <span class="result-label">Total dots</span>
+      <span class="result-total" id="totalDots"></span>
+      <span class="result-breakdown" id="breakdown"></span>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "https://api.anthropic.com/v1/messages";
+    let apiKey = localStorage.getItem("anthropic_key") || "";
+    if (apiKey) showApp();
+
+    function saveKey() {
+      const val = document.getElementById("keyInput").value.trim();
+      if (!val.startsWith("sk-ant-")) {
+        alert("That doesn't look like a valid Anthropic API key.");
+        return;
+      }
+      localStorage.setItem("anthropic_key", val);
+      apiKey = val;
+      showApp();
+    }
+
+    function showApp() {
+      document.getElementById("setup").style.display = "none";
+      document.getElementById("app").style.display = "flex";
+      startCamera();
+    }
+
+    const video      = document.getElementById("video");
+    const canvas     = document.getElementById("canvas");
+    const preview    = document.getElementById("preview");
+    const captureBtn = document.getElementById("captureBtn");
+    const retakeBtn  = document.getElementById("retakeBtn");
+    const spinner    = document.getElementById("spinner");
+    const errorEl    = document.getElementById("error");
+    const resultCard = document.getElementById("resultCard");
+    const totalEl    = document.getElementById("totalDots");
+    const breakdownEl = document.getElementById("breakdown");
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
+          audio: false,
+        });
+        video.srcObject = stream;
+      } catch {
+        showError("Camera access denied — allow camera permission and reload.");
+      }
+    }
+
+    captureBtn.addEventListener("click", async () => {
+      if (!video.videoWidth || !video.videoHeight) {
+        showError("Camera not ready yet — wait a moment and try again.");
+        return;
+      }
+      hideError();
+      resultCard.classList.remove("visible");
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      const base64 = dataUrl.split(",")[1];
+      if (!base64) {
+        showError("Failed to capture image — try again.");
+        return;
+      }
+      preview.src = dataUrl;
+      preview.style.display = "block";
+      video.style.display = "none";
+      captureBtn.style.display = "none";
+      retakeBtn.style.display = "block";
+      spinner.style.display = "block";
+      captureBtn.disabled = true;
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-opus-4-8",
+            max_tokens: 1024,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
+                { type: "text", text: 'Count the dots on these domino tiles very carefully. Go tile by tile: identify each domino, count the dots on its left half, count the dots on its right half, note it as e.g. "3+4=7". After going through every tile, sum them all up. Double-check your total. Reply with ONLY this JSON (no other text): {"total": <number>, "breakdown": "<each tile listed, e.g. 3+4, 1+6, 2+2>"}' },
+              ],
+            }],
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || "API error");
+        const text = data.content.find(b => b.type === "text")?.text || "";
+        const match = text.match(/\{[\s\S]*?\}/);
+        if (!match) throw new Error("Unexpected response: " + text);
+        const result = JSON.parse(match[0]);
+        totalEl.textContent = result.total;
+        breakdownEl.textContent = result.breakdown || "";
+        resultCard.classList.add("visible");
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        spinner.style.display = "none";
+        captureBtn.disabled = false;
+      }
+    });
+
+    retakeBtn.addEventListener("click", () => {
+      preview.style.display = "none";
+      video.style.display = "block";
+      captureBtn.style.display = "block";
+      retakeBtn.style.display = "none";
+      resultCard.classList.remove("visible");
+      hideError();
+    });
+
+    function showError(msg) { errorEl.textContent = msg; errorEl.style.display = "block"; }
+    function hideError()    { errorEl.style.display = "none"; }
+  </script>
+</body>
+</html>
