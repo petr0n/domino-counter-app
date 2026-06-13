@@ -6,206 +6,95 @@
   <title>Domino Dot Counter</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      min-height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      background: #0f0f0f;
-      color: #f0f0f0;
-      font-family: system-ui, sans-serif;
-      padding: 20px;
-    }
-    header {
-      width: 100%;
-      max-width: 480px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
-    a { color: #888; font-size: 0.85rem; text-decoration: none; }
-    .camera-wrapper {
-      position: relative;
-      width: 100%;
-      max-width: 480px;
-      border-radius: 16px;
-      overflow: hidden;
-      background: #1a1a1a;
-      aspect-ratio: 4/3;
-    }
-    #video { width: 100%; height: 100%; object-fit: cover; display: block; }
-    #canvas { display: none; }
-    #preview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
-    .controls { display: flex; gap: 10px; width: 100%; max-width: 480px; }
-    button {
-      flex: 1;
-      padding: 14px;
-      border: none;
-      border-radius: 12px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.15s, transform 0.1s;
-    }
-    button:active { transform: scale(0.97); }
-    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-    #captureBtn { background: #fff; color: #000; }
-    #retakeBtn  { background: #2a2a2a; color: #fff; display: none; }
-    .spinner {
-      display: none;
-      width: 28px; height: 28px;
-      border: 3px solid #333;
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .error { color: #ff6b6b; font-size: 0.9rem; text-align: center; display: none; max-width: 480px; }
-    .result-card {
-      width: 100%;
-      max-width: 480px;
-      background: #1a1a1a;
-      border-radius: 16px;
-      padding: 20px 24px;
-      display: none;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .result-card.visible { display: flex; }
-    .result-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #666; }
-    .result-total { font-size: 4.5rem; font-weight: 800; line-height: 1; color: #fff; }
-    .result-breakdown { font-size: 0.9rem; color: #aaa; line-height: 1.5; margin-top: 4px; }
+    body { min-height:100dvh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; background:#0f0f0f; color:#f0f0f0; font-family:system-ui,sans-serif; padding:20px; }
+    header { width:100%; max-width:480px; display:flex; align-items:center; justify-content:space-between; }
+    h1 { font-size:1.4rem; font-weight:700; letter-spacing:-0.02em; }
+    nav { display:flex; gap:14px; }
+    a { color:#888; font-size:0.85rem; text-decoration:none; }
+    .camera-wrapper { position:relative; width:100%; max-width:480px; border-radius:16px; overflow:hidden; background:#1a1a1a; aspect-ratio:4/3; }
+    #video { width:100%; height:100%; object-fit:cover; display:block; }
+    #canvas { display:none; }
+    #preview { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:none; }
+    .controls { display:flex; gap:10px; width:100%; max-width:480px; }
+    button { flex:1; padding:14px; border:none; border-radius:12px; font-size:1rem; font-weight:600; cursor:pointer; transition:opacity 0.15s,transform 0.1s; }
+    button:active { transform:scale(0.97); } button:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+    #captureBtn { background:#fff; color:#000; } #retakeBtn { background:#2a2a2a; color:#fff; display:none; }
+    .spinner { display:none; width:28px; height:28px; border:3px solid #333; border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .error { color:#ff6b6b; font-size:0.9rem; text-align:center; display:none; max-width:480px; }
+    .result-card { width:100%; max-width:480px; background:#1a1a1a; border-radius:16px; padding:20px 24px; display:none; flex-direction:column; gap:6px; }
+    .result-card.visible { display:flex; }
+    .result-label { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:#666; }
+    .result-total { font-size:4.5rem; font-weight:800; line-height:1; color:#fff; }
+    .result-breakdown { font-size:0.9rem; color:#aaa; line-height:1.5; margin-top:4px; }
   </style>
 </head>
 <body>
   <header>
     <h1>Domino Dot Counter</h1>
-    <a href="scan.html">Tile Scanner →</a>
+    <nav><a href="scan.html">Scanner</a><a href="catalog.html">Catalog</a></nav>
   </header>
-
   <div class="camera-wrapper">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
     <img id="preview" alt="Captured frame" />
   </div>
-
   <div class="controls">
     <button id="captureBtn">Count Dots</button>
     <button id="retakeBtn">Retake</button>
   </div>
-
   <div class="spinner" id="spinner"></div>
   <p class="error" id="error"></p>
-
   <div class="result-card" id="resultCard">
     <span class="result-label">Total dots</span>
     <span class="result-total" id="totalDots"></span>
     <span class="result-breakdown" id="breakdown"></span>
   </div>
-
   <script>
-    const _c1 = "c2stYW50LWFwaTAzLWtIT0xRcDFLUjhkRGsz";
-    const _c2 = "Vkd5R2dnc1VLckh2Q0RzaVNOaS1pUEhwS21a";
-    const _c3 = "a1lXZjFzY0EzMS1iRGlDOTVrNEJER0c5eEVz";
-    const _c4 = "c28tclhORlN0VkFLRnFST0VnLTEzSHZ1d0FB";
-    const _k = atob(_c1 + _c2 + _c3 + _c4);
-
-    const video      = document.getElementById("video");
-    const canvas     = document.getElementById("canvas");
-    const preview    = document.getElementById("preview");
-    const captureBtn = document.getElementById("captureBtn");
-    const retakeBtn  = document.getElementById("retakeBtn");
-    const spinner    = document.getElementById("spinner");
-    const errorEl    = document.getElementById("error");
-    const resultCard = document.getElementById("resultCard");
-    const totalEl    = document.getElementById("totalDots");
-    const breakdownEl = document.getElementById("breakdown");
-
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
-          audio: false,
+    const _c1="c2stYW50LWFwaTAzLWtIT0xRcDFLUjhkRGsz",_c2="Vkd5R2dnc1VLckh2Q0RzaVNOaS1pUEhwS21a",_c3="a1lXZjFzY0EzMS1iRGlDOTVrNEJER0c5eEVz",_c4="c28tclhORlN0VkFLRnFST0VnLTEzSHZ1d0FB";
+    const _k=atob(_c1+_c2+_c3+_c4);
+    const video=document.getElementById("video"),canvas=document.getElementById("canvas"),preview=document.getElementById("preview");
+    const captureBtn=document.getElementById("captureBtn"),retakeBtn=document.getElementById("retakeBtn");
+    const spinner=document.getElementById("spinner"),errorEl=document.getElementById("error");
+    const resultCard=document.getElementById("resultCard"),totalEl=document.getElementById("totalDots"),breakdownEl=document.getElementById("breakdown");
+    async function startCamera(){try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:960}},audio:false});video.srcObject=s;}catch{showError("Camera access denied.");}}
+    captureBtn.addEventListener("click",async()=>{
+      if(!video.videoWidth||!video.videoHeight){showError("Camera not ready.");return;}
+      hideError();resultCard.classList.remove("visible");
+      canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+      canvas.getContext("2d").drawImage(video,0,0);
+      const dataUrl=canvas.toDataURL("image/jpeg",0.92),base64=dataUrl.split(",")[1];
+      if(!base64){showError("Failed to capture.");return;}
+      preview.src=dataUrl;preview.style.display="block";video.style.display="none";
+      captureBtn.style.display="none";retakeBtn.style.display="block";
+      spinner.style.display="block";captureBtn.disabled=true;
+      try{
+        const res=await fetch("https://api.anthropic.com/v1/messages",{
+          method:"POST",
+          headers:{"Content-Type":"application/json","x-api-key":_k,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:1024,messages:[{role:"user",content:[
+            {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
+            {type:"text",text:'These are double-12 dominoes where each half can have 0 to 12 dots. Count the dots on every tile carefully. Go tile by tile: count dots on left half, count dots on right half, note as e.g. "8+11=19". Sum all dots. Reply ONLY with JSON: {"total": <number>, "breakdown": "<each tile, e.g. 8+11, 3+12>"}'}
+          ]}]})
         });
-        video.srcObject = stream;
-      } catch {
-        showError("Camera access denied — allow camera permission and reload.");
-      }
-    }
-
-    captureBtn.addEventListener("click", async () => {
-      if (!video.videoWidth || !video.videoHeight) {
-        showError("Camera not ready yet — wait a moment and try again.");
-        return;
-      }
-      hideError();
-      resultCard.classList.remove("visible");
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-      const base64 = dataUrl.split(",")[1];
-      if (!base64) { showError("Failed to capture image — try again."); return; }
-      preview.src = dataUrl;
-      preview.style.display = "block";
-      video.style.display = "none";
-      captureBtn.style.display = "none";
-      retakeBtn.style.display = "block";
-      spinner.style.display = "block";
-      captureBtn.disabled = true;
-      try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": _k,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
-          body: JSON.stringify({
-            model: "claude-opus-4-8",
-            max_tokens: 1024,
-            messages: [{
-              role: "user",
-              content: [
-                { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
-                { type: "text", text: 'These are double-12 dominoes where each half can have 0 to 12 dots (not standard 0-6). Count the dots on every tile very carefully. Go tile by tile: identify each domino, count the dots on its left half, count the dots on its right half — each half can have anywhere from 0 to 12 dots. Note each tile as e.g. "8+11=19". After going through every tile, sum all the dots. Double-check your total. Reply with ONLY this JSON (no other text): {"total": <number>, "breakdown": "<each tile listed, e.g. 8+11, 3+12, 0+7>"}' },
-              ],
-            }],
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error?.message || "API error");
-        const text = data.content.find(b => b.type === "text")?.text || "";
-        const match = text.match(/\{[\s\S]*?\}/);
-        if (!match) throw new Error("Unexpected response: " + text);
-        const result = JSON.parse(match[0]);
-        totalEl.textContent = result.total;
-        breakdownEl.textContent = result.breakdown || "";
+        const data=await res.json();
+        if(!res.ok)throw new Error(data.error?.message||"API error");
+        const text=data.content.find(b=>b.type==="text")?.text||"";
+        const match=text.match(/\{[\s\S]*?\}/);
+        if(!match)throw new Error("Unexpected response: "+text);
+        const result=JSON.parse(match[0]);
+        totalEl.textContent=result.total;breakdownEl.textContent=result.breakdown||"";
         resultCard.classList.add("visible");
-      } catch (err) {
-        showError(err.message);
-      } finally {
-        spinner.style.display = "none";
-        captureBtn.disabled = false;
-      }
+      }catch(err){showError(err.message);}
+      finally{spinner.style.display="none";captureBtn.disabled=false;}
     });
-
-    retakeBtn.addEventListener("click", () => {
-      preview.style.display = "none";
-      video.style.display = "block";
-      captureBtn.style.display = "block";
-      retakeBtn.style.display = "none";
-      resultCard.classList.remove("visible");
-      hideError();
+    retakeBtn.addEventListener("click",()=>{
+      preview.style.display="none";video.style.display="block";
+      captureBtn.style.display="block";retakeBtn.style.display="none";
+      resultCard.classList.remove("visible");hideError();
     });
-
-    function showError(msg) { errorEl.textContent = msg; errorEl.style.display = "block"; }
-    function hideError()    { errorEl.style.display = "none"; }
-
+    function showError(m){errorEl.textContent=m;errorEl.style.display="block";}
+    function hideError(){errorEl.style.display="none";}
     startCamera();
   </script>
 </body>
