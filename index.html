@@ -14,10 +14,12 @@
     .menu-btn:active { transform:scale(0.98); }
     .menu-btn .label { font-size:1.1rem; font-weight:700; }
     .menu-btn .sub   { font-size:0.8rem; opacity:0.7; }
-    .btn-new   { background:#fff; color:#000; }
-    .btn-join  { background:#1d4ed8; color:#fff; }
-    .btn-quick { background:#7c3aed; color:#fff; }
-    .btn-cat   { background:#1a1a1a; color:#f0f0f0; }
+    .btn-new  { background:#fff; color:#000; }
+    .btn-join { background:#1d4ed8; color:#fff; }
+    .btn-cat  { background:#1a1a1a; color:#f0f0f0; }
+    .small-links { display:flex; gap:16px; margin-top:4px; }
+    .small-links a { color:#444; font-size:0.8rem; text-decoration:none; }
+    .small-links a:hover { color:#888; }
   </style>
 </head>
 <body>
@@ -32,14 +34,13 @@
       <span class="label">Join Game</span>
       <span class="sub">Enter a code to join a session</span>
     </button>
-    <button class="menu-btn btn-quick" onclick="location.href='quick.html'">
-      <span class="label">Quick Scan</span>
-      <span class="sub">Scan tiles one at a time — no session needed</span>
-    </button>
     <button class="menu-btn btn-cat" onclick="location.href='catalog.html'">
       <span class="label">Catalog</span>
       <span class="sub">Scan your tile set once for accuracy</span>
     </button>
+  </div>
+  <div class="small-links">
+    <a href="quick.html">Quick Scan</a>
   </div>
 </body>
 </html>
