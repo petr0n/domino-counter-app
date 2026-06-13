@@ -291,9 +291,7 @@
       try {
         if (!cvReady) { showInfo("Loading vision library…"); await loadCV(); }
         showInfo("Counting pips…");
-        const result = countTile();
-        if (!result) throw new Error("Could not detect tile. Try better lighting or a flatter angle.");
-        const { left, right } = result;
+        const { left, right } = countTile();
         leftInput.value  = left;
         rightInput.value = right;
         const k = tileKey(left, right);
@@ -326,6 +324,7 @@
     function countTile() {
       let src = null, gray = null, blurred = null, binary = null;
       let contours = null, hier = null, bestApprox = null, warped = null;
+      let halfA = null, halfB = null;
       try {
         src = cv.imread(canvas);
 
@@ -373,7 +372,6 @@
           ? Math.floor(warped.cols / 2)
           : Math.floor(warped.rows / 2);
 
-        let halfA, halfB;
         if (landscape) {
           halfA = warped.roi(new cv.Rect(0, 0, mid, warped.rows));
           halfB = warped.roi(new cv.Rect(mid, 0, warped.cols - mid, warped.rows));
@@ -384,8 +382,6 @@
 
         const left  = countPips(halfA);
         const right = countPips(halfB);
-        halfA.delete();
-        halfB.delete();
         return { left, right };
 
       } finally {
@@ -397,6 +393,8 @@
         if (hier)       hier.delete();
         if (bestApprox) bestApprox.delete();
         if (warped)     warped.delete();
+        if (halfA)      halfA.delete();
+        if (halfB)      halfB.delete();
       }
     }
 

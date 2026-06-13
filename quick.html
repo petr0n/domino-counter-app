@@ -195,7 +195,7 @@
       if (!analysing || !cvReady || !video.videoWidth) { scheduleAnalysis(); return; }
 
       let src = null, small = null, gray = null, lap = null, mM = null, sM = null;
-      let binary = null, contours = null, hier = null;
+      let binary = null, contours = null, hier = null, blurSmall = null;
       try {
         src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
         vcap.read(src);
@@ -223,12 +223,11 @@
         // Quick tile-count estimate on the downsampled frame
         let tileCount = 0;
         if (brightness >= 55 && brightness <= 215 && sharpness >= 4) {
-          let blurSmall = new cv.Mat();
+          blurSmall = new cv.Mat();
           cv.GaussianBlur(gray, blurSmall, new cv.Size(5, 5), 0);
           binary = new cv.Mat();
           cv.adaptiveThreshold(blurSmall, binary, 255,
             cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 4);
-          blurSmall.delete();
           contours = new cv.MatVector();
           hier = new cv.Mat();
           cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -266,9 +265,10 @@
         if (lap)      lap.delete();
         if (mM)       mM.delete();
         if (sM)       sM.delete();
-        if (binary)   binary.delete();
-        if (contours) contours.delete();
-        if (hier)     hier.delete();
+        if (binary)    binary.delete();
+        if (contours)  contours.delete();
+        if (hier)      hier.delete();
+        if (blurSmall) blurSmall.delete();
       }
       scheduleAnalysis();
     }
@@ -402,7 +402,7 @@
           .sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
 
         for (const quad of selected) {
-          let warped = null;
+          let warped = null, halfA = null, halfB = null;
           try {
             warped = perspectiveWarp(gray, quad.pts);
             const landscape = warped.cols >= warped.rows;
@@ -410,7 +410,6 @@
               ? Math.floor(warped.cols / 2)
               : Math.floor(warped.rows / 2);
 
-            let halfA, halfB;
             if (landscape) {
               halfA = warped.roi(new cv.Rect(0, 0, mid, warped.rows));
               halfB = warped.roi(new cv.Rect(mid, 0, warped.cols - mid, warped.rows));
@@ -418,12 +417,10 @@
               halfA = warped.roi(new cv.Rect(0, 0, warped.cols, mid));
               halfB = warped.roi(new cv.Rect(0, mid, warped.cols, warped.rows - mid));
             }
-            const left  = countPips(halfA);
-            const right = countPips(halfB);
-            halfA.delete();
-            halfB.delete();
-            results.push({ left, right });
+            results.push({ left: countPips(halfA), right: countPips(halfB) });
           } finally {
+            if (halfA)  halfA.delete();
+            if (halfB)  halfB.delete();
             if (warped) warped.delete();
           }
         }
