@@ -85,14 +85,12 @@
 
   <div class="tile-grid" id="tileGrid"></div>
 
+  <script src="config.js"></script>
   <script>
-    const _c1="c2stYW50LWFwaTAzLWtIT0xRcDFLUjhkRGsz",_c2="Vkd5R2dnc1VLckh2Q0RzaVNOaS1pUEhwS21a",_c3="a1lXZjFzY0EzMS1iRGlDOTVrNEJER0c5eEVz",_c4="c28tclhORlN0VkFLRnFST0VnLTEzSHZ1d0FB";
-    const _ak=atob(_c1+_c2+_c3+_c4);
-    const _g1="Z2hwX2hDOXZwRl",_g2="BlcnJza1R0NXNJ",_g3="cDVHSmpuc0VlWG",_g4="1IcTMzVTV3Vg==";
-    const _gk=atob(_g1+_g2+_g3+_g4);
+    const PROXY=window.PROXY_URL;
     const OWNER="petr0n",REPO="japan-2026",CATALOG_PATH="domino-counter/catalog.json";
-    const GH="https://api.github.com";
-    const GH_HEADERS={Authorization:`token ${_gk}`,Accept:"application/vnd.github.v3+json","Content-Type":"application/json"};
+    const GH=`${PROXY}/github`;
+    const GH_HEADERS={Accept:"application/vnd.github.v3+json","Content-Type":"application/json"};
 
     let catalog={tiles:{},count:0};
     let catalogSha=null;
@@ -138,9 +136,9 @@
       scanBtn.style.display="none";retakeBtn.style.display="block";
       spinner.style.display="block";scanBtn.disabled=true;
       try{
-        const res=await fetch("https://api.anthropic.com/v1/messages",{
+        const res=await fetch(`${PROXY}/anthropic`,{
           method:"POST",
-          headers:{"Content-Type":"application/json","x-api-key":_ak,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+          headers:{"Content-Type":"application/json"},
           body:JSON.stringify({model:"claude-opus-4-8",max_tokens:256,messages:[{role:"user",content:[
             {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
             {type:"text",text:"This is a single domino tile from a double-12 set. Each half can show 0 to 12 dots. Identify the LEFT half value and the RIGHT half value. Reply ONLY with JSON: {\"left\": <0-12>, \"right\": <0-12>}"}

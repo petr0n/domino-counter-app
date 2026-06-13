@@ -49,6 +49,7 @@
   <!-- OpenCV.js must be defined before the script loads -->
   <script>var Module={onRuntimeInitialized:function(){window._cvReady=true;var b=document.getElementById('scanBtn');if(b&&window._streamReady){b.disabled=false;b.textContent='Scan Tiles';}}};</script>
   <script async src="https://docs.opencv.org/4.8.0/opencv.js"></script>
+  <script src="config.js"></script>
 </head>
 <body>
   <header>
@@ -87,8 +88,7 @@
   <button class="reset-btn" onclick="resetAll()">Reset</button>
 
   <script>
-    const _c1="c2stYW50LWFwaTAzLWtIT0xRcDFLUjhkRGsz",_c2="Vkd5R2dnc1VLckh2Q0RzaVNOaS1pUEhwS21a",_c3="a1lXZjFzY0EzMS1iRGlDOTVrNEJER0c5eEVz",_c4="c28tclhORlN0VkFLRnFST0VnLTEzSHZ1d0FB";
-    const _ak=atob(_c1+_c2+_c3+_c4);
+    const PROXY=window.PROXY_URL;
 
     let tiles=[], pendingTiles=[];
     const video=document.getElementById("video"),canvas=document.getElementById("canvas"),preview=document.getElementById("preview");
@@ -189,9 +189,9 @@
 
     // ── Claude fallback ────────────────────────────────────────────────────────
     async function callClaude(b64){
-      const res=await fetch("https://api.anthropic.com/v1/messages",{
+      const res=await fetch(`${PROXY}/anthropic`,{
         method:"POST",
-        headers:{"Content-Type":"application/json","x-api-key":_ak,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        headers:{"Content-Type":"application/json"},
         body:JSON.stringify({model:"claude-opus-4-8",max_tokens:4096,thinking:{type:"adaptive"},messages:[{role:"user",content:[
           {type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},
           {type:"text",text:"These are domino tiles from a double-12 set. Each half can show 0 to 12 dots. Count each half's dots row by row, verify by recounting, then reply ONLY with JSON: {\"tiles\":[{\"left\":<n>,\"right\":<n>},...]}"}
