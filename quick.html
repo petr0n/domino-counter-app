@@ -111,9 +111,9 @@
         const res=await fetch("https://api.anthropic.com/v1/messages",{
           method:"POST",
           headers:{"Content-Type":"application/json","x-api-key":_ak,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:2048,messages:[{role:"user",content:[
+          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:4096,thinking:{type:"adaptive"},messages:[{role:"user",content:[
             {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
-            {type:"text",text:"These are domino tiles from a double-12 set. The dots are colored — each number 0-12 has its own color. Identify EVERY tile visible in the image. For each tile give the left half value and right half value based on dot count and color. Reply ONLY with JSON: {\"tiles\": [{\"left\": <0-12>, \"right\": <0-12>}, ...]}"}
+            {type:"text",text:"These are domino tiles from a double-12 set, so each half can show anywhere from 0 to 12 dots (NOT the standard 0-6). Ignore the dot colors entirely — they are decorative and must not affect the count. Identify EVERY tile in the image. Work one tile at a time, and for each tile count its two halves separately, going dot by dot so none are missed or double-counted. Take your time and count carefully. Then give the left-half value and right-half value. Reply ONLY with JSON: {\"tiles\": [{\"left\": <0-12>, \"right\": <0-12>}, ...]}"}
           ]}]})
         });
         const data=await res.json();
