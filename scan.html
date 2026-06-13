@@ -9,7 +9,6 @@
     body { min-height:100dvh; display:flex; flex-direction:column; align-items:center; gap:14px; background:#0f0f0f; color:#f0f0f0; font-family:system-ui,sans-serif; padding:20px 20px 40px; }
     header { width:100%; max-width:480px; display:flex; align-items:center; justify-content:space-between; }
     h1 { font-size:1.4rem; font-weight:700; }
-    nav { display:flex; gap:12px; }
     a { color:#888; font-size:0.85rem; text-decoration:none; }
 
     /* Setup card */
@@ -19,10 +18,10 @@
     .row { display:flex; gap:8px; align-items:center; }
     .code-display { font-size:1.5rem; font-weight:800; letter-spacing:0.12em; color:#555; flex:1; }
     .code-display.active { color:#fff; }
-    .btn-sm { padding:10px 14px; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer; white-space:nowrap; }
-    .btn-new { background:#fff; color:#000; }
-    .btn-join { background:#3b82f6; color:#fff; }
-    .btn-refresh { background:#2a2a2a; color:#aaa; }
+    .btn-sm { padding:10px 16px; border:none; border-radius:8px; font-size:0.9rem; font-weight:600; cursor:pointer; white-space:nowrap; }
+    .btn-primary { background:#fff; color:#000; }
+    .btn-blue    { background:#1d4ed8; color:#fff; }
+    .btn-ghost   { background:#2a2a2a; color:#aaa; }
 
     /* Scoreboard */
     .scoreboard { width:100%; max-width:480px; background:#1a1a1a; border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:8px; }
@@ -68,26 +67,28 @@
 </head>
 <body>
   <header>
-    <h1>Tile Scanner</h1>
-    <nav><a href="catalog.html">Catalog</a><a href="index.html">← Home</a></nav>
+    <h1 id="pageTitle">Tile Scanner</h1>
+    <a href="index.html">← Home</a>
   </header>
 
-  <div class="setup-card">
+  <div class="setup-card" id="setupCard">
     <input id="nameInput" placeholder="Your name" />
-    <div class="row">
+    <!-- new game row -->
+    <div id="newRow" class="row" style="display:none">
       <span id="codeDisplay" class="code-display">------</span>
-      <button class="btn-sm btn-new" onclick="newGame()">New Game</button>
-      <button class="btn-sm btn-refresh" onclick="loadSession()">Refresh</button>
+      <button class="btn-sm btn-primary" onclick="newGame()">Start Game</button>
+      <button class="btn-sm btn-ghost" onclick="loadSession()">Refresh</button>
     </div>
-    <div class="row">
+    <!-- join game row -->
+    <div id="joinRow" class="row" style="display:none">
       <input id="joinInput" placeholder="Game code" maxlength="6" style="text-transform:uppercase;letter-spacing:0.1em" />
-      <button class="btn-sm btn-join" onclick="joinGame()">Join</button>
+      <button class="btn-sm btn-blue" onclick="joinGame()">Join</button>
     </div>
   </div>
 
   <div class="scoreboard" id="scoreboard">
     <div class="scoreboard-title">Scoreboard</div>
-    <div id="scoreRows"><p class="no-scores">No game yet</p></div>
+    <div id="scoreRows"><p class="no-scores">Waiting for game…</p></div>
   </div>
 
   <div class="camera-wrapper">
@@ -119,54 +120,64 @@
     const GH="https://api.github.com";
     const GH_H={Authorization:`token ${_gk}`,Accept:"application/vnd.github.v3+json","Content-Type":"application/json"};
 
-    let gameCode=null, playerName="", tiles=[], catalog={tiles:{}}, pendingTiles=[];
+    const mode=new URLSearchParams(location.search).get("mode")||"new";
+    let gameCode=null,playerName="",tiles=[],catalog={tiles:{}},pendingTiles=[];
+
+    // Set up UI for mode
+    if(mode==="new"){
+      document.getElementById("pageTitle").textContent="New Game";
+      document.getElementById("newRow").style.display="flex";
+    } else {
+      document.getElementById("pageTitle").textContent="Join Game";
+      document.getElementById("joinRow").style.display="flex";
+    }
 
     const video=document.getElementById("video"),canvas=document.getElementById("canvas"),preview=document.getElementById("preview");
     const scanBtn=document.getElementById("scanBtn"),retakeBtn=document.getElementById("retakeBtn");
     const spinner=document.getElementById("spinner"),errorEl=document.getElementById("error"),infoEl=document.getElementById("info");
     const reviewPanel=document.getElementById("reviewPanel"),tileRows=document.getElementById("tileRows"),reviewTotal=document.getElementById("reviewTotal");
 
-    // Camera
     navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:960}},audio:false})
       .then(s=>video.srcObject=s).catch(()=>showError("Camera access denied."));
 
-    // Load catalog
     fetch(`${GH}/repos/${OWNER}/${REPO}/contents/domino-counter/catalog.json`,{headers:GH_H})
       .then(r=>r.ok?r.json():null).then(j=>{if(j)catalog=JSON.parse(atob(j.content.replace(/\n/g,"")));});
 
     function tileKey(l,r){return `${Math.min(l,r)}-${Math.max(l,r)}`;}
     function isVerified(l,r){return !!catalog.tiles?.[tileKey(l,r)];}
     function genCode(){return Math.random().toString(36).substring(2,8).toUpperCase();}
-    function getName(){return document.getElementById("nameInput").value.trim();}
+    function getName(){const n=document.getElementById("nameInput").value.trim();if(!n)showError("Enter your name first.");return n;}
 
     async function newGame(){
-      const name=getName();if(!name){showError("Enter your name first.");return;}
-      playerName=name;const code=genCode();showInfo("Creating...");
+      const name=getName();if(!name)return;
+      playerName=name;showInfo("Creating game...");
+      const code=genCode();
       const ok=await writeSession(code,[]);if(!ok)return;
-      setGame(code,[]);showInfo("Share code: "+code);
+      setGame(code,[]);
+      const el=document.getElementById("codeDisplay");
+      el.textContent=code;el.classList.add("active");
+      showInfo("Share this code: "+code);
     }
 
     async function joinGame(){
-      const name=getName();if(!name){showError("Enter your name first.");return;}
+      const name=getName();if(!name)return;
       const code=document.getElementById("joinInput").value.trim().toUpperCase();
       if(code.length!==6){showError("Enter a 6-letter code.");return;}
       playerName=name;showInfo("Joining...");
       const data=await readSession(code);if(data===null){showError("Game not found.");return;}
-      setGame(code,data.tiles||[]);showInfo("Joined "+code);
+      setGame(code,data.tiles||[]);showInfo("Joined game "+code);
     }
 
     async function loadSession(){
-      if(!gameCode){showError("Join or create a game first.");return;}
+      if(!gameCode){showError("Start a game first.");return;}
       showInfo("Refreshing...");
-      const data=await readSession(gameCode);if(data===null){showError("Could not load.");return;}
+      const data=await readSession(gameCode);if(!data){showError("Could not load.");return;}
       tiles=data.tiles||[];renderScoreboard();
       showInfo("Updated!");setTimeout(()=>infoEl.style.display="none",1200);
     }
 
     function setGame(code,t){
       gameCode=code;tiles=t;
-      const el=document.getElementById("codeDisplay");
-      el.textContent=code;el.classList.add("active");
       scanBtn.disabled=false;renderScoreboard();
     }
 
@@ -187,8 +198,7 @@
             <div class="score-tiles">${scores[n].count} tile${scores[n].count!==1?'s':''}</div>
           </div>
           <span class="score-val">${scores[n].total}</span>
-        </div>
-      `).join("");
+        </div>`).join("");
     }
 
     async function readSession(code){
@@ -210,10 +220,9 @@
       return true;
     }
 
-    // Scan all tiles at once
     scanBtn.addEventListener("click",async()=>{
-      if(!gameCode){showError("Join or create a game first.");return;}
-      if(!playerName){playerName=getName();if(!playerName){showError("Enter your name first.");return;}}
+      if(!gameCode){showError("Start or join a game first.");return;}
+      if(!playerName){playerName=getName();if(!playerName)return;}
       if(!video.videoWidth){showError("Camera not ready.");return;}
       hideMsg();reviewPanel.classList.remove("visible");
       canvas.width=video.videoWidth;canvas.height=video.videoHeight;
@@ -228,7 +237,7 @@
           headers:{"Content-Type":"application/json","x-api-key":_ak,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
           body:JSON.stringify({model:"claude-opus-4-8",max_tokens:1024,messages:[{role:"user",content:[
             {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
-            {type:"text",text:"These are domino tiles from a double-12 set. Each half shows 0 to 12 dots. Identify EVERY tile in the image. For each tile give the left half value and right half value. Reply ONLY with JSON: {\"tiles\": [{\"left\": <0-12>, \"right\": <0-12>}, ...]}"}
+            {type:"text",text:"These are domino tiles from a double-12 set. Each half shows 0 to 12 dots. Identify EVERY tile in the image and give the left half value and right half value for each one. Reply ONLY with JSON: {\"tiles\": [{\"left\": <0-12>, \"right\": <0-12>}, ...]}"}
           ]}]})
         });
         const data=await res.json();
@@ -239,8 +248,7 @@
         const {tiles:found}=JSON.parse(match[0]);
         if(!found||!found.length)throw new Error("No tiles found in image.");
         pendingTiles=found.map(t=>({left:t.left,right:t.right}));
-        renderReview();
-        reviewPanel.classList.add("visible");
+        renderReview();reviewPanel.classList.add("visible");
       }catch(err){showError(err.message);}
       finally{spinner.style.display="none";scanBtn.disabled=false;}
     });
@@ -255,7 +263,7 @@
       let html="";
       pendingTiles.forEach((t,i)=>{
         const v=isVerified(t.left,t.right);
-        html+=`<div class="tile-row" id="trow-${i}">
+        html+=`<div class="tile-row">
           <input type="number" min="0" max="12" value="${t.left}" onchange="updatePending(${i},'left',this.value)" />
           <span class="sep">|</span>
           <input type="number" min="0" max="12" value="${t.right}" onchange="updatePending(${i},'right',this.value)" />
@@ -269,30 +277,20 @@
       reviewTotal.textContent=`Total: ${sum} dots across ${pendingTiles.length} tile${pendingTiles.length!==1?'s':''}`;
     }
 
-    function updatePending(i,side,val){
-      pendingTiles[i][side]=parseInt(val)||0;
-      renderReview();
-    }
-
-    function removePending(i){
-      pendingTiles.splice(i,1);
-      if(!pendingTiles.length){reviewPanel.classList.remove("visible");return;}
-      renderReview();
-    }
+    function updatePending(i,side,val){pendingTiles[i][side]=parseInt(val)||0;renderReview();}
+    function removePending(i){pendingTiles.splice(i,1);if(!pendingTiles.length){reviewPanel.classList.remove("visible");return;}renderReview();}
 
     async function confirmAll(){
       if(!pendingTiles.length)return;
       showInfo("Saving...");
       const newTiles=pendingTiles.map(t=>({left:t.left,right:t.right,player:playerName,verified:isVerified(t.left,t.right)}));
       const merged=[...tiles,...newTiles];
-      const ok=await writeSession(gameCode,merged);
-      if(!ok)return;
+      const ok=await writeSession(gameCode,merged);if(!ok)return;
       tiles=merged;renderScoreboard();
       showInfo("Saved!");setTimeout(()=>infoEl.style.display="none",1200);
       pendingTiles=[];reviewPanel.classList.remove("visible");
       preview.style.display="none";video.style.display="block";
-      scanBtn.style.display="block";retakeBtn.style.display="none";
-      hideMsg();
+      scanBtn.style.display="block";retakeBtn.style.display="none";hideMsg();
     }
 
     function showError(m){errorEl.textContent=m;errorEl.style.display="block";infoEl.style.display="none";}
