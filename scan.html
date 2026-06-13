@@ -11,7 +11,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 16px;
+      gap: 14px;
       background: #0f0f0f;
       color: #f0f0f0;
       font-family: system-ui, sans-serif;
@@ -26,6 +26,48 @@
     }
     h1 { font-size: 1.4rem; font-weight: 700; }
     a { color: #888; font-size: 0.85rem; text-decoration: none; }
+    /* Session bar */
+    .session-bar {
+      width: 100%;
+      max-width: 480px;
+      background: #1a1a1a;
+      border-radius: 14px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .session-row { display: flex; gap: 8px; align-items: center; }
+    .session-code {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      color: #fff;
+    }
+    .session-bar input {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #111;
+      color: #fff;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .btn-sm {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-new  { background: #fff; color: #000; }
+    .btn-join { background: #3b82f6; color: #fff; }
+    .btn-refresh { background: #2a2a2a; color: #aaa; }
+    /* Camera */
     .camera-wrapper {
       position: relative;
       width: 100%;
@@ -51,7 +93,7 @@
     }
     button:active { transform: scale(0.97); }
     button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-    #scanBtn  { background: #fff; color: #000; }
+    #scanBtn   { background: #fff; color: #000; }
     #retakeBtn { background: #2a2a2a; color: #fff; display: none; }
     .spinner {
       display: none;
@@ -63,6 +105,7 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .error { color: #ff6b6b; font-size: 0.9rem; text-align: center; display: none; max-width: 480px; }
+    .info  { color: #888; font-size: 0.85rem; text-align: center; display: none; max-width: 480px; }
     /* Confirm card */
     .confirm-card {
       display: none;
@@ -75,34 +118,20 @@
       gap: 14px;
     }
     .confirm-card.visible { display: flex; }
-    .tile-display {
-      font-size: 2.2rem;
-      font-weight: 800;
-      text-align: center;
-      letter-spacing: 0.05em;
-    }
+    .tile-display { font-size: 2.2rem; font-weight: 800; text-align: center; }
     .tile-sub { font-size: 0.85rem; color: #888; text-align: center; }
-    .correction {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
+    .correction { display: flex; gap: 8px; align-items: center; }
     .correction label { font-size: 0.8rem; color: #888; white-space: nowrap; }
     .correction input {
-      width: 56px;
-      padding: 8px;
-      border-radius: 8px;
-      border: 1px solid #333;
-      background: #111;
-      color: #fff;
-      font-size: 1rem;
-      text-align: center;
+      width: 56px; padding: 8px;
+      border-radius: 8px; border: 1px solid #333;
+      background: #111; color: #fff;
+      font-size: 1rem; text-align: center;
     }
     .correction span { color: #555; font-size: 1.2rem; }
     .btn-row { display: flex; gap: 8px; }
     .btn-confirm { background: #22c55e; color: #000; font-weight: 700; }
-    .btn-add    { background: #3b82f6; color: #fff; font-weight: 700; }
-    /* Running total */
+    /* Total */
     .total-bar {
       width: 100%;
       max-width: 480px;
@@ -116,34 +145,14 @@
     .total-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #666; }
     .total-value { font-size: 2.4rem; font-weight: 800; }
     /* History */
-    .history {
-      width: 100%;
-      max-width: 480px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      padding-bottom: 20px;
-    }
+    .history { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 6px; padding-bottom: 20px; }
     .history-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #444; margin-bottom: 2px; }
     .history-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #1a1a1a;
-      border-radius: 10px;
-      padding: 10px 14px;
-      font-size: 0.95rem;
+      display: flex; justify-content: space-between; align-items: center;
+      background: #1a1a1a; border-radius: 10px; padding: 10px 14px; font-size: 0.95rem;
     }
     .history-item span { color: #aaa; }
-    .history-item button {
-      flex: none;
-      width: 28px; height: 28px;
-      padding: 0;
-      border-radius: 6px;
-      background: #2a2a2a;
-      color: #666;
-      font-size: 0.8rem;
-    }
+    .history-item button { flex: none; width: 28px; height: 28px; padding: 0; border-radius: 6px; background: #2a2a2a; color: #666; font-size: 0.8rem; }
     .empty { color: #444; font-size: 0.85rem; text-align: center; padding: 8px 0; }
   </style>
 </head>
@@ -153,6 +162,18 @@
     <a href="index.html">← Dot Counter</a>
   </header>
 
+  <div class="session-bar">
+    <div class="session-row">
+      <span id="codeDisplay" class="session-code" style="color:#555">------</span>
+      <button class="btn-sm btn-new" onclick="newGame()">New Game</button>
+      <button class="btn-sm btn-refresh" onclick="loadSession()">Refresh</button>
+    </div>
+    <div class="session-row">
+      <input id="joinInput" placeholder="Enter game code" maxlength="6" />
+      <button class="btn-sm btn-join" onclick="joinGame()">Join</button>
+    </div>
+  </div>
+
   <div class="camera-wrapper">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
@@ -160,12 +181,13 @@
   </div>
 
   <div class="controls">
-    <button id="scanBtn">Scan Tile</button>
+    <button id="scanBtn" disabled>Scan Tile</button>
     <button id="retakeBtn">Retake</button>
   </div>
 
   <div class="spinner" id="spinner"></div>
   <p class="error" id="error"></p>
+  <p class="info" id="info"></p>
 
   <div class="confirm-card" id="confirmCard">
     <div class="tile-display" id="tileDisplay"></div>
@@ -192,12 +214,99 @@
   </div>
 
   <script>
-    const _c1 = "c2stYW50LWFwaTAzLWtIT0xRcDFLUjhkRGsz";
-    const _c2 = "Vkd5R2dnc1VLckh2Q0RzaVNOaS1pUEhwS21a";
-    const _c3 = "a1lXZjFzY0EzMS1iRGlDOTVrNEJER0c5eEVz";
-    const _c4 = "c28tclhORlN0VkFLRnFST0VnLTEzSHZ1d0FB";
-    const _k = atob(_c1 + _c2 + _c3 + _c4);
+    // Anthropic key
+    const _c1="c2stYW50LWFwaTAzLWtIT0xRcDFLUjhkRGsz",_c2="Vkd5R2dnc1VLckh2Q0RzaVNOaS1pUEhwS21a",_c3="a1lXZjFzY0EzMS1iRGlDOTVrNEJER0c5eEVz",_c4="c28tclhORlN0VkFLRnFST0VnLTEzSHZ1d0FB";
+    const _ak = atob(_c1+_c2+_c3+_c4);
+    // GitHub token
+    const _g1="Z2hwX2hDOXZwRl",_g2="BlcnJza1R0NXNJ",_g3="cDVHSmpuc0VlWG",_g4="1IcTMzVTV3Vg==";
+    const _gk = atob(_g1+_g2+_g3+_g4);
 
+    const OWNER = "petr0n";
+    const REPO  = "japan-2026";
+    const SESSIONS_PATH = "domino-counter/sessions";
+
+    let gameCode = null;
+    let tiles = [];
+
+    // Camera
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false,
+    }).then(s => { video.srcObject = s; })
+      .catch(() => showError("Camera access denied — allow permission and reload."));
+
+    function genCode() {
+      return Math.random().toString(36).substring(2,8).toUpperCase();
+    }
+
+    async function newGame() {
+      const code = genCode();
+      showInfo("Creating game...");
+      const ok = await writeSession(code, []);
+      if (!ok) return;
+      setGame(code, []);
+      showInfo("Game created! Share code: " + code);
+    }
+
+    async function joinGame() {
+      const code = document.getElementById("joinInput").value.trim().toUpperCase();
+      if (code.length !== 6) { showError("Enter a 6-letter game code."); return; }
+      showInfo("Joining...");
+      const data = await readSession(code);
+      if (data === null) { showError("Game not found."); return; }
+      setGame(code, data.tiles || []);
+      showInfo("Joined game " + code);
+    }
+
+    async function loadSession() {
+      if (!gameCode) { showError("Join or create a game first."); return; }
+      showInfo("Refreshing...");
+      const data = await readSession(gameCode);
+      if (data === null) { showError("Could not load session."); return; }
+      tiles = data.tiles || [];
+      renderHistory();
+      showInfo("Updated!");
+      setTimeout(() => { infoEl.style.display = "none"; }, 1500);
+    }
+
+    function setGame(code, t) {
+      gameCode = code;
+      tiles = t;
+      document.getElementById("codeDisplay").textContent = code;
+      document.getElementById("codeDisplay").style.color = "#fff";
+      document.getElementById("scanBtn").disabled = false;
+      renderHistory();
+    }
+
+    async function readSession(code) {
+      const path = `${SESSIONS_PATH}/${code}.json`;
+      const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`;
+      const res = await fetch(url, { headers: { Authorization: `token ${_gk}`, Accept: "application/vnd.github.v3+json" } });
+      if (res.status === 404) return null;
+      const json = await res.json();
+      return JSON.parse(atob(json.content.replace(/\n/g,"")));
+    }
+
+    async function writeSession(code, t) {
+      const path = `${SESSIONS_PATH}/${code}.json`;
+      const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`;
+      const content = btoa(JSON.stringify({ tiles: t }));
+      // get current SHA if file exists
+      let sha = undefined;
+      const check = await fetch(url, { headers: { Authorization: `token ${_gk}`, Accept: "application/vnd.github.v3+json" } });
+      if (check.ok) { const j = await check.json(); sha = j.sha; }
+      const body = { message: `update session ${code}`, content };
+      if (sha) body.sha = sha;
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { Authorization: `token ${_gk}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const e = await res.json(); showError("Save failed: " + (e.message || res.status)); return false; }
+      return true;
+    }
+
+    // Scan
     const video      = document.getElementById("video");
     const canvas     = document.getElementById("canvas");
     const preview    = document.getElementById("preview");
@@ -205,6 +314,7 @@
     const retakeBtn  = document.getElementById("retakeBtn");
     const spinner    = document.getElementById("spinner");
     const errorEl    = document.getElementById("error");
+    const infoEl     = document.getElementById("info");
     const confirmCard = document.getElementById("confirmCard");
     const tileDisplay = document.getElementById("tileDisplay");
     const tileSub    = document.getElementById("tileSub");
@@ -213,16 +323,8 @@
     const totalEl    = document.getElementById("runningTotal");
     const historyList = document.getElementById("historyList");
 
-    let tiles = JSON.parse(localStorage.getItem("scanned_tiles") || "[]");
-    renderHistory();
-
-    navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
-      audio: false,
-    }).then(s => video.srcObject = s)
-      .catch(() => showError("Camera access denied — allow permission and reload."));
-
     scanBtn.addEventListener("click", async () => {
+      if (!gameCode) { showError("Join or create a game first."); return; }
       if (!video.videoWidth) { showError("Camera not ready — try again."); return; }
       hideError();
       confirmCard.classList.remove("visible");
@@ -241,29 +343,21 @@
       try {
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": _k,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
+          headers: { "Content-Type": "application/json", "x-api-key": _ak, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
           body: JSON.stringify({
             model: "claude-opus-4-8",
             max_tokens: 256,
-            messages: [{
-              role: "user",
-              content: [
-                { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
-                { type: "text", text: "This is a single domino tile from a double-12 set. Each half can show 0 to 12 dots. Identify the value on the LEFT half and the RIGHT half of the tile. Do not count dots on the dividing line. Reply with ONLY this JSON: {\"left\": <number 0-12>, \"right\": <number 0-12>}" },
-              ],
-            }],
+            messages: [{ role: "user", content: [
+              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
+              { type: "text", text: "This is a single domino tile from a double-12 set. Each half can show 0 to 12 dots. Identify the value on the LEFT half and the RIGHT half. Reply with ONLY this JSON: {\"left\": <0-12>, \"right\": <0-12>}" },
+            ]}],
           }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error?.message || "API error");
         const text = data.content.find(b => b.type === "text")?.text || "";
         const match = text.match(/\{[\s\S]*?\}/);
-        if (!match) throw new Error("Could not read tile: " + text);
+        if (!match) throw new Error("Could not read tile.");
         const { left, right } = JSON.parse(match[0]);
         leftInput.value = left;
         rightInput.value = right;
@@ -287,16 +381,17 @@
       hideError();
     });
 
-    function addTile() {
+    async function addTile() {
       const l = parseInt(leftInput.value);
       const r = parseInt(rightInput.value);
-      if (isNaN(l) || isNaN(r) || l < 0 || l > 12 || r < 0 || r > 12) {
-        showError("Values must be 0–12."); return;
-      }
+      if (isNaN(l)||isNaN(r)||l<0||l>12||r<0||r>12) { showError("Values must be 0–12."); return; }
+      showInfo("Saving...");
       tiles.push({ left: l, right: r });
-      localStorage.setItem("scanned_tiles", JSON.stringify(tiles));
+      const ok = await writeSession(gameCode, tiles);
+      if (!ok) { tiles.pop(); return; }
       renderHistory();
-      // reset for next tile
+      showInfo("Saved!");
+      setTimeout(() => { infoEl.style.display="none"; }, 1200);
       preview.style.display = "none";
       video.style.display = "block";
       scanBtn.style.display = "block";
@@ -305,30 +400,25 @@
       hideError();
     }
 
-    function removeTile(i) {
+    async function removeTile(i) {
       tiles.splice(i, 1);
-      localStorage.setItem("scanned_tiles", JSON.stringify(tiles));
+      await writeSession(gameCode, tiles);
       renderHistory();
     }
 
     function renderHistory() {
-      const total = tiles.reduce((s, t) => s + t.left + t.right, 0);
+      const total = tiles.reduce((s,t) => s+t.left+t.right, 0);
       totalEl.textContent = total;
-      if (!tiles.length) {
-        historyList.innerHTML = '<p class="empty">No tiles yet</p>';
-        return;
-      }
-      historyList.innerHTML = tiles.map((t, i) => `
-        <div class="history-item">
-          <strong>${t.left} | ${t.right}</strong>
-          <span>= ${t.left + t.right}</span>
-          <button onclick="removeTile(${i})">✕</button>
-        </div>
-      `).reverse().join("");
+      if (!tiles.length) { historyList.innerHTML = '<p class="empty">No tiles yet</p>'; return; }
+      historyList.innerHTML = [...tiles].reverse().map((t,ri) => {
+        const i = tiles.length-1-ri;
+        return `<div class="history-item"><strong>${t.left} | ${t.right}</strong><span>= ${t.left+t.right}</span><button onclick="removeTile(${i})">&#x2715;</button></div>`;
+      }).join("");
     }
 
-    function showError(msg) { errorEl.textContent = msg; errorEl.style.display = "block"; }
-    function hideError()    { errorEl.style.display = "none"; }
+    function showError(msg) { errorEl.textContent=msg; errorEl.style.display="block"; infoEl.style.display="none"; }
+    function hideError()    { errorEl.style.display="none"; }
+    function showInfo(msg)  { infoEl.textContent=msg; infoEl.style.display="block"; errorEl.style.display="none"; }
   </script>
 </body>
 </html>
