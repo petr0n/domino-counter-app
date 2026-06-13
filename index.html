@@ -10,24 +10,19 @@
     h1 { font-size:1.8rem; font-weight:800; letter-spacing:-0.03em; }
     p { color:#555; font-size:0.9rem; }
     .menu { width:100%; max-width:360px; display:flex; flex-direction:column; gap:12px; margin-top:8px; }
-    .menu-btn {
-      display:flex; flex-direction:column; gap:4px;
-      padding:20px 24px; border:none; border-radius:16px;
-      text-align:left; cursor:pointer;
-      transition:opacity 0.15s, transform 0.1s;
-    }
+    .menu-btn { display:flex; flex-direction:column; gap:4px; padding:20px 24px; border:none; border-radius:16px; text-align:left; cursor:pointer; transition:opacity 0.15s,transform 0.1s; }
     .menu-btn:active { transform:scale(0.98); }
     .menu-btn .label { font-size:1.1rem; font-weight:700; }
     .menu-btn .sub   { font-size:0.8rem; opacity:0.7; }
-    .btn-new  { background:#fff; color:#000; }
-    .btn-join { background:#1d4ed8; color:#fff; }
-    .btn-cat  { background:#1a1a1a; color:#f0f0f0; }
+    .btn-new   { background:#fff; color:#000; }
+    .btn-join  { background:#1d4ed8; color:#fff; }
+    .btn-quick { background:#7c3aed; color:#fff; }
+    .btn-cat   { background:#1a1a1a; color:#f0f0f0; }
   </style>
 </head>
 <body>
   <h1>Domino Counter</h1>
   <p>Double-12 tile scoring with AI</p>
-
   <div class="menu">
     <button class="menu-btn btn-new" onclick="location.href='scan.html?mode=new'">
       <span class="label">New Game</span>
@@ -36,6 +31,10 @@
     <button class="menu-btn btn-join" onclick="location.href='scan.html?mode=join'">
       <span class="label">Join Game</span>
       <span class="sub">Enter a code to join a session</span>
+    </button>
+    <button class="menu-btn btn-quick" onclick="location.href='quick.html'">
+      <span class="label">Quick Scan</span>
+      <span class="sub">Scan tiles one at a time — no session needed</span>
     </button>
     <button class="menu-btn btn-cat" onclick="location.href='catalog.html'">
       <span class="label">Catalog</span>
