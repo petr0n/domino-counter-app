@@ -161,7 +161,7 @@
               role: "user",
               content: [
                 { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
-                { type: "text", text: 'Count the dots on these domino tiles very carefully. Go tile by tile: identify each domino, count the dots on its left half, count the dots on its right half, note it as e.g. "3+4=7". After going through every tile, sum them all up. Double-check your total. Reply with ONLY this JSON (no other text): {"total": <number>, "breakdown": "<each tile listed, e.g. 3+4, 1+6, 2+2>"}' },
+                { type: "text", text: 'These are double-12 dominoes where each half can have 0 to 12 dots (not standard 0-6). Count the dots on every tile very carefully. Go tile by tile: identify each domino, count the dots on its left half, count the dots on its right half — each half can have anywhere from 0 to 12 dots. Note each tile as e.g. "8+11=19". After going through every tile, sum all the dots. Double-check your total. Reply with ONLY this JSON (no other text): {"total": <number>, "breakdown": "<each tile listed, e.g. 8+11, 3+12, 0+7>"}' },
               ],
             }],
           }),
