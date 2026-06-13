@@ -59,6 +59,8 @@
     .tile-row .total { color:#666; font-size:0.9rem; flex:1; }
     .tile-row .verified { color:#22c55e; font-size:0.75rem; }
     .tile-row .unverified { color:#f59e0b; font-size:0.75rem; }
+    .tile-row.uncertain { background:#2a1f00; border-radius:8px; padding:2px 4px; }
+    .tile-row .chk { color:#f59e0b; font-size:0.75rem; }
     .tile-row .del { flex:none; width:28px; height:28px; padding:0; border-radius:6px; background:#2a2a2a; color:#666; font-size:0.8rem; }
     .review-total { font-size:0.85rem; color:#888; text-align:right; }
     .btn-confirm { background:#22c55e; color:#000; font-weight:700; padding:14px; border-radius:12px; border:none; width:100%; font-size:1rem; cursor:pointer; }
@@ -220,6 +222,23 @@
       return true;
     }
 
+    async function callClaude(b64){
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":_ak,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-opus-4-8",max_tokens:4096,thinking:{type:"adaptive"},messages:[{role:"user",content:[
+          {type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},
+          {type:"text",text:"These are domino tiles from a double-12 set. Each half can show 0 to 12 dots. For every tile in the image, count each half's dots by going row by row — e.g. top row: 3, middle row: 3, bottom row: 2 → 8. Then count each half a second time independently to verify. If the two counts disagree, recount until you are certain. Record your row-by-row working and the final verified total for each half. Reply ONLY with this JSON (no other text): {\"tiles\": [{\"left\": <number>, \"left_rows\": \"<e.g. 3+3+2=8>\", \"right\": <number>, \"right_rows\": \"<e.g. 3+3=6>\"}, ...]}"}
+        ]}]})
+      });
+      const data=await res.json();
+      if(!res.ok)throw new Error(data.error?.message||"API error");
+      const text=data.content.find(b=>b.type==="text")?.text||"";
+      const match=text.match(/\{[\s\S]*\}/);
+      if(!match)return null;
+      return (JSON.parse(match[0]).tiles||[]).map(t=>({left:Number(t.left)||0,right:Number(t.right)||0}));
+    }
+
     scanBtn.addEventListener("click",async()=>{
       if(!gameCode){showError("Start or join a game first.");return;}
       if(!playerName){playerName=getName();if(!playerName)return;}
@@ -243,22 +262,18 @@
       scanBtn.style.display="none";retakeBtn.style.display="block";
       spinner.style.display="block";scanBtn.disabled=true;
       try{
-        const res=await fetch("https://api.anthropic.com/v1/messages",{
-          method:"POST",
-          headers:{"Content-Type":"application/json","x-api-key":_ak,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-          body:JSON.stringify({model:"claude-opus-4-8",max_tokens:4096,thinking:{type:"adaptive"},messages:[{role:"user",content:[
-            {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
-            {type:"text",text:"These are domino tiles from a double-12 set. Each half can show 0 to 12 dots. For every tile in the image, count each half's dots by going row by row — e.g. top row: 3, middle row: 3, bottom row: 2 → 8. Then count each half a second time independently to verify. If the two counts disagree, recount until you are certain. Record your row-by-row working and the final verified total for each half. Reply ONLY with this JSON (no other text): {\"tiles\": [{\"left\": <number>, \"left_rows\": \"<e.g. 3+3+2=8>\", \"right\": <number>, \"right_rows\": \"<e.g. 3+3=6>\"}, ...]}"}
-          ]}]})
+        const [r1,r2]=await Promise.all([callClaude(base64),callClaude(base64)]);
+        if(!r1&&!r2)throw new Error("No tiles found in image.");
+        const a=r1||[],b=r2||[];
+        const base=a.length>0&&(a.length<=b.length||b.length===0)?a:b;
+        const alt=base===a?b:a;
+        pendingTiles=base.map((t,i)=>{
+          const o=alt[i];
+          if(!o)return{left:t.left,right:t.right,uncertain:true};
+          const ld=Math.abs(t.left-o.left),rd=Math.abs(t.right-o.right);
+          return{left:Math.round((t.left+o.left)/2),right:Math.round((t.right+o.right)/2),uncertain:ld>1||rd>1};
         });
-        const data=await res.json();
-        if(!res.ok)throw new Error(data.error?.message||"API error");
-        const text=data.content.find(b=>b.type==="text")?.text||"";
-        const match=text.match(/\{[\s\S]*\}/);
-        if(!match)throw new Error("Could not read tiles.");
-        const {tiles:found}=JSON.parse(match[0]);
-        if(!found||!found.length)throw new Error("No tiles found in image.");
-        pendingTiles=found.map(t=>({left:t.left,right:t.right}));
+        if(!pendingTiles.length)throw new Error("No tiles found in image.");
         renderReview();reviewPanel.classList.add("visible");
       }catch(err){showError(err.message);}
       finally{spinner.style.display="none";scanBtn.disabled=false;}
@@ -274,12 +289,13 @@
       let html="";
       pendingTiles.forEach((t,i)=>{
         const v=isVerified(t.left,t.right);
-        html+=`<div class="tile-row">
+        html+=`<div class="tile-row${t.uncertain?' uncertain':''}">
           <input type="number" min="0" max="12" value="${t.left}" onchange="updatePending(${i},'left',this.value)" />
           <span class="sep">|</span>
           <input type="number" min="0" max="12" value="${t.right}" onchange="updatePending(${i},'right',this.value)" />
           <span class="total">= ${t.left+t.right}</span>
           <span class="${v?'verified':'unverified'}">${v?'✓':'?'}</span>
+          ${t.uncertain?'<span class="chk">check</span>':''}
           <button class="del" onclick="removePending(${i})">&#x2715;</button>
         </div>`;
       });
