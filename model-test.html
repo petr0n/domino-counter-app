@@ -27,6 +27,7 @@
     pre{white-space:pre-wrap;font-size:0.72rem;color:#777;background:#111;border-radius:6px;padding:8px;margin-top:4px;max-height:160px;overflow:auto;}
   </style>
   <script src="config.js"></script>
+  <script src="detect.js"></script>
 </head>
 <body>
   <h1>Engine Test — Claude pip counting</h1>
@@ -36,6 +37,7 @@
     <input type="file" id="files" accept="image/*" multiple />
     <label>model <input type="text" id="model" value="claude-opus-4-8" /></label>
     <label>max&nbsp;px <input type="text" id="maxpx" value="1568" style="width:70px" /></label>
+    <label><input type="checkbox" id="pre" checked /> preprocess (grayscale+contrast)</label>
     <button id="testBtn" style="padding:8px 12px;border-radius:8px;border:none;background:#2a2a2a;color:#fff;cursor:pointer;font-size:0.85rem">Test proxy</button>
   </div>
   <pre id="diag" style="display:none"></pre>
@@ -98,13 +100,15 @@ that half; never include a neighbouring tile's pips.
 Reply with ONLY this JSON and nothing else:
 {"tiles":[{"left":<0-12>,"right":<0-12>}, ...]}`;
 
-    function downscale(img, maxpx) {
+    function downscale(img, maxpx, pre) {
       let { naturalWidth: w, naturalHeight: h } = img;
       const s = Math.min(1, maxpx / Math.max(w, h));
       w = Math.round(w * s); h = Math.round(h * s);
       const c = document.createElement("canvas");
       c.width = w; c.height = h;
       c.getContext("2d").drawImage(img, 0, 0, w, h);
+      // Color-agnostic: grayscale + contrast stretch makes pips of any color pop.
+      if (pre && window.DominoCV) DominoCV.preprocess(c);
       return c.toDataURL("image/jpeg", 0.9);
     }
 
@@ -144,10 +148,11 @@ Reply with ONLY this JSON and nothing else:
       grid.innerHTML = "";
       const model = document.getElementById("model").value.trim();
       const maxpx = parseInt(document.getElementById("maxpx").value) || 1280;
-      [...e.target.files].forEach(file => run(file, model, maxpx));
+      const pre = document.getElementById("pre").checked;
+      [...e.target.files].forEach(file => run(file, model, maxpx, pre));
     });
 
-    function run(file, model, maxpx) {
+    function run(file, model, maxpx, pre) {
       const card = document.createElement("div");
       card.className = "card";
       const imgEl = document.createElement("img");
@@ -161,7 +166,7 @@ Reply with ONLY this JSON and nothing else:
       reader.onload = () => {
         const img = new Image();
         img.onload = async () => {
-          const dataUrl = downscale(img, maxpx);
+          const dataUrl = downscale(img, maxpx, pre);
           imgEl.src = dataUrl;
           try {
             const { text, ms } = await callClaude(dataUrl, model);
