@@ -335,8 +335,9 @@
     // the count will be wrong; the user corrects via the number inputs.
 
     function countTile() {
-      let src = null, gray = null, blurred = null, edges = null, morphed = null;
-      let morphKernel = null, contours = null, hier = null, bestApprox = null, warped = null;
+      let src = null, gray = null, clahe = null, enhanced = null, blurred = null;
+      let edges = null, morphed = null, morphKernel = null;
+      let contours = null, hier = null, bestApprox = null, warped = null;
       let halfA = null, halfB = null;
       try {
         src = cv.imread(canvas);
@@ -344,8 +345,13 @@
         gray = new cv.Mat();
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
+        // CLAHE: boost contrast so tile edges and pips stand out on any background
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+        enhanced = new cv.Mat();
+        clahe.apply(gray, enhanced);
+
         blurred = new cv.Mat();
-        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+        cv.GaussianBlur(enhanced, blurred, new cv.Size(5, 5), 0);
 
         // Canny finds tile borders by local edge contrast, not absolute brightness.
         // Works on any background colour (wood, towel, table, etc.)
@@ -384,8 +390,8 @@
         }
 
         warped = bestApprox
-          ? perspectiveWarp(gray, bestApprox)
-          : gray.clone();
+          ? perspectiveWarp(enhanced, bestApprox)
+          : enhanced.clone();
 
         const landscape = warped.cols >= warped.rows;
         const mid = landscape
@@ -407,6 +413,8 @@
       } finally {
         if (src)        src.delete();
         if (gray)       gray.delete();
+        if (clahe)      clahe.delete();
+        if (enhanced)   enhanced.delete();
         if (blurred)    blurred.delete();
         if (edges)      edges.delete();
         if (morphKernel) morphKernel.delete();
