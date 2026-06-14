@@ -167,12 +167,20 @@
         cvLoading = true;
         const s = document.createElement("script");
         s.src = "https://docs.opencv.org/4.x/opencv.js";
-        s.onload = () => {
+        const onCVReady = () => {
           cvReady = true; cvLoading = false;
           vcap = new cv.VideoCapture(video);
           startAnalysis();
           cvResolvers.forEach(r => r.resolve());
           cvResolvers = [];
+        };
+        s.onload = () => {
+          // Script loaded but WASM may still be initializing
+          if (typeof cv !== "undefined" && cv.Mat) {
+            onCVReady();
+          } else {
+            cv.onRuntimeInitialized = onCVReady;
+          }
         };
         s.onerror = () => {
           cvLoading = false;
