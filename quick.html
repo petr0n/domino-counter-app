@@ -339,8 +339,8 @@
     // 5. Sort tiles top-to-bottom, left-to-right.
 
     function scanWithCV() {
-      let src = null, gray = null, blurred = null, edges = null, morphed = null;
-      let morphKernel = null, contours = null, hier = null;
+      let src = null, gray = null, clahe = null, enhanced = null, blurred = null;
+      let edges = null, morphed = null, morphKernel = null, contours = null, hier = null;
       const results = [];
 
       try {
@@ -349,8 +349,12 @@
         gray = new cv.Mat();
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+        enhanced = new cv.Mat();
+        clahe.apply(gray, enhanced);
+
         blurred = new cv.Mat();
-        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+        cv.GaussianBlur(enhanced, blurred, new cv.Size(5, 5), 0);
 
         edges = new cv.Mat();
         cv.Canny(blurred, edges, 20, 60);
@@ -421,7 +425,7 @@
         for (const quad of selected) {
           let warped = null, halfA = null, halfB = null;
           try {
-            warped = perspectiveWarp(gray, quad.pts);
+            warped = perspectiveWarp(enhanced, quad.pts);
             const landscape = warped.cols >= warped.rows;
             const mid = landscape
               ? Math.floor(warped.cols / 2)
@@ -447,6 +451,8 @@
         if (gray)     gray.delete();
         if (blurred)  blurred.delete();
         if (binary)   binary.delete();
+        if (clahe)       clahe.delete();
+        if (enhanced)    enhanced.delete();
         if (edges)       edges.delete();
         if (morphKernel) morphKernel.delete();
         if (morphed)     morphed.delete();
