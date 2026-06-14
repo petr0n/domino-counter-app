@@ -29,6 +29,19 @@ Always check facts against existing code, documentation, or the actual file befo
 
 ---
 
+## DRY — Don't Repeat Yourself
+
+**Never recreate something that already exists. Before writing any function, constant, or block of logic, search the codebase for it first — if it exists, reuse it; if it nearly exists, extend or refactor it. Never copy-paste a second implementation of the same thing.**
+
+- One responsibility → one place. Shared logic lives in one module (e.g. detection lives only in `detect.js`), imported wherever it is needed.
+- If you find yourself pasting code from one file into another, stop: extract it to a shared location and have both call it.
+- If you spot existing duplication, prefer consolidating it over adding a third copy.
+- This applies to data too: catalog keys, config values (`window.PROXY_URL`), constants — define once, reference everywhere.
+
+Duplicated detection code is exactly what made this app unreliable. Keep it singular.
+
+---
+
 ## Locked Decisions — Do Not Revisit Without Explicit Instruction
 
 These decisions were made deliberately after testing. Do not second-guess, reverse, or "improve" them without the user explicitly asking.
