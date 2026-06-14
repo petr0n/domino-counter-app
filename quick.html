@@ -233,24 +233,26 @@
         const sharpness = sM.data64F[0];
         mM.delete(); sM.delete(); mM = null; sM = null;
 
-        // Quick tile-count estimate on the downsampled frame
+        // Quick tile-count estimate — isolated so a failure can't break the guidance loop
         let tileCount = 0;
         if (brightness >= 55 && brightness <= 215 && sharpness >= 4) {
-          blurSmall = new cv.Mat();
-          cv.GaussianBlur(gray, blurSmall, new cv.Size(5, 5), 0);
-          binary = new cv.Mat();
-          cv.threshold(blurSmall, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
-          contours = new cv.MatVector();
-          hier = new cv.Mat();
-          cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-          const smallArea = 320 * 240;
-          for (let i = 0; i < contours.size(); i++) {
-            const c = contours.get(i);
-            const a = cv.contourArea(c);
-            c.delete();
-            if (a > smallArea * 0.03 && a < smallArea * 0.60) tileCount++;
-          }
-          tileCount = Math.min(tileCount, 9);
+          try {
+            blurSmall = new cv.Mat();
+            cv.GaussianBlur(gray, blurSmall, new cv.Size(5, 5), 0);
+            binary = new cv.Mat();
+            cv.Canny(blurSmall, binary, 20, 60);
+            contours = new cv.MatVector();
+            hier = new cv.Mat();
+            cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            const smallArea = 320 * 240;
+            for (let i = 0; i < contours.size(); i++) {
+              const c = contours.get(i);
+              const a = cv.contourArea(c);
+              c.delete();
+              if (a > smallArea * 0.03 && a < smallArea * 0.60) tileCount++;
+            }
+            tileCount = Math.min(tileCount, 9);
+          } catch (_) { tileCount = 0; }
         }
 
         let text, state;
@@ -337,7 +339,7 @@
     // 5. Sort tiles top-to-bottom, left-to-right.
 
     function scanWithCV() {
-      let src = null, gray = null, blurred = null, binary = null, morphed = null;
+      let src = null, gray = null, blurred = null, edges = null, morphed = null;
       let morphKernel = null, contours = null, hier = null;
       const results = [];
 
@@ -348,14 +350,14 @@
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
         blurred = new cv.Mat();
-        cv.GaussianBlur(gray, blurred, new cv.Size(11, 11), 0);
+        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
-        binary = new cv.Mat();
-        cv.threshold(blurred, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+        edges = new cv.Mat();
+        cv.Canny(blurred, edges, 20, 60);
 
-        morphKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(7, 7));
+        morphKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
         morphed = new cv.Mat();
-        cv.morphologyEx(binary, morphed, cv.MORPH_CLOSE, morphKernel);
+        cv.dilate(edges, morphed, morphKernel);
 
         contours = new cv.MatVector();
         hier = new cv.Mat();
@@ -374,7 +376,7 @@
           if (area >= minArea && area <= maxArea) {
             const peri   = cv.arcLength(c, true);
             const approx = new cv.Mat();
-            cv.approxPolyDP(c, approx, 0.02 * peri, true);
+            cv.approxPolyDP(c, approx, 0.04 * peri, true);
             if (approx.rows === 4) {
               const d   = approx.data32S;
               const pts = [
@@ -445,10 +447,11 @@
         if (gray)     gray.delete();
         if (blurred)  blurred.delete();
         if (binary)   binary.delete();
+        if (edges)       edges.delete();
         if (morphKernel) morphKernel.delete();
-        if (morphed)    morphed.delete();
-        if (contours)   contours.delete();
-        if (hier)       hier.delete();
+        if (morphed)     morphed.delete();
+        if (contours)    contours.delete();
+        if (hier)        hier.delete();
       }
 
       return results;
@@ -501,8 +504,8 @@
         cv.findContours(closed, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         const regionArea = rw * rh;
-        const minPip = regionArea * 0.003;
-        const maxPip = regionArea * 0.08;
+        const minPip = regionArea * 0.002;
+        const maxPip = regionArea * 0.12;
 
         let count = 0;
         for (let i = 0; i < conts.size(); i++) {
