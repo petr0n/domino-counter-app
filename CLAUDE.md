@@ -47,13 +47,17 @@ Duplicated detection code is exactly what made this app unreliable. Keep it sing
 These decisions were made deliberately after testing. Do not second-guess, reverse, or "improve" them without the user explicitly asking.
 
 ### Tile Detection: OpenCV.js in one shared module
-**OpenCV.js is the ONLY tile detection and pip counting engine. There is exactly ONE implementation — `detect.js` (`window.DominoCV`) — shared by `quick.html` and `scan.html`. Do not duplicate it back into the pages, and do not replace it with Claude AI or any other approach.**
+**OpenCV.js is the ONLY tile detection and pip counting engine. There is exactly ONE implementation — `detect.js` (`window.DominoCV`) — shared by every page that detects or preprocesses (`quick.html`, `scan.html`, `catalog.html`, `test.html`). Do not duplicate it back into the pages, and do not replace it with Claude AI or any other approach.**
 
-`detect.js` exposes `DominoCV.loadCV()`, `DominoCV.preprocess(canvas)`, and `DominoCV.scanCanvas(canvas) → [{left,right}]`. Both scan pages capture a frame, call `DominoCV.preprocess` then `DominoCV.scanCanvas`. `quick.html` additionally runs a real-time guidance loop (its own concern, not detection).
+`detect.js` exposes:
+- `DominoCV.loadCV()` — lazy-load OpenCV.js
+- `DominoCV.preprocess(canvas)` — grayscale + contrast stretch (in place)
+- `DominoCV.scanCanvas(canvas)` → `[{left,right}, …]` — every tile in the frame (`quick.html`, `scan.html`)
+- `DominoCV.scanCanvasSingle(canvas)` → `{left,right}` — the single largest tile, with whole-frame fallback (`catalog.html`)
+
+Every page captures a frame, calls `DominoCV.preprocess`, then the appropriate scan function. `quick.html` and `catalog.html` additionally run their own real-time guidance loops (a UI concern, not detection). The two scan functions share the same internal `findTiles` / `perspectiveWarp` / `countPips` primitives — keep it that way.
 
 Reasoning locked in: after preprocessing (grayscale + contrast stretch), pip dots are dark circles on a bright background — exactly what OpenCV contour/blob detection was built for. It is deterministic, free, and accurate on this input. Claude AI vision was tried in `scan.html` and produced inconsistent pip counts, so it was removed.
-
-> Known follow-up: `catalog.html` still carries its own older single-tile copy of `loadCV`/`preprocess`/`countPips`/`perspectiveWarp`. It should be migrated onto `detect.js` too.
 
 ### Image Preprocessing: Canvas 2D — Grayscale + Contrast Stretch
 **Before any detection, capture frames are converted to grayscale and histogram-stretched to full 0–255 range using the Canvas 2D API.**
@@ -127,7 +131,7 @@ Entry point. Three navigation buttons: New Game, Join Game, Catalog. No logic.
 - History list of scanned tiles with running pip totals
 
 ### `catalog.html` — Tile Catalog Builder
-- Scans individual tiles and records them into `catalog.json` via GitHub API
+- Scans individual tiles via `DominoCV.scanCanvasSingle` and records them into `catalog.json` via GitHub API
 - Includes manual verification UI to correct CV misdetections
 - Same OpenCV guidance loop as quick.html
 
@@ -181,13 +185,13 @@ Stored as JSON files on GitHub at `sessions/{code}.json` in this repo. The `sess
 
 ## Image Pipeline
 
-### Step 1 — Canvas 2D Preprocessing (both pages)
+### Step 1 — Canvas 2D Preprocessing (`DominoCV.preprocess`, every scan page)
 1. Capture video frame to canvas
 2. Convert to grayscale: `g = 0.299*r + 0.587*g + 0.114*b`
 3. Histogram stretch: find min/max pixel values, remap to 0–255
 4. Result: high-contrast B&W image where pip dots are maximally dark
 
-### Step 2 — OpenCV.js (quick.html, catalog.html, scan.html)
+### Step 2 — OpenCV.js (`detect.js`, every scan page)
 1. Otsu threshold on the preprocessed image isolates the bright tiles
 2. Open/close morphology makes each tile one solid blob (touching tiles stay separate)
 3. `minAreaRect` per blob, filtered by area, aspect ratio, and fill ratio → tile rectangles (tolerant of rounded corners and rotation)

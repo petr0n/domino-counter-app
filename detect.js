@@ -1,11 +1,12 @@
 // Shared domino tile detection — the ONE pipeline used by every scan page
-// (quick.html, scan.html). LOCKED — see CLAUDE.md before modifying.
+// (quick.html, scan.html, catalog.html). LOCKED — see CLAUDE.md before modifying.
 //
 // Exposes window.DominoCV:
-//   loadCV()            → Promise that resolves when OpenCV.js is ready
-//   preprocess(canvas)  → Canvas 2D grayscale + contrast stretch (in place)
-//   scanCanvas(canvas)  → [{left,right},…] tiles detected on the canvas
-//   isReady()           → whether OpenCV.js has finished loading
+//   loadCV()                  → Promise that resolves when OpenCV.js is ready
+//   preprocess(canvas)        → Canvas 2D grayscale + contrast stretch (in place)
+//   scanCanvas(canvas)        → [{left,right},…] every tile in the frame
+//   scanCanvasSingle(canvas)  → {left,right} the single largest tile (catalog)
+//   isReady()                 → whether OpenCV.js has finished loading
 (function () {
   let cvReady = false, cvLoading = false, cvResolvers = [];
 
@@ -60,15 +61,15 @@
     ctx.putImageData(d, 0, 0);
   }
 
-  // Isolate bright tiles with Otsu + morphology (touching tiles stay apart,
-  // each tile becomes one solid blob), accept blobs via minAreaRect (tolerant
-  // of rounded corners and rotation), then warp each tile and count pips.
-  function scanCanvas(canvas) {
-    let src = null, gray = null, blurred = null, thresh = null;
-    let kernel = null, morphed = null, contours = null, hier = null;
-    const results = [];
+  // Find candidate tile rectangles on a (preprocessed) src Mat. Bright tiles
+  // are isolated with Otsu + morphology (touching tiles stay apart, each tile
+  // becomes one solid blob), then accepted via minAreaRect — tolerant of
+  // rounded corners and rotation. Returns [{pts, area, cx, cy}, …].
+  function findTiles(src, minAreaFrac, maxAreaFrac, edgeMarginFrac) {
+    let gray = null, blurred = null, thresh = null, kernel = null, morphed = null,
+        contours = null, hier = null;
+    const rects = [];
     try {
-      src = cv.imread(canvas);
       gray = new cv.Mat();
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
       blurred = new cv.Mat();
@@ -83,11 +84,10 @@
       hier = new cv.Mat();
       cv.findContours(morphed, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-      const frameArea = canvas.width * canvas.height;
-      const minArea = frameArea * 0.02, maxArea = frameArea * 0.60;
-      const edgeMargin = Math.min(canvas.width, canvas.height) * 0.03;
+      const frameArea = src.cols * src.rows;
+      const minArea = frameArea * minAreaFrac, maxArea = frameArea * maxAreaFrac;
+      const edgeMargin = Math.min(src.cols, src.rows) * edgeMarginFrac;
 
-      const found = [];
       for (let i = 0; i < contours.size(); i++) {
         const c = contours.get(i);
         const area = cv.contourArea(c);
@@ -99,43 +99,19 @@
           const fill = rectArea > 0 ? area / rectArea : 0;
           if (ratio >= 1.4 && ratio <= 3.2 && fill >= 0.80) {
             const pts = cv.RotatedRect.points(rect);
-            const atEdge = pts.some(p =>
-              p.x < edgeMargin || p.x > canvas.width  - edgeMargin ||
-              p.y < edgeMargin || p.y > canvas.height - edgeMargin);
+            const atEdge = edgeMargin > 0 && pts.some(p =>
+              p.x < edgeMargin || p.x > src.cols - edgeMargin ||
+              p.y < edgeMargin || p.y > src.rows - edgeMargin);
             if (!atEdge) {
               const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
               const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
-              found.push({ pts, cx, cy });
+              rects.push({ pts, area, cx, cy });
             }
           }
         }
         c.delete();
       }
-
-      found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
-
-      for (const tile of found) {
-        let warped = null, halfA = null, halfB = null;
-        try {
-          warped = perspectiveWarp(src, tile.pts);
-          const landscape = warped.cols >= warped.rows;
-          const mid = landscape ? Math.floor(warped.cols / 2) : Math.floor(warped.rows / 2);
-          if (landscape) {
-            halfA = warped.roi(new cv.Rect(0, 0, mid, warped.rows));
-            halfB = warped.roi(new cv.Rect(mid, 0, warped.cols - mid, warped.rows));
-          } else {
-            halfA = warped.roi(new cv.Rect(0, 0, warped.cols, mid));
-            halfB = warped.roi(new cv.Rect(0, mid, warped.cols, warped.rows - mid));
-          }
-          results.push({ left: countPips(halfA), right: countPips(halfB) });
-        } finally {
-          if (halfA)  halfA.delete();
-          if (halfB)  halfB.delete();
-          if (warped) warped.delete();
-        }
-      }
     } finally {
-      if (src)      src.delete();
       if (gray)     gray.delete();
       if (blurred)  blurred.delete();
       if (thresh)   thresh.delete();
@@ -144,7 +120,68 @@
       if (contours) contours.delete();
       if (hier)     hier.delete();
     }
-    return results;
+    return rects;
+  }
+
+  // Split a tile Mat at the midpoint of its longer axis and count each half.
+  function splitAndCount(mat) {
+    let halfA = null, halfB = null;
+    try {
+      const landscape = mat.cols >= mat.rows;
+      const mid = landscape ? Math.floor(mat.cols / 2) : Math.floor(mat.rows / 2);
+      if (landscape) {
+        halfA = mat.roi(new cv.Rect(0, 0, mid, mat.rows));
+        halfB = mat.roi(new cv.Rect(mid, 0, mat.cols - mid, mat.rows));
+      } else {
+        halfA = mat.roi(new cv.Rect(0, 0, mat.cols, mid));
+        halfB = mat.roi(new cv.Rect(0, mid, mat.cols, mat.rows - mid));
+      }
+      return { left: countPips(halfA), right: countPips(halfB) };
+    } finally {
+      if (halfA) halfA.delete();
+      if (halfB) halfB.delete();
+    }
+  }
+
+  // Warp one detected tile quad to a flat rectangle, then split + count.
+  function countQuad(src, pts) {
+    let warped = null;
+    try {
+      warped = perspectiveWarp(src, pts);
+      return splitAndCount(warped);
+    } finally {
+      if (warped) warped.delete();
+    }
+  }
+
+  // Multi-tile: every tile laid out in frame → [{left,right}, …].
+  function scanCanvas(canvas) {
+    let src = null;
+    try {
+      src = cv.imread(canvas);
+      const found = findTiles(src, 0.02, 0.60, 0.03);
+      found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
+      return found.map(t => countQuad(src, t.pts));
+    } finally {
+      if (src) src.delete();
+    }
+  }
+
+  // Single-tile (catalog): the one largest tile filling the frame. Falls back
+  // to counting the whole frame as a tile if no clean rectangle is found.
+  function scanCanvasSingle(canvas) {
+    let src = null;
+    try {
+      src = cv.imread(canvas);
+      const found = findTiles(src, 0.05, 0.95, 0);
+      if (found.length) {
+        found.sort((a, b) => b.area - a.area);
+        return countQuad(src, found[0].pts);
+      }
+      return splitAndCount(src);
+    } finally {
+      if (src) src.delete();
+    }
   }
 
   function perspectiveWarp(grayMat, pts) {
@@ -210,5 +247,5 @@
     }
   }
 
-  window.DominoCV = { loadCV, preprocess, scanCanvas, isReady: () => cvReady };
+  window.DominoCV = { loadCV, preprocess, scanCanvas, scanCanvasSingle, isReady: () => cvReady };
 })();
