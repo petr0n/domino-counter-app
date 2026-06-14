@@ -6,6 +6,14 @@ After pushing a branch, create a PR (ready for review, not draft) and **immediat
 
 ---
 
+## Tile Detection Engine: Claude AI Only
+
+**Tile detection and pip counting use Claude AI exclusively.** Do NOT introduce, restore, or suggest OpenCV.js for tile detection or pip counting under any circumstances. OpenCV.js has been removed from the project.
+
+Image preprocessing before sending to Claude uses the Canvas 2D API only (grayscale + contrast stretch). No other CV library is permitted.
+
+---
+
 ## Do NOT Assume Anything
 
 Always check facts against existing code, documentation, or the actual file before acting. Back up reasoning with evidence — cite the file and line, or the doc you read. Never state something about the code without verifying it first.
@@ -14,7 +22,7 @@ Always check facts against existing code, documentation, or the actual file befo
 
 ## Project Overview
 
-**Domino Counter App** is a static web application for scanning and counting domino tiles using computer vision (OpenCV.js) and AI (Claude API). It supports single-player quick-scan mode and multiplayer sessions where game state is persisted to GitHub.
+**Domino Counter App** is a static web application for scanning and counting domino tiles using Claude AI (claude-opus-4-8 vision). It supports single-player quick-scan mode and multiplayer sessions where game state is persisted to GitHub. It supports single-player quick-scan mode and multiplayer sessions where game state is persisted to GitHub.
 
 There is no build system, no npm packages in the root, and no framework — only vanilla JavaScript embedded in HTML files, with a separate Cloudflare Worker backend.
 
