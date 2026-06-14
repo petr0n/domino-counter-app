@@ -233,7 +233,7 @@
         const sharpness = sM.data64F[0];
         mM.delete(); sM.delete(); mM = null; sM = null;
 
-        // Quick tile-count estimate — isolated so a failure can't break the guidance loop
+        // Quick tile-count estimate using same quad+ratio filters as scanWithCV
         let tileCount = 0;
         if (brightness >= 55 && brightness <= 215 && sharpness >= 4) {
           try {
@@ -245,11 +245,30 @@
             hier = new cv.Mat();
             cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
             const smallArea = 320 * 240;
+            const edgeM = Math.min(320, 240) * 0.04;
             for (let i = 0; i < contours.size(); i++) {
               const c = contours.get(i);
               const a = cv.contourArea(c);
+              if (a > smallArea * 0.03 && a < smallArea * 0.60) {
+                const peri = cv.arcLength(c, true);
+                const approx = new cv.Mat();
+                cv.approxPolyDP(c, approx, 0.04 * peri, true);
+                if (approx.rows === 4) {
+                  const d = approx.data32S;
+                  const pts = [{x:d[0],y:d[1]},{x:d[2],y:d[3]},{x:d[4],y:d[5]},{x:d[6],y:d[7]}];
+                  const notAtEdge = !pts.some(p => p.x < edgeM || p.x > 320-edgeM || p.y < edgeM || p.y > 240-edgeM);
+                  if (notAtEdge) {
+                    const s0=Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y);
+                    const s1=Math.hypot(pts[2].x-pts[1].x,pts[2].y-pts[1].y);
+                    const sw=(s0+Math.hypot(pts[3].x-pts[2].x,pts[3].y-pts[2].y))/2;
+                    const sh=(s1+Math.hypot(pts[0].x-pts[3].x,pts[0].y-pts[3].y))/2;
+                    const ratio=Math.max(sw,sh)/Math.min(sw,sh);
+                    if (ratio >= 1.4 && ratio <= 3.2) tileCount++;
+                  }
+                }
+                approx.delete();
+              }
               c.delete();
-              if (a > smallArea * 0.03 && a < smallArea * 0.60) tileCount++;
             }
             tileCount = Math.min(tileCount, 9);
           } catch (_) { tileCount = 0; }
@@ -263,7 +282,7 @@
         } else if (sharpness < 4) {
           text = "Hold steady — too blurry"; state = "";
         } else if (tileCount === 0) {
-          text = "Point camera at tiles"; state = "";
+          text = "Spread tiles apart — keep all fully in frame"; state = "";
         } else if (sharpness < 9) {
           text = `${tileCount} tile${tileCount !== 1 ? "s" : ""} detected — hold steadier`; state = "warn";
         } else {
@@ -337,7 +356,7 @@
         showInfo("Detecting tiles…");
         await loadCV();
         const found = scanWithCV();
-        if (!found || !found.length) throw new Error("No tiles found. Make sure tiles are fully in frame and well-lit.");
+        if (!found || !found.length) throw new Error("No tiles found — separate tiles so they don't overlap and keep them fully in frame.");
         pendingTiles = found;
         renderReview();
         reviewPanel.classList.add("visible");
