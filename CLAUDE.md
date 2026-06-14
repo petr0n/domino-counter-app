@@ -10,6 +10,7 @@
 
 The following are LOCKED. Do not touch them unless the user explicitly says **"change the detection pipeline"**:
 
+- **`DominoCV.preprocess` (grayscale + contrast stretch) runs FIRST on every image, before ANY engine (OpenCV or vision model). This step is foundational and must never be removed or bypassed — see "Image Preprocessing" below.**
 - The shared detection module `detect.js` — `preprocess()` (Canvas 2D grayscale + contrast stretch), `scanCanvas()`, `perspectiveWarp()`, `countPips()`, `loadCV()`
 - The OpenCV.js CDN URL or version
 
@@ -65,10 +66,12 @@ Every page captures a frame, calls `DominoCV.preprocess`, then the appropriate s
 
 Reasoning locked in: after preprocessing (grayscale + contrast stretch), pip dots are dark circles on a bright background — exactly what OpenCV contour/blob detection was built for. It is deterministic, free, and accurate on this input. Claude AI vision was tried in `scan.html` and produced inconsistent pip counts, so it was removed.
 
-### Image Preprocessing: Canvas 2D — Grayscale + Contrast Stretch
-**Before any detection, capture frames are converted to grayscale and histogram-stretched to full 0–255 range using the Canvas 2D API.**
+### Image Preprocessing: Grayscale + Contrast Stretch — ALWAYS, FIRST (FOUNDATIONAL — never remove)
+**Every captured image is converted to grayscale and histogram-stretched to the full 0–255 range (Canvas 2D, `DominoCV.preprocess`) BEFORE any analysis — by EVERY engine, current or future (OpenCV, Claude / vision model, anything). NEVER send a raw, un-preprocessed image to any detection or counting step.**
 
-Reasoning locked in: colored pips (yellow, blue, orange) have low contrast against white tiles in raw color. Grayscale + contrast stretch makes all pips uniformly dark and maximally distinct, regardless of original pip color. This preprocessing runs client-side with no dependencies.
+This has been part of the pipeline from the very beginning and is non-negotiable. Do NOT remove it, bypass it, "simplify" it away, or feed raw color to any analyzer. It has been deleted and re-added several times by mistake — that must stop. If a change seems to need raw color, STOP and ask first.
+
+Reasoning locked in: pips come in many colors, and **color must never be a signal** (see above). Grayscale + contrast stretch turns pips of ANY color into uniformly dark, high-contrast dots on a bright tile — maximally distinct and fully color-agnostic. This is what makes both OpenCV blob detection AND vision-model counting reliable; the user has confirmed it makes pips stand out well. It runs client-side with no dependencies.
 
 ### Storage: domino-counter-app repo
 **Sessions are stored at `sessions/{code}.json` and catalog at `catalog.json` in the `petr0n/domino-counter-app` repo via GitHub API.** Do not change this to any other repo or path.
