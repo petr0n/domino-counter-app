@@ -46,6 +46,12 @@ Duplicated detection code is exactly what made this app unreliable. Keep it sing
 
 These decisions were made deliberately after testing. Do not second-guess, reverse, or "improve" them without the user explicitly asking.
 
+### Pip color is NOT a signal
+**Different domino sets use different pip colors (yellow, orange, green, blue, purple, pink, black, …). NEVER base tile detection, pip counting, prompts, thresholds, or any logic on a specific color or color palette.** Count every pip regardless of its color. Any approach must be fully color-agnostic — do not assume pips are a particular color, and do not identify or group tiles/pips by color.
+
+### These are DOUBLE-12 tiles
+**Each half holds 0–12 pips, usually laid out in a compact grid (e.g. 3×3 = 9, 2×5 = 10, 3×4 = 12). Do not assume halves are ≤6.** Counting logic and prompts must handle the full 0–12 range per half.
+
 ### Tile Detection: OpenCV.js in one shared module
 **OpenCV.js is the ONLY tile detection and pip counting engine. There is exactly ONE implementation — `detect.js` (`window.DominoCV`) — shared by every page that detects or preprocesses (`quick.html`, `scan.html`, `catalog.html`, `test.html`). Do not duplicate it back into the pages, and do not replace it with Claude AI or any other approach.**
 
