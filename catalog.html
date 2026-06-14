@@ -494,9 +494,9 @@
         // Colored pip path — catches yellow/orange/green/blue pips
         // White tile background has S≈0; any colored pip has S>40
         rgb = new cv.Mat();
-        cv.cvtColor(inner, rgb, cv.COLOR_RGBA2RGB);
+        cv.cvtColor(inner, rgb, cv.COLOR_RGBA2BGR);
         hsv = new cv.Mat();
-        cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+        cv.cvtColor(rgb, hsv, cv.COLOR_BGR2HSV);
         chans = new cv.MatVector();
         cv.split(hsv, chans);
         sChan = chans.get(1).clone();
