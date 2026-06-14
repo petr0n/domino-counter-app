@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pipeline Test</title>
+  <style>
+    body { background:#111; color:#eee; font-family:system-ui,sans-serif; margin:0; padding:16px; }
+    h1 { font-size:1.1rem; margin:0 0 16px; color:#888; }
+    .pair { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:24px; }
+    .panel { flex:1; min-width:140px; }
+    .panel label { display:block; font-size:0.7rem; color:#555; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
+    canvas, img { width:100%; border-radius:8px; display:block; background:#1a1a1a; }
+    input[type=file] { display:none; }
+    .btn { display:block; width:100%; padding:12px; border-radius:10px; border:none; font-size:1rem; font-weight:600; cursor:pointer; margin-bottom:12px; }
+    .btn-primary { background:#6366f1; color:#fff; }
+    .btn-save { background:#22c55e; color:#fff; }
+    .btn-run { background:#f59e0b; color:#000; }
+    #cases { margin-top:24px; }
+    .case { background:#1a1a1a; border-radius:10px; padding:12px; margin-bottom:12px; }
+    .case-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:0.85rem; }
+    .pass { color:#22c55e; } .fail { color:#ef4444; } .pending { color:#888; }
+    .case-imgs { display:flex; gap:8px; }
+    .case-imgs canvas { border-radius:6px; }
+    #notes { width:100%; background:#1a1a1a; border:1px solid #333; border-radius:8px; color:#eee; padding:8px; font-size:0.85rem; margin-bottom:8px; box-sizing:border-box; }
+    #result { font-size:0.85rem; color:#aaa; margin-top:8px; min-height:20px; }
+  </style>
+</head>
+<body>
+  <h1>Preprocessing Regression Test</h1>
+
+  <button class="btn btn-primary" onclick="document.getElementById('filePick').click()">Load Image</button>
+  <input type="file" id="filePick" accept="image/*" onchange="loadImage(this)">
+
+  <div class="pair" id="pair" style="display:none">
+    <div class="panel"><label>Original</label><canvas id="orig"></canvas></div>
+    <div class="panel"><label>Preprocessed</label><canvas id="proc"></canvas></div>
+  </div>
+
+  <div id="result"></div>
+
+  <textarea id="notes" rows="2" placeholder="Notes: what tiles are in the image and expected pip counts"></textarea>
+  <button class="btn btn-save" id="saveBtn" style="display:none" onclick="saveCase()">Save as Test Case</button>
+
+  <div id="cases">
+    <button class="btn btn-run" onclick="runAll()" style="display:none" id="runBtn">Run All Saved Cases</button>
+  </div>
+
+  <script>
+    let currentDataUrl = null;
+    let cases = JSON.parse(localStorage.getItem("dominoTestCases") || "[]");
+    renderCases();
+
+    function preprocess(canvas) {
+      const ctx = canvas.getContext("2d");
+      const d = ctx.getImageData(0, 0, canvas.width, canvas.height), px = d.data;
+      let mn = 255, mx = 0;
+      for (let i = 0; i < px.length; i += 4) {
+        const g = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
+        px[i] = px[i+1] = px[i+2] = g;
+        if (g < mn) mn = g; if (g > mx) mx = g;
+      }
+      const rng = mx - mn || 1;
+      for (let i = 0; i < px.length; i += 4) {
+        const v = Math.round(((px[i] - mn) / rng) * 255);
+        px[i] = px[i+1] = px[i+2] = v;
+      }
+      ctx.putImageData(d, 0, 0);
+    }
+
+    function loadImage(input) {
+      const file = input.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        currentDataUrl = e.target.result;
+        const img = new Image();
+        img.onload = () => {
+          const orig = document.getElementById("orig");
+          const proc = document.getElementById("proc");
+          orig.width = proc.width = img.naturalWidth;
+          orig.height = proc.height = img.naturalHeight;
+          orig.getContext("2d").drawImage(img, 0, 0);
+          proc.getContext("2d").drawImage(img, 0, 0);
+          preprocess(proc);
+          document.getElementById("pair").style.display = "flex";
+          document.getElementById("saveBtn").style.display = "block";
+          document.getElementById("result").textContent = "Preprocessing done — compare the two images. Pips should be clearly dark on a white background in the right panel.";
+        };
+        img.src = currentDataUrl;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function saveCase() {
+      const notes = document.getElementById("notes").value.trim();
+      cases.push({ id: Date.now(), dataUrl: currentDataUrl, notes, savedAt: new Date().toLocaleString() });
+      localStorage.setItem("dominoTestCases", JSON.stringify(cases));
+      document.getElementById("notes").value = "";
+      document.getElementById("result").textContent = "Saved. " + cases.length + " test case(s) stored.";
+      renderCases();
+    }
+
+    function runAll() {
+      document.querySelectorAll(".case").forEach((el, i) => runCase(cases[i], el));
+    }
+
+    function runCase(c, el) {
+      const img = new Image();
+      img.onload = () => {
+        const proc = el.querySelector("canvas");
+        proc.width = img.naturalWidth; proc.height = img.naturalHeight;
+        proc.getContext("2d").drawImage(img, 0, 0);
+        preprocess(proc);
+        el.querySelector(".case-status").textContent = "Preprocessed — verify visually";
+        el.querySelector(".case-status").className = "case-status pending";
+      };
+      img.src = c.dataUrl;
+    }
+
+    function deleteCase(id) {
+      cases = cases.filter(c => c.id !== id);
+      localStorage.setItem("dominoTestCases", JSON.stringify(cases));
+      renderCases();
+    }
+
+    function renderCases() {
+      const container = document.getElementById("cases");
+      const runBtn = document.getElementById("runBtn");
+      runBtn.style.display = cases.length ? "block" : "none";
+      const existing = container.querySelectorAll(".case");
+      existing.forEach(el => el.remove());
+      cases.forEach(c => {
+        const div = document.createElement("div");
+        div.className = "case";
+        div.innerHTML = `
+          <div class="case-header">
+            <span>${c.savedAt}</span>
+            <span class="case-status pending">—</span>
+            <button onclick="deleteCase(${c.id})" style="background:none;border:none;color:#555;cursor:pointer;font-size:0.8rem">remove</button>
+          </div>
+          <div style="font-size:0.8rem;color:#666;margin-bottom:8px">${c.notes || "(no notes)"}</div>
+          <div class="case-imgs"><canvas style="max-width:200px"></canvas></div>`;
+        container.appendChild(div);
+      });
+    }
+  </script>
+</body>
+</html>

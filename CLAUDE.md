@@ -1,5 +1,24 @@
 # Claude Code Rules for This Project
 
+## One Goal
+
+**Scan a phone camera image of domino tiles and return accurate pip counts every time. Every decision, change, and line of code must serve this goal. If a change doesn't make pip detection more accurate, more consistent, or more reliable, don't make it.**
+
+---
+
+## Detection Pipeline Gate
+
+The following are LOCKED. Do not touch them unless the user explicitly says **"change the detection pipeline"**:
+
+- `preprocess()` in any HTML file (Canvas 2D grayscale + contrast stretch)
+- The OpenCV pip counting pipeline in `quick.html` and `catalog.html`
+- The Claude AI prompt in `scan.html`'s `callClaude()` function
+- The OpenCV.js CDN URL or version
+
+If you think the pipeline needs improving, say so and wait for the user to approve before touching anything.
+
+---
+
 ## PR Workflow
 
 After pushing a branch, create a PR (ready for review, not draft) and **immediately merge it** — do not wait for user confirmation. Never block on PR merge.

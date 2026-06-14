@@ -293,6 +293,7 @@
       cameraWrapper.className = "camera-wrapper" + (state ? " " + state : "");
     }
 
+    // LOCKED — see CLAUDE.md before modifying
     function preprocess(canvas) {
       const ctx = canvas.getContext("2d");
       const d = ctx.getImageData(0, 0, canvas.width, canvas.height), px = d.data;
