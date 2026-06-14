@@ -83,19 +83,16 @@
     document.getElementById("testBtn").addEventListener("click", testProxy);
 
     const PROMPT =
-`This photo shows one or more domino tiles on a surface. Each tile is a
-rectangle split by a center bar into two square halves; each half shows 0 to 12
-pips in a regular pattern. Pips may be ANY color (yellow, orange, green, blue,
+`This photo shows one or more domino tiles from a DOUBLE-12 set. Each tile is a
+rectangle split by a center bar into two square halves. Each half shows 0 to 12
+pips, usually packed into a compact GRID — for example 2x3 = 6, 2x4 = 8,
+3x3 = 9, 2x5 = 10, 3x4 or 4x3 = 12. Do NOT assume a half has 6 or fewer; many
+halves have 7 to 12 pips. Pips may be ANY color (yellow, orange, green, blue,
 purple, pink) or black — count every pip regardless of color. A blank half is 0.
 
-Work one tile at a time. For EACH half:
-1. Count the pips one by one.
-2. Verify against the standard arrangement (1=center, 2=diagonal, 3=diagonal,
-   4=corners, 5=corners+center, 6=two columns of three). A tidy 2x3 block is 6,
-   not 9.
-3. Use only pips inside that half; never include a neighbouring tile's pips.
-
-Double-check any count above 6 before committing to it.
+For EACH half of EACH tile: count the pips row by row and report the total
+(0-12). Count the full grid — a 3x3 block is 9, not 6. Use only the pips inside
+that half; never include a neighbouring tile's pips.
 
 Reply with ONLY this JSON and nothing else:
 {"tiles":[{"left":<0-12>,"right":<0-12>}, ...]}`;
