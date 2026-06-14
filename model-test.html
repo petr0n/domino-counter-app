@@ -87,15 +87,18 @@
     const PROMPT =
 `This photo shows one or more domino tiles from a DOUBLE-12 set. Each tile is a
 rectangle split by a center bar into two square halves. Each half shows 0 to 12
-pips, usually packed into a compact GRID — for example 2x3 = 6, 2x4 = 8,
-3x3 = 9, 2x5 = 10, 3x4 or 4x3 = 12. Do NOT assume a half has 6 or fewer; many
-halves have 7 to 12 pips. Pips can be any color and different sets use different
-colors — count every pip regardless of its color; never use color to identify,
-group, or skip pips. A blank half is 0.
+pips, usually packed into a compact GRID. Do NOT assume a half has 6 or fewer;
+many halves have 7 to 12 pips. Pips can be any color and different sets use
+different colors — count every pip regardless of its color; never use color to
+identify, group, or skip pips. A blank half is 0.
 
-For EACH half of EACH tile: count the pips row by row and report the total
-(0-12). Count the full grid — a 3x3 block is 9, not 6. Use only the pips inside
-that half; never include a neighbouring tile's pips.
+For EACH half of EACH tile, read the grid carefully:
+- Count how many COLUMNS of pips and how many ROWS, then give the total.
+- Examples: 3 columns x 3 rows = 9; 2 columns x 5 rows = 10; 3 cols x 4 rows = 12.
+- Watch the 9-vs-10 trap: 9 is a 3-wide square; 10 is only 2-wide but TALLER
+  (5 rows). When a block looks dense, check the column count before deciding —
+  do not default to 9.
+- Use only the pips inside that half; never include a neighbouring tile's pips.
 
 Reply with ONLY this JSON and nothing else:
 {"tiles":[{"left":<0-12>,"right":<0-12>}, ...]}`;
