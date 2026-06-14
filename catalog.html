@@ -109,6 +109,7 @@
   <div class="tile-grid" id="tileGrid"></div>
 
   <script src="config.js"></script>
+  <script src="detect.js"></script>
   <script>
     // ── GitHub catalog ──────────────────────────────────────────────────────
     const PROXY = window.PROXY_URL;
@@ -137,9 +138,6 @@
     const camGuide      = document.getElementById("camGuide");
 
     // ── State ───────────────────────────────────────────────────────────────
-    let cvReady = false;
-    let cvLoading = false;
-    let cvResolvers = [];
     let analysing = false;
     let vcap = null;
     let analysisTimer = null;
@@ -158,43 +156,11 @@
       await loadCatalog();
     }
 
-    // Lazy-load OpenCV on first scan. Subsequent calls resolve immediately.
-    function loadCV() {
-      if (cvReady) return Promise.resolve();
-      return new Promise((resolve, reject) => {
-        cvResolvers.push({ resolve, reject });
-        if (cvLoading) return;
-        cvLoading = true;
-        const s = document.createElement("script");
-        s.src = "https://docs.opencv.org/4.x/opencv.js";
-        const onCVReady = () => {
-          cvReady = true; cvLoading = false;
-          vcap = new cv.VideoCapture(video);
-          startAnalysis();
-          cvResolvers.forEach(r => r.resolve());
-          cvResolvers = [];
-        };
-        s.onload = () => {
-          if (typeof cv === "undefined") {
-            cvLoading = false;
-            const err = new Error("Vision library failed to initialize.");
-            cvResolvers.forEach(r => r.reject(err)); cvResolvers = [];
-            return;
-          }
-          if (cv.Mat) {
-            onCVReady();
-          } else {
-            cv.onRuntimeInitialized = onCVReady;
-          }
-        };
-        s.onerror = () => {
-          cvLoading = false;
-          const err = new Error("Vision library failed to load — check your connection.");
-          cvResolvers.forEach(r => r.reject(err));
-          cvResolvers = [];
-        };
-        document.head.appendChild(s);
-      });
+    // Detection (loadCV / preprocess / scanCanvasSingle) lives in detect.js — the
+    // one shared pipeline. After OpenCV loads, set up the guidance capture once.
+    async function ensureCV() {
+      await DominoCV.loadCV();
+      if (!vcap) { vcap = new cv.VideoCapture(video); startAnalysis(); }
     }
 
     // ── Real-time frame guidance ─────────────────────────────────────────────
@@ -218,7 +184,7 @@
     }
 
     function runAnalysis() {
-      if (!analysing || !cvReady || !video.videoWidth) { scheduleAnalysis(); return; }
+      if (!analysing || !DominoCV.isReady() || !video.videoWidth) { scheduleAnalysis(); return; }
 
       let src = null, small = null, gray = null, lap = null, mM = null, sM = null;
       try {
@@ -291,20 +257,23 @@
       canvas.height = video.videoHeight;
       canvas.getContext("2d").drawImage(video, 0, 0);
 
-      preview.src = canvas.toDataURL("image/jpeg", 0.92);
-      preview.style.display  = "block";
-      video.style.display    = "none";
-      camGuide.style.display = "none";
-      scanBtn.style.display  = "none";
-      retakeBtn.style.display = "block";
-      stopAnalysis();
-      setGuidance("", "");
       scanBtn.disabled = true;
-
       try {
-        if (!cvReady) { showInfo("Loading vision library…"); await loadCV(); }
+        if (!DominoCV.isReady()) { showInfo("Loading vision library…"); }
+        await ensureCV();
+        DominoCV.preprocess(canvas);
+
+        preview.src = canvas.toDataURL("image/jpeg", 0.92);
+        preview.style.display  = "block";
+        video.style.display    = "none";
+        camGuide.style.display = "none";
+        scanBtn.style.display  = "none";
+        retakeBtn.style.display = "block";
+        stopAnalysis();
+        setGuidance("", "");
+
         showInfo("Counting pips…");
-        const { left, right } = countTile();
+        const { left, right } = DominoCV.scanCanvasSingle(canvas);
         leftInput.value  = left;
         rightInput.value = right;
         const k = tileKey(left, right);
@@ -320,231 +289,6 @@
         scanBtn.disabled = false;
       }
     });
-
-    // ── OpenCV pip-counting pipeline ─────────────────────────────────────────
-    //
-    // 1. Convert captured frame to grayscale.
-    // 2. Find the largest 4-corner contour (the tile outline).
-    // 3. Perspective-warp it to a standard rectangle.
-    // 4. Split at the midpoint of the longer axis -> two halves.
-    // 5. Adaptive-threshold (inverted) + morph-close each half.
-    // 6. Count contours whose area falls in the pip-sized range.
-    //
-    // Dark pips on a light tile surface — the most common case — produce
-    // white blobs after the inverted threshold. If pips are light-on-dark
-    // the count will be wrong; the user corrects via the number inputs.
-
-    function countTile() {
-      let src = null, gray = null, clahe = null, enhanced = null, blurred = null;
-      let edges = null, morphed = null, morphKernel = null;
-      let contours = null, hier = null, bestApprox = null, warped = null;
-      let halfA = null, halfB = null;
-      try {
-        src = cv.imread(canvas);
-
-        gray = new cv.Mat();
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-        // CLAHE: boost contrast so tile edges and pips stand out on any background
-        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-        enhanced = new cv.Mat();
-        clahe.apply(gray, enhanced);
-
-        blurred = new cv.Mat();
-        cv.GaussianBlur(enhanced, blurred, new cv.Size(5, 5), 0);
-
-        // Canny finds tile borders by local edge contrast, not absolute brightness.
-        // Works on any background colour (wood, towel, table, etc.)
-        edges = new cv.Mat();
-        cv.Canny(blurred, edges, 20, 60);
-
-        // Dilate to close small gaps in the tile outline
-        morphKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
-        morphed = new cv.Mat();
-        cv.dilate(edges, morphed, morphKernel);
-
-        contours = new cv.MatVector();
-        hier = new cv.Mat();
-        cv.findContours(morphed, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-        const frameArea = canvas.width * canvas.height;
-        let bestArea = 0;
-
-        for (let i = 0; i < contours.size(); i++) {
-          const c    = contours.get(i);
-          const area = cv.contourArea(c);
-          if (area > frameArea * 0.05 && area < frameArea * 0.90 && area > bestArea) {
-            const peri   = cv.arcLength(c, true);
-            const approx = new cv.Mat();
-            // Larger epsilon (0.04) tolerates rounded tile corners
-            cv.approxPolyDP(c, approx, 0.04 * peri, true);
-            if (approx.rows === 4) {
-              const d = approx.data32S;
-              const p = [{x:d[0],y:d[1]},{x:d[2],y:d[3]},{x:d[4],y:d[5]},{x:d[6],y:d[7]}];
-              const s0 = Math.hypot(p[1].x-p[0].x, p[1].y-p[0].y);
-              const s1 = Math.hypot(p[2].x-p[1].x, p[2].y-p[1].y);
-              const s2 = Math.hypot(p[3].x-p[2].x, p[3].y-p[2].y);
-              const s3 = Math.hypot(p[0].x-p[3].x, p[0].y-p[3].y);
-              const sw = (s0 + s2) / 2, sh = (s1 + s3) / 2;
-              const ratio = Math.max(sw, sh) / Math.min(sw, sh);
-              if (ratio >= 1.4 && ratio <= 3.2) {
-                bestArea = area;
-                if (bestApprox) bestApprox.delete();
-                bestApprox = approx;
-              } else {
-                approx.delete();
-              }
-            } else {
-              approx.delete();
-            }
-          }
-          c.delete();
-        }
-
-        warped = bestApprox
-          ? perspectiveWarp(src, bestApprox)
-          : src.clone();
-
-        const landscape = warped.cols >= warped.rows;
-        const mid = landscape
-          ? Math.floor(warped.cols / 2)
-          : Math.floor(warped.rows / 2);
-
-        if (landscape) {
-          halfA = warped.roi(new cv.Rect(0, 0, mid, warped.rows));
-          halfB = warped.roi(new cv.Rect(mid, 0, warped.cols - mid, warped.rows));
-        } else {
-          halfA = warped.roi(new cv.Rect(0, 0, warped.cols, mid));
-          halfB = warped.roi(new cv.Rect(0, mid, warped.cols, warped.rows - mid));
-        }
-
-        const left  = countPips(halfA);
-        const right = countPips(halfB);
-        return { left, right };
-
-      } finally {
-        if (src)        src.delete();
-        if (gray)       gray.delete();
-        if (clahe)      clahe.delete();
-        if (enhanced)   enhanced.delete();
-        if (blurred)    blurred.delete();
-        if (edges)      edges.delete();
-        if (morphKernel) morphKernel.delete();
-        if (morphed)    morphed.delete();
-        if (contours)   contours.delete();
-        if (hier)       hier.delete();
-        if (bestApprox) bestApprox.delete();
-        if (warped)     warped.delete();
-        if (halfA)      halfA.delete();
-        if (halfB)      halfB.delete();
-      }
-    }
-
-    function perspectiveWarp(grayMat, approx) {
-      const d = approx.data32S;
-      let pts = [
-        { x: d[0], y: d[1] },
-        { x: d[2], y: d[3] },
-        { x: d[4], y: d[5] },
-        { x: d[6], y: d[7] }
-      ];
-      pts.sort((a, b) => a.y - b.y);
-      const [tl, tr] = pts.slice(0, 2).sort((a, b) => a.x - b.x);
-      const [bl, br] = pts.slice(2).sort((a, b) => a.x - b.x);
-
-      const edgeDist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
-      const w = Math.max(edgeDist(tl, tr), edgeDist(bl, br));
-      const h = Math.max(edgeDist(tl, bl), edgeDist(tr, br));
-
-      const scale = 400 / Math.max(w, h);
-      const dstW  = Math.max(Math.round(w * scale), 40);
-      const dstH  = Math.max(Math.round(h * scale), 40);
-
-      const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2,
-        [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
-      const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2,
-        [0, 0, dstW, 0, dstW, dstH, 0, dstH]);
-      const M      = cv.getPerspectiveTransform(srcPts, dstPts);
-      const warped = new cv.Mat();
-      cv.warpPerspective(grayMat, warped, M, new cv.Size(dstW, dstH));
-
-      srcPts.delete(); dstPts.delete(); M.delete();
-      return warped;
-    }
-
-    function countPips(halfMat) {
-      // halfMat is RGBA (warped from raw color frame)
-      const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
-      const rw  = halfMat.cols - 2 * pad;
-      const rh  = halfMat.rows - 2 * pad;
-      if (rw < 10 || rh < 10) return 0;
-
-      const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
-      let gray = null, thresh = null, rgb = null, hsv = null, chans = null,
-          sChan = null, satMask = null, combined = null,
-          kernel = null, closed = null, conts = null, hierP = null;
-      try {
-        // Dark pip path — catches black/dark pips
-        gray = new cv.Mat();
-        cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
-        thresh = new cv.Mat();
-        cv.adaptiveThreshold(gray, thresh, 255,
-          cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 3);
-
-        // Colored pip path — catches yellow/orange/green/blue pips
-        // White tile background has S≈0; any colored pip has S>40
-        rgb = new cv.Mat();
-        cv.cvtColor(inner, rgb, cv.COLOR_RGBA2BGR);
-        hsv = new cv.Mat();
-        cv.cvtColor(rgb, hsv, cv.COLOR_BGR2HSV);
-        chans = new cv.MatVector();
-        cv.split(hsv, chans);
-        sChan = chans.get(1).clone();
-        satMask = new cv.Mat();
-        cv.threshold(sChan, satMask, 40, 255, cv.THRESH_BINARY);
-
-        // Pip = dark OR colored
-        combined = new cv.Mat();
-        cv.bitwise_or(thresh, satMask, combined);
-
-        kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
-        closed = new cv.Mat();
-        cv.morphologyEx(combined, closed, cv.MORPH_CLOSE, kernel);
-
-        conts = new cv.MatVector();
-        hierP = new cv.Mat();
-        cv.findContours(closed, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-        const regionArea = rw * rh;
-        const minPip = regionArea * 0.002;
-        const maxPip = regionArea * 0.12;
-
-        let count = 0;
-        for (let i = 0; i < conts.size(); i++) {
-          const c    = conts.get(i);
-          const area = cv.contourArea(c);
-          const peri = cv.arcLength(c, true);
-          c.delete();
-          const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
-          if (area >= minPip && area <= maxPip && circ >= 0.4) count++;
-        }
-        return Math.min(count, 12);
-      } finally {
-        inner.delete();
-        if (gray)     gray.delete();
-        if (thresh)   thresh.delete();
-        if (rgb)      rgb.delete();
-        if (hsv)      hsv.delete();
-        if (chans)    chans.delete();
-        if (sChan)    sChan.delete();
-        if (satMask)  satMask.delete();
-        if (combined) combined.delete();
-        if (kernel)   kernel.delete();
-        if (closed)   closed.delete();
-        if (conts)    conts.delete();
-        if (hierP)    hierP.delete();
-      }
-    }
 
     // ── Retake ───────────────────────────────────────────────────────────────
     retakeBtn.addEventListener("click", () => {
