@@ -379,9 +379,21 @@
             // Larger epsilon (0.04) tolerates rounded tile corners
             cv.approxPolyDP(c, approx, 0.04 * peri, true);
             if (approx.rows === 4) {
-              bestArea = area;
-              if (bestApprox) bestApprox.delete();
-              bestApprox = approx;
+              const d = approx.data32S;
+              const p = [{x:d[0],y:d[1]},{x:d[2],y:d[3]},{x:d[4],y:d[5]},{x:d[6],y:d[7]}];
+              const s0 = Math.hypot(p[1].x-p[0].x, p[1].y-p[0].y);
+              const s1 = Math.hypot(p[2].x-p[1].x, p[2].y-p[1].y);
+              const s2 = Math.hypot(p[3].x-p[2].x, p[3].y-p[2].y);
+              const s3 = Math.hypot(p[0].x-p[3].x, p[0].y-p[3].y);
+              const sw = (s0 + s2) / 2, sh = (s1 + s3) / 2;
+              const ratio = Math.max(sw, sh) / Math.min(sw, sh);
+              if (ratio >= 1.4 && ratio <= 3.2) {
+                bestArea = area;
+                if (bestApprox) bestApprox.delete();
+                bestApprox = approx;
+              } else {
+                approx.delete();
+              }
             } else {
               approx.delete();
             }
@@ -490,8 +502,10 @@
         for (let i = 0; i < conts.size(); i++) {
           const c    = conts.get(i);
           const area = cv.contourArea(c);
+          const peri = cv.arcLength(c, true);
           c.delete();
-          if (area >= minPip && area <= maxPip) count++;
+          const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
+          if (area >= minPip && area <= maxPip && circ >= 0.4) count++;
         }
         return Math.min(count, 12);
       } finally {

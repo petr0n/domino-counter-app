@@ -394,9 +394,17 @@
                 p.y < edgeMargin || p.y > canvas.height - edgeMargin
               );
               if (!atEdge) {
-                const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
-                const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
-                quads.push({ pts, area, cx, cy });
+                const s0 = Math.hypot(pts[1].x-pts[0].x, pts[1].y-pts[0].y);
+                const s1 = Math.hypot(pts[2].x-pts[1].x, pts[2].y-pts[1].y);
+                const s2 = Math.hypot(pts[3].x-pts[2].x, pts[3].y-pts[2].y);
+                const s3 = Math.hypot(pts[0].x-pts[3].x, pts[0].y-pts[3].y);
+                const sw = (s0 + s2) / 2, sh = (s1 + s3) / 2;
+                const ratio = Math.max(sw, sh) / Math.min(sw, sh);
+                if (ratio >= 1.4 && ratio <= 3.2) {
+                  const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
+                  const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
+                  quads.push({ pts, area, cx, cy });
+                }
               }
             }
             approx.delete();
@@ -516,8 +524,10 @@
         for (let i = 0; i < conts.size(); i++) {
           const c    = conts.get(i);
           const area = cv.contourArea(c);
+          const peri = cv.arcLength(c, true);
           c.delete();
-          if (area >= minPip && area <= maxPip) count++;
+          const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
+          if (area >= minPip && area <= maxPip && circ >= 0.4) count++;
         }
         return Math.min(count, 12);
       } finally {
