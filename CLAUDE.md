@@ -11,8 +11,7 @@
 The following are LOCKED. Do not touch them unless the user explicitly says **"change the detection pipeline"**:
 
 - `preprocess()` in any HTML file (Canvas 2D grayscale + contrast stretch)
-- The OpenCV pip counting pipeline in `quick.html` and `catalog.html`
-- The Claude AI prompt in `scan.html`'s `callClaude()` function
+- The OpenCV pip counting pipeline in `quick.html`, `catalog.html`, and `scan.html`
 - The OpenCV.js CDN URL or version
 
 If you think the pipeline needs improving, say so and wait for the user to approve before touching anything.
@@ -35,10 +34,10 @@ Always check facts against existing code, documentation, or the actual file befo
 
 These decisions were made deliberately after testing. Do not second-guess, reverse, or "improve" them without the user explicitly asking.
 
-### Tile Detection: OpenCV.js
-**OpenCV.js is the tile detection and pip counting engine. Do not replace it with Claude AI or any other approach.**
+### Tile Detection: OpenCV.js (every page)
+**OpenCV.js is the ONLY tile detection and pip counting engine, in all three scanning pages (`quick.html`, `catalog.html`, `scan.html`). Do not replace it with Claude AI or any other approach.**
 
-Reasoning locked in: after preprocessing (grayscale + contrast stretch), pip dots are dark circles on a bright background — exactly what OpenCV contour/blob detection was built for. It is deterministic, free, and accurate on this input. Claude AI vision was tried and produced inconsistent pip counts.
+Reasoning locked in: after preprocessing (grayscale + contrast stretch), pip dots are dark circles on a bright background — exactly what OpenCV contour/blob detection was built for. It is deterministic, free, and accurate on this input. Claude AI vision was tried in `scan.html` and produced inconsistent pip counts, so it was removed — `scan.html` now runs the same local OpenCV pipeline as the other pages.
 
 ### Image Preprocessing: Canvas 2D — Grayscale + Contrast Stretch
 **Before any detection, capture frames are converted to grayscale and histogram-stretched to full 0–255 range using the Canvas 2D API.**
@@ -48,8 +47,8 @@ Reasoning locked in: colored pips (yellow, blue, orange) have low contrast again
 ### Storage: domino-counter-app repo
 **Sessions are stored at `sessions/{code}.json` and catalog at `catalog.json` in the `petr0n/domino-counter-app` repo via GitHub API.** Do not change this to any other repo or path.
 
-### Claude API: Proxy Only
-**The Anthropic Claude API (via the Worker `/anthropic` route) is used only for the multiplayer scan.html tile identification flow, proxied through the Cloudflare Worker.** It is not used for image preprocessing, pip counting, or any CV task.
+### Claude API: Not Used for Detection
+**No scanning page calls the Anthropic Claude API. Tile detection and pip counting are 100% local OpenCV.js.** The Worker still exposes a `/anthropic` route, but the app no longer uses it — it is legacy and may be removed. The Worker is required only for the GitHub session/catalog proxy.
 
 ### Game Codes: crypto.getRandomValues
 **`genCode()` uses `crypto.getRandomValues` with an unambiguous character set (no 0/O/1/I/l).** Do not change to `Math.random()`.
@@ -58,7 +57,7 @@ Reasoning locked in: colored pips (yellow, blue, orange) have low contrast again
 
 ## Project Overview
 
-**Domino Counter App** is a static web application for scanning and counting domino tiles. It supports single-player quick-scan mode (OpenCV.js, fully local) and multiplayer sessions (Claude AI via Worker proxy, game state persisted to GitHub).
+**Domino Counter App** is a static web application for scanning and counting domino tiles. It supports single-player quick-scan mode (OpenCV.js, fully local) and multiplayer sessions (also OpenCV.js for detection, with game state persisted to GitHub via the Worker proxy).
 
 There is no build system, no npm packages in the root, and no framework — only vanilla JavaScript embedded in HTML files, with a separate Cloudflare Worker backend.
 
@@ -100,7 +99,7 @@ Entry point. Three navigation buttons: New Game, Join Game, Catalog. No logic.
 
 ### `scan.html` — Multiplayer Scanner
 - Creates or joins a game using a 6-letter random code (`crypto.getRandomValues`)
-- Captures camera frame → Canvas 2D grayscale + contrast stretch → sends to Claude AI via Worker proxy
+- Captures camera frame → Canvas 2D grayscale + contrast stretch → OpenCV.js pip counting (runs locally, same pipeline as `quick.html`)
 - Reads/writes game session JSON files to GitHub via the Worker
 - Displays a live scoreboard; current player's tiles shown individually with per-tile delete
 
@@ -126,7 +125,7 @@ Acts as a credential proxy. The browser never sees API keys.
 
 **Routes:**
 - `POST /anthropic` → forwards to Anthropic API with `ANTHROPIC_API_KEY` header injected
-  - Model used: `claude-opus-4-8` (vision) — used in scan.html only
+  - Legacy/unused: no page in the app calls this route anymore (detection is local OpenCV). Kept for now; safe to remove.
 - `GET|PUT /github/repos/...` → forwards to GitHub API with `GITHUB_TOKEN` header injected
   - Allowed paths: `repos/petr0n/domino-counter-app/contents/sessions/` and `repos/petr0n/domino-counter-app/contents/catalog.json` only
 
@@ -171,15 +170,12 @@ Stored as JSON files on GitHub at `sessions/{code}.json` in this repo. The `sess
 3. Histogram stretch: find min/max pixel values, remap to 0–255
 4. Result: high-contrast B&W image where pip dots are maximally dark
 
-### Step 2a — OpenCV.js (quick.html, catalog.html)
-1. Canny edge detection on preprocessed image
-2. Contour detection → find rectangular contours (tiles)
-3. Perspective warp to isolate each tile
-4. Adaptive threshold → contour filtering by area and circularity → pip count
-
-### Step 2b — Claude AI via Worker (scan.html)
-1. Preprocessed image sent as base64 JPEG to `/anthropic`
-2. Claude identifies tiles and returns `{tiles:[{left,right}]}`
+### Step 2 — OpenCV.js (quick.html, catalog.html, scan.html)
+1. Otsu threshold on the preprocessed image isolates the bright tiles
+2. Open/close morphology makes each tile one solid blob (touching tiles stay separate)
+3. `minAreaRect` per blob, filtered by area, aspect ratio, and fill ratio → tile rectangles (tolerant of rounded corners and rotation)
+4. Perspective warp to isolate each tile, split into halves
+5. Adaptive threshold → contour filtering by area and circularity → pip count
 
 **Memory management (OpenCV):** Every `cv.Mat` created must be explicitly `.delete()`d in a `finally` block. Missing deletions cause memory leaks that crash the page over time.
 
@@ -212,8 +208,7 @@ Stored as JSON files on GitHub at `sessions/{code}.json` in this repo. The `sess
 
 | Dependency | How used | Location |
 |---|---|---|
-| OpenCV.js 4.x | Pip counting in quick.html / catalog.html | CDN in HTML files |
-| Anthropic Claude API | Tile identification in scan.html (multiplayer) | Via Worker `/anthropic` |
+| OpenCV.js 4.x | Tile detection + pip counting in quick.html / catalog.html / scan.html | CDN in HTML files |
 | GitHub API v3 | Session + catalog persistence | Via Worker `/github/...` |
 | Cloudflare Workers | Credential proxy + auto-deploy via GH Actions | `worker/` directory |
 
