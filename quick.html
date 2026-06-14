@@ -111,7 +111,7 @@
 
   <script>
     const PROXY = window.PROXY_URL;
-    const OWNER = "petr0n", REPO = "japan-2026";
+    const OWNER = "petr0n", REPO = "domino-counter-app";
 
     let catalog = { tiles: {} };
     let tiles = [], pendingTiles = [];
@@ -134,7 +134,7 @@
     const camGuide      = document.getElementById("camGuide");
 
     // Load catalog in background for cross-reference
-    fetch(`${PROXY}/github/repos/${OWNER}/${REPO}/contents/domino-counter/catalog.json`, {
+    fetch(`${PROXY}/github/repos/${OWNER}/${REPO}/contents/catalog.json`, {
       headers: { Accept: "application/vnd.github.v3+json" }
     }).then(r => r.ok ? r.json() : null)
       .then(j => { if (j) catalog = JSON.parse(atob(j.content.replace(/\n/g, ""))); })

@@ -32,6 +32,9 @@
     .score-val { font-size:1.6rem; font-weight:800; }
     .score-tiles { font-size:0.75rem; color:#555; }
     .no-scores { color:#444; font-size:0.85rem; text-align:center; padding:4px 0; }
+    .my-tile-list { display:flex; flex-direction:column; gap:3px; margin-top:6px; }
+    .my-tile-item { display:flex; justify-content:space-between; align-items:center; font-size:0.78rem; color:#666; }
+    .my-tile-del { width:20px; height:20px; padding:0; border-radius:4px; background:#2a2a2a; color:#555; font-size:0.7rem; border:none; cursor:pointer; flex:none; }
 
     /* Camera */
     .camera-wrapper { position:relative; width:100%; max-width:480px; border-radius:16px; overflow:hidden; background:#1a1a1a; aspect-ratio:4/3; }
@@ -116,7 +119,7 @@
   <script src="config.js"></script>
   <script>
     const PROXY=window.PROXY_URL;
-    const OWNER="petr0n",REPO="japan-2026";
+    const OWNER="petr0n",REPO="domino-counter-app";
     const GH=`${PROXY}/github`;
     const GH_H={Accept:"application/vnd.github.v3+json","Content-Type":"application/json"};
 
@@ -140,12 +143,12 @@
     navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:960}},audio:false})
       .then(s=>video.srcObject=s).catch(()=>showError("Camera access denied."));
 
-    fetch(`${GH}/repos/${OWNER}/${REPO}/contents/domino-counter/catalog.json`,{headers:GH_H})
+    fetch(`${GH}/repos/${OWNER}/${REPO}/contents/catalog.json`,{headers:GH_H})
       .then(r=>r.ok?r.json():null).then(j=>{if(j)catalog=JSON.parse(atob(j.content.replace(/\n/g,"")));});
 
     function tileKey(l,r){return `${Math.min(l,r)}-${Math.max(l,r)}`;}
     function isVerified(l,r){return !!catalog.tiles?.[tileKey(l,r)];}
-    function genCode(){return Math.random().toString(36).substring(2,8).toUpperCase();}
+    function genCode(){const a="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";return Array.from(crypto.getRandomValues(new Uint8Array(6))).map(b=>a[b%a.length]).join('');}
     function getName(){const n=document.getElementById("nameInput").value.trim();if(!n)showError("Enter your name first.");return n;}
 
     async function newGame(){
@@ -183,39 +186,38 @@
 
     function renderScoreboard(){
       const scores={};
-      for(const t of tiles){
-        if(!scores[t.player])scores[t.player]={total:0,count:0};
+      tiles.forEach((t,i)=>{
+        if(!scores[t.player])scores[t.player]={total:0,count:0,mine:[]};
         scores[t.player].total+=t.left+t.right;
         scores[t.player].count++;
-      }
+        if(t.player===playerName)scores[t.player].mine.push({l:t.left,r:t.right,i});
+      });
       const names=Object.keys(scores);
       if(!names.length){document.getElementById("scoreRows").innerHTML='<p class="no-scores">No tiles yet</p>';return;}
       names.sort((a,b)=>scores[b].total-scores[a].total);
-      document.getElementById("scoreRows").innerHTML=names.map(n=>`
-        <div class="score-row">
-          <div>
-            <div class="score-name${n===playerName?' me':''}">${n}${n===playerName?' (you)':''}</div>
-            <div class="score-tiles">${scores[n].count} tile${scores[n].count!==1?'s':''}</div>
-          </div>
-          <span class="score-val">${scores[n].total}</span>
-        </div>`).join("");
+      document.getElementById("scoreRows").innerHTML=names.map(n=>{
+        const s=scores[n];
+        const myTiles=n===playerName&&s.mine.length?`<div class="my-tile-list">${s.mine.map((t,mi)=>`<div class="my-tile-item"><span>${t.l}|${t.r} = ${t.l+t.r}</span><button class="my-tile-del" onclick="deleteSavedTile(${mi})">&#x2715;</button></div>`).join('')}</div>`:'';
+        return `<div class="score-row"><div><div class="score-name${n===playerName?' me':''}">${n}${n===playerName?' (you)':''}</div><div class="score-tiles">${s.count} tile${s.count!==1?'s':''}</div>${myTiles}</div><span class="score-val">${s.total}</span></div>`;
+      }).join("");
     }
 
     async function readSession(code){
-      const res=await fetch(`${GH}/repos/${OWNER}/${REPO}/contents/domino-counter/sessions/${code}.json`,{headers:GH_H});
+      const res=await fetch(`${GH}/repos/${OWNER}/${REPO}/contents/sessions/${code}.json`,{headers:GH_H});
       if(res.status===404)return null;
       const j=await res.json();
       return JSON.parse(atob(j.content.replace(/\n/g,"")));
     }
 
     async function writeSession(code,t){
-      const path=`domino-counter/sessions/${code}.json`;
+      const path=`sessions/${code}.json`;
       const url=`${GH}/repos/${OWNER}/${REPO}/contents/${path}`;
       const content=btoa(JSON.stringify({tiles:t}));
       let sha;const check=await fetch(url,{headers:GH_H});
       if(check.ok){const j=await check.json();sha=j.sha;}
       const body={message:`update session ${code}`,content};if(sha)body.sha=sha;
       const res=await fetch(url,{method:"PUT",headers:GH_H,body:JSON.stringify(body)});
+      if(res.status===409||res.status===422)return 'conflict';
       if(!res.ok){const e=await res.json();showError("Save failed: "+(e.message||res.status));return false;}
       return true;
     }
@@ -295,16 +297,36 @@
       if(!pendingTiles.length)return;
       if(!validatePending()){showError("Each side must be 0–12.");return;}
       showInfo("Saving...");
-      let baseTiles=tiles;
-      try{const current=await readSession(gameCode);if(current)baseTiles=current.tiles||[];}catch(_){}
       const newTiles=pendingTiles.map(t=>({left:t.left,right:t.right,player:playerName,verified:isVerified(t.left,t.right)}));
-      const merged=[...baseTiles,...newTiles];
-      const ok=await writeSession(gameCode,merged);if(!ok)return;
-      tiles=merged;renderScoreboard();
-      showInfo("Saved!");setTimeout(()=>infoEl.style.display="none",1200);
-      pendingTiles=[];reviewPanel.classList.remove("visible");
-      preview.style.display="none";video.style.display="block";
-      scanBtn.style.display="block";retakeBtn.style.display="none";hideMsg();
+      for(let attempt=0;attempt<4;attempt++){
+        let base=tiles;
+        try{const cur=await readSession(gameCode);if(cur)base=cur.tiles||[];}catch(_){}
+        const merged=[...base,...newTiles];
+        const result=await writeSession(gameCode,merged);
+        if(result===true){
+          tiles=merged;renderScoreboard();
+          showInfo("Saved!");setTimeout(()=>infoEl.style.display="none",1200);
+          pendingTiles=[];reviewPanel.classList.remove("visible");
+          preview.style.display="none";video.style.display="block";
+          scanBtn.style.display="block";retakeBtn.style.display="none";hideMsg();
+          return;
+        }
+        if(result!=='conflict')return;
+      }
+      showError("Save conflict — tap Scan again to retry.");
+    }
+
+    async function deleteSavedTile(myIdx){
+      showInfo("Removing...");
+      let base=tiles;
+      try{const cur=await readSession(gameCode);if(cur)base=cur.tiles||[];}catch(_){}
+      let n=0;
+      const updated=base.filter(t=>{if(t.player!==playerName)return true;return n++!==myIdx;});
+      const result=await writeSession(gameCode,updated);
+      if(result==='conflict'){showError("Conflict — tap Refresh and try again.");return;}
+      if(!result)return;
+      tiles=updated;renderScoreboard();
+      showInfo("Removed.");setTimeout(()=>infoEl.style.display="none",1200);
     }
 
     function showError(m){errorEl.textContent=m;errorEl.style.display="block";infoEl.style.display="none";}

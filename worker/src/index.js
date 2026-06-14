@@ -11,9 +11,9 @@
 // Only this origin may use the proxy (keeps it from being an open relay).
 const ALLOWED_ORIGIN = "https://petr0n.github.io";
 
-// GitHub calls are restricted to this path prefix (game sessions + catalog only),
-// so a leaked Worker URL can't be used to touch the rest of the token's scope.
-const GH_PREFIX = "repos/petr0n/japan-2026/contents/domino-counter/";
+// GitHub calls are restricted to sessions/ and catalog.json in the app repo only.
+const GH_SESSION_PREFIX = "repos/petr0n/domino-counter-app/contents/sessions/";
+const GH_CATALOG        = "repos/petr0n/domino-counter-app/contents/catalog.json";
 
 function corsHeaders() {
   return {
@@ -60,7 +60,7 @@ export default {
       // ── GitHub Contents (sessions + catalog only) ───────────────────────
       if (path.startsWith("github/")) {
         const ghPath = path.slice("github/".length);
-        if (!ghPath.startsWith(GH_PREFIX)) {
+        if (!ghPath.startsWith(GH_SESSION_PREFIX) && ghPath !== GH_CATALOG) {
           return new Response("Path not allowed", { status: 403, headers: cors });
         }
         const headers = {
