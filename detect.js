@@ -43,10 +43,9 @@
     });
   }
 
-  // Grayscale + histogram stretch to full 0–255. Pure Canvas 2D, no OpenCV.
-  function preprocess(canvas) {
-    const ctx = canvas.getContext("2d");
-    const d = ctx.getImageData(0, 0, canvas.width, canvas.height), px = d.data;
+  // Grayscale + histogram stretch to full 0–255, in place on an RGBA pixel
+  // array. Pure JS — no canvas/OpenCV — so it is unit-testable headlessly.
+  function stretchGray(px) {
     let mn = 255, mx = 0;
     for (let i = 0; i < px.length; i += 4) {
       const g = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
@@ -58,6 +57,13 @@
       const v = Math.round(((px[i] - mn) / rng) * 255);
       px[i] = px[i+1] = px[i+2] = v;
     }
+  }
+
+  // Canvas wrapper around stretchGray.
+  function preprocess(canvas) {
+    const ctx = canvas.getContext("2d");
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    stretchGray(d.data);
     ctx.putImageData(d, 0, 0);
   }
 
@@ -154,34 +160,35 @@
     }
   }
 
+  // Multi-tile core: every tile in an already-loaded src Mat → [{left,right}, …].
+  function scanMat(src) {
+    const found = findTiles(src, 0.02, 0.60, 0.03);
+    found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
+    return found.map(t => countQuad(src, t.pts));
+  }
+
+  // Single-tile core: the one largest tile in src, with whole-frame fallback.
+  function scanMatSingle(src) {
+    const found = findTiles(src, 0.05, 0.95, 0);
+    if (found.length) {
+      found.sort((a, b) => b.area - a.area);
+      return countQuad(src, found[0].pts);
+    }
+    return splitAndCount(src);
+  }
+
   // Multi-tile: every tile laid out in frame → [{left,right}, …].
   function scanCanvas(canvas) {
     let src = null;
-    try {
-      src = cv.imread(canvas);
-      const found = findTiles(src, 0.02, 0.60, 0.03);
-      found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
-      return found.map(t => countQuad(src, t.pts));
-    } finally {
-      if (src) src.delete();
-    }
+    try { src = cv.imread(canvas); return scanMat(src); }
+    finally { if (src) src.delete(); }
   }
 
-  // Single-tile (catalog): the one largest tile filling the frame. Falls back
-  // to counting the whole frame as a tile if no clean rectangle is found.
+  // Single-tile (catalog): the one largest tile filling the frame.
   function scanCanvasSingle(canvas) {
     let src = null;
-    try {
-      src = cv.imread(canvas);
-      const found = findTiles(src, 0.05, 0.95, 0);
-      if (found.length) {
-        found.sort((a, b) => b.area - a.area);
-        return countQuad(src, found[0].pts);
-      }
-      return splitAndCount(src);
-    } finally {
-      if (src) src.delete();
-    }
+    try { src = cv.imread(canvas); return scanMatSingle(src); }
+    finally { if (src) src.delete(); }
   }
 
   function perspectiveWarp(grayMat, pts) {
@@ -247,5 +254,9 @@
     }
   }
 
-  window.DominoCV = { loadCV, preprocess, scanCanvas, scanCanvasSingle, isReady: () => cvReady };
+  window.DominoCV = {
+    loadCV, preprocess, scanCanvas, scanCanvasSingle, isReady: () => cvReady,
+    // Headless-test hooks: operate on pixel arrays / Mats (no canvas/DOM).
+    _test: { stretchGray, findTiles, scanMat, scanMatSingle }
+  };
 })();
