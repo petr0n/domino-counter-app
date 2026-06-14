@@ -402,8 +402,8 @@
         }
 
         warped = bestApprox
-          ? perspectiveWarp(enhanced, bestApprox)
-          : enhanced.clone();
+          ? perspectiveWarp(src, bestApprox)
+          : src.clone();
 
         const landscape = warped.cols >= warped.rows;
         const mid = landscape
@@ -473,30 +473,51 @@
     }
 
     function countPips(halfMat) {
-      // Trim a small inner border to exclude the dividing bar and tile edge
+      // halfMat is RGBA (warped from raw color frame)
       const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
       const rw  = halfMat.cols - 2 * pad;
       const rh  = halfMat.rows - 2 * pad;
       if (rw < 10 || rh < 10) return 0;
 
       const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
-      let thresh = null, kernel = null, closed = null, conts = null, hierP = null;
+      let gray = null, thresh = null, rgb = null, hsv = null, chans = null,
+          sChan = null, satMask = null, combined = null,
+          kernel = null, closed = null, conts = null, hierP = null;
       try {
+        // Dark pip path — catches black/dark pips
+        gray = new cv.Mat();
+        cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
         thresh = new cv.Mat();
-        cv.adaptiveThreshold(inner, thresh, 255,
+        cv.adaptiveThreshold(gray, thresh, 255,
           cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 3);
+
+        // Colored pip path — catches yellow/orange/green/blue pips
+        // White tile background has S≈0; any colored pip has S>40
+        rgb = new cv.Mat();
+        cv.cvtColor(inner, rgb, cv.COLOR_RGBA2RGB);
+        hsv = new cv.Mat();
+        cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+        chans = new cv.MatVector();
+        cv.split(hsv, chans);
+        sChan = chans.get(1).clone();
+        satMask = new cv.Mat();
+        cv.threshold(sChan, satMask, 40, 255, cv.THRESH_BINARY);
+
+        // Pip = dark OR colored
+        combined = new cv.Mat();
+        cv.bitwise_or(thresh, satMask, combined);
 
         kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
         closed = new cv.Mat();
-        cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel);
+        cv.morphologyEx(combined, closed, cv.MORPH_CLOSE, kernel);
 
         conts = new cv.MatVector();
         hierP = new cv.Mat();
         cv.findContours(closed, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         const regionArea = rw * rh;
-        const minPip = regionArea * 0.002;  // 0.2% of half-area minimum
-        const maxPip = regionArea * 0.12;   // 12% of half-area maximum
+        const minPip = regionArea * 0.002;
+        const maxPip = regionArea * 0.12;
 
         let count = 0;
         for (let i = 0; i < conts.size(); i++) {
@@ -510,11 +531,18 @@
         return Math.min(count, 12);
       } finally {
         inner.delete();
-        if (thresh) thresh.delete();
-        if (kernel) kernel.delete();
-        if (closed) closed.delete();
-        if (conts)  conts.delete();
-        if (hierP)  hierP.delete();
+        if (gray)     gray.delete();
+        if (thresh)   thresh.delete();
+        if (rgb)      rgb.delete();
+        if (hsv)      hsv.delete();
+        if (chans)    chans.delete();
+        if (sChan)    sChan.delete();
+        if (satMask)  satMask.delete();
+        if (combined) combined.delete();
+        if (kernel)   kernel.delete();
+        if (closed)   closed.delete();
+        if (conts)    conts.delete();
+        if (hierP)    hierP.delete();
       }
     }
 
