@@ -286,11 +286,14 @@
       reviewTotal.textContent=`Total: ${sum} dots across ${pendingTiles.length} tile${pendingTiles.length!==1?'s':''}`;
     }
 
-    function updatePending(i,side,val){pendingTiles[i][side]=parseInt(val)||0;renderReview();}
+    function clampPip(v){return Math.min(12,Math.max(0,parseInt(v)||0));}
+    function updatePending(i,side,val){pendingTiles[i][side]=clampPip(val);renderReview();}
+    function validatePending(){return pendingTiles.every(t=>t.left<=12&&t.right<=12&&t.left>=0&&t.right>=0);}
     function removePending(i){pendingTiles.splice(i,1);if(!pendingTiles.length){reviewPanel.classList.remove("visible");return;}renderReview();}
 
     async function confirmAll(){
       if(!pendingTiles.length)return;
+      if(!validatePending()){showError("Each side must be 0–12.");return;}
       showInfo("Saving...");
       let baseTiles=tiles;
       try{const current=await readSession(gameCode);if(current)baseTiles=current.tiles||[];}catch(_){}
