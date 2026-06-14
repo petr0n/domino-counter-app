@@ -43,8 +43,16 @@ rm -f "$tmpjs"
 
 nhtml=$(echo "$htmlfiles" | grep -c '[^[:space:]]' 2>/dev/null || echo 0)
 
+# Warn if locked detection pipeline code was modified
+locked_warn=""
+if git diff origin/main..HEAD -- quick.html scan.html catalog.html 2>/dev/null | grep -qE '^\+.*(LOCKED|function preprocess|callClaude|findContours|adaptiveThreshold)'; then
+  locked_warn=" ⚠️  LOCKED detection pipeline code was modified — confirm with user before pushing."
+fi
+
 if [[ -n "$errs" ]]; then
-  printf '{"systemMessage":"JS errors found — fix before pushing:%s"}' "$errs"
+  printf '{"systemMessage":"JS errors found — fix before pushing:%s%s"}' "$errs" "$locked_warn"
 elif [[ "$nhtml" -gt 0 ]]; then
-  printf '{"systemMessage":"JS syntax OK. Double-check %s HTML file(s) with inline scripts before pushing."}' "$nhtml"
+  printf '{"systemMessage":"JS syntax OK. Double-check %s HTML file(s) with inline scripts before pushing.%s"}' "$nhtml" "$locked_warn"
+elif [[ -n "$locked_warn" ]]; then
+  printf '{"systemMessage":"%s"}' "${locked_warn# }"
 fi
