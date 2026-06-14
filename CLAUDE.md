@@ -10,8 +10,7 @@
 
 The following are LOCKED. Do not touch them unless the user explicitly says **"change the detection pipeline"**:
 
-- `preprocess()` in any HTML file (Canvas 2D grayscale + contrast stretch)
-- The OpenCV pip counting pipeline in `quick.html`, `catalog.html`, and `scan.html`
+- The shared detection module `detect.js` — `preprocess()` (Canvas 2D grayscale + contrast stretch), `scanCanvas()`, `perspectiveWarp()`, `countPips()`, `loadCV()`
 - The OpenCV.js CDN URL or version
 
 If you think the pipeline needs improving, say so and wait for the user to approve before touching anything.
@@ -34,10 +33,14 @@ Always check facts against existing code, documentation, or the actual file befo
 
 These decisions were made deliberately after testing. Do not second-guess, reverse, or "improve" them without the user explicitly asking.
 
-### Tile Detection: OpenCV.js (every page)
-**OpenCV.js is the ONLY tile detection and pip counting engine, in all three scanning pages (`quick.html`, `catalog.html`, `scan.html`). Do not replace it with Claude AI or any other approach.**
+### Tile Detection: OpenCV.js in one shared module
+**OpenCV.js is the ONLY tile detection and pip counting engine. There is exactly ONE implementation — `detect.js` (`window.DominoCV`) — shared by `quick.html` and `scan.html`. Do not duplicate it back into the pages, and do not replace it with Claude AI or any other approach.**
 
-Reasoning locked in: after preprocessing (grayscale + contrast stretch), pip dots are dark circles on a bright background — exactly what OpenCV contour/blob detection was built for. It is deterministic, free, and accurate on this input. Claude AI vision was tried in `scan.html` and produced inconsistent pip counts, so it was removed — `scan.html` now runs the same local OpenCV pipeline as the other pages.
+`detect.js` exposes `DominoCV.loadCV()`, `DominoCV.preprocess(canvas)`, and `DominoCV.scanCanvas(canvas) → [{left,right}]`. Both scan pages capture a frame, call `DominoCV.preprocess` then `DominoCV.scanCanvas`. `quick.html` additionally runs a real-time guidance loop (its own concern, not detection).
+
+Reasoning locked in: after preprocessing (grayscale + contrast stretch), pip dots are dark circles on a bright background — exactly what OpenCV contour/blob detection was built for. It is deterministic, free, and accurate on this input. Claude AI vision was tried in `scan.html` and produced inconsistent pip counts, so it was removed.
+
+> Known follow-up: `catalog.html` still carries its own older single-tile copy of `loadCV`/`preprocess`/`countPips`/`perspectiveWarp`. It should be migrated onto `detect.js` too.
 
 ### Image Preprocessing: Canvas 2D — Grayscale + Contrast Stretch
 **Before any detection, capture frames are converted to grayscale and histogram-stretched to full 0–255 range using the Canvas 2D API.**
@@ -84,6 +87,7 @@ domino-counter-app/
 ├── CLAUDE.md                 # This file
 ├── catalog.json              # Tile database: all 56 tiles in a double-12 set
 ├── config.js                 # Sets window.PROXY_URL to the deployed Worker URL
+├── detect.js                 # Shared OpenCV detection module (window.DominoCV)
 ├── index.html                # Landing page (New Game / Join Game / Catalog)
 ├── scan.html                 # Multiplayer tile scanner
 ├── quick.html                # Single-player quick scan (no backend required)
@@ -185,7 +189,7 @@ Stored as JSON files on GitHub at `sessions/{code}.json` in this repo. The `sess
 
 - **Language:** Vanilla JavaScript (ES6+), no TypeScript
 - **No framework, no build step** — files are served as-is
-- **Inline `<script>` blocks** in HTML — no separate `.js` source files except `config.js` and `worker/src/index.js`
+- **Inline `<script>` blocks** in HTML for page-specific logic — shared logic lives in separate `.js` files: `config.js`, `detect.js` (detection pipeline), and `worker/src/index.js`
 - **Compact style:** short variable names (`l`, `r`, `c`, `m`, `s`), ternaries, arrow functions — intentional for bundle size
 - **No ESLint, Prettier, or TypeScript config** — style is enforced by reading existing code
 - **No comments** unless the reason is non-obvious; do not add explanatory comments
