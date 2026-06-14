@@ -335,8 +335,8 @@
     // the count will be wrong; the user corrects via the number inputs.
 
     function countTile() {
-      let src = null, gray = null, blurred = null, binary = null;
-      let contours = null, hier = null, bestApprox = null, warped = null;
+      let src = null, gray = null, blurred = null, binary = null, morphed = null;
+      let morphKernel = null, contours = null, hier = null, bestApprox = null, warped = null;
       let halfA = null, halfB = null;
       try {
         src = cv.imread(canvas);
@@ -344,16 +344,23 @@
         gray = new cv.Mat();
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
+        // Heavier blur to suppress wood grain / texture before thresholding
         blurred = new cv.Mat();
-        cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
+        cv.GaussianBlur(gray, blurred, new cv.Size(11, 11), 0);
 
+        // Otsu's global threshold: separates bright white tiles from darker background
+        // better than adaptive threshold, which is designed for local pip detection
         binary = new cv.Mat();
-        cv.adaptiveThreshold(blurred, binary, 255,
-          cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 4);
+        cv.threshold(blurred, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+
+        // Fill any holes inside the tile (from pips, shadows, reflections)
+        morphKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(7, 7));
+        morphed = new cv.Mat();
+        cv.morphologyEx(binary, morphed, cv.MORPH_CLOSE, morphKernel);
 
         contours = new cv.MatVector();
         hier = new cv.Mat();
-        cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        cv.findContours(morphed, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         const frameArea = canvas.width * canvas.height;
         let bestArea = 0;
@@ -402,6 +409,8 @@
         if (gray)       gray.delete();
         if (blurred)    blurred.delete();
         if (binary)     binary.delete();
+        if (morphKernel) morphKernel.delete();
+        if (morphed)    morphed.delete();
         if (contours)   contours.delete();
         if (hier)       hier.delete();
         if (bestApprox) bestApprox.delete();

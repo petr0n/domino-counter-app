@@ -239,8 +239,7 @@
           blurSmall = new cv.Mat();
           cv.GaussianBlur(gray, blurSmall, new cv.Size(5, 5), 0);
           binary = new cv.Mat();
-          cv.adaptiveThreshold(blurSmall, binary, 255,
-            cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 4);
+          cv.threshold(blurSmall, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
           contours = new cv.MatVector();
           hier = new cv.Mat();
           cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -338,8 +337,8 @@
     // 5. Sort tiles top-to-bottom, left-to-right.
 
     function scanWithCV() {
-      let src = null, gray = null, blurred = null, binary = null;
-      let contours = null, hier = null;
+      let src = null, gray = null, blurred = null, binary = null, morphed = null;
+      let morphKernel = null, contours = null, hier = null;
       const results = [];
 
       try {
@@ -349,15 +348,18 @@
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
         blurred = new cv.Mat();
-        cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
+        cv.GaussianBlur(gray, blurred, new cv.Size(11, 11), 0);
 
         binary = new cv.Mat();
-        cv.adaptiveThreshold(blurred, binary, 255,
-          cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 4);
+        cv.threshold(blurred, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+
+        morphKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(7, 7));
+        morphed = new cv.Mat();
+        cv.morphologyEx(binary, morphed, cv.MORPH_CLOSE, morphKernel);
 
         contours = new cv.MatVector();
         hier = new cv.Mat();
-        cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        cv.findContours(morphed, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         const frameArea = canvas.width * canvas.height;
         const minArea   = frameArea * 0.03;
@@ -443,8 +445,10 @@
         if (gray)     gray.delete();
         if (blurred)  blurred.delete();
         if (binary)   binary.delete();
-        if (contours) contours.delete();
-        if (hier)     hier.delete();
+        if (morphKernel) morphKernel.delete();
+        if (morphed)    morphed.delete();
+        if (contours)   contours.delete();
+        if (hier)       hier.delete();
       }
 
       return results;
