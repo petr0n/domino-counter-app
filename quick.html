@@ -351,16 +351,18 @@
 
     // ── OpenCV multi-tile detection ──────────────────────────────────────────
     //
-    // 1. Grayscale + blur the full-res captured frame.
-    // 2. Adaptive threshold (inverted) to find rectangles.
-    // 3. For each quadrilateral contour in the right area range that is fully
-    //    inside the frame: extract corner points, perspective-warp, count pips.
-    // 4. Deduplicate by centroid distance (same tile detected twice → keep larger).
-    // 5. Sort tiles top-to-bottom, left-to-right.
+    // 1. Grayscale + blur the preprocessed frame (bright tiles, dark surface).
+    // 2. Otsu threshold to isolate the bright tiles; morphology fills each tile
+    //    (pips and all) into one solid blob while keeping touching tiles apart.
+    // 3. For each blob in the right area range, use minAreaRect — this tolerates
+    //    rounded domino corners and rotation that an exact-4-vertex test rejects.
+    //    Keep it if it is roughly rectangular (fills its box) with a domino-like
+    //    aspect ratio and is fully inside the frame, then warp and count pips.
+    // 4. Sort tiles top-to-bottom, left-to-right.
 
     function scanWithCV() {
-      let src = null, gray = null, clahe = null, enhanced = null, blurred = null;
-      let edges = null, morphed = null, morphKernel = null, contours = null, hier = null;
+      let src = null, gray = null, blurred = null, thresh = null;
+      let kernel = null, morphed = null, contours = null, hier = null;
       const results = [];
 
       try {
@@ -369,91 +371,60 @@
         gray = new cv.Mat();
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-        enhanced = new cv.Mat();
-        clahe.apply(gray, enhanced);
-
         blurred = new cv.Mat();
-        cv.GaussianBlur(enhanced, blurred, new cv.Size(5, 5), 0);
+        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
-        edges = new cv.Mat();
-        cv.Canny(blurred, edges, 20, 60);
+        thresh = new cv.Mat();
+        cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
 
-        morphKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+        kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(7, 7));
         morphed = new cv.Mat();
-        cv.dilate(edges, morphed, morphKernel);
+        cv.morphologyEx(thresh, morphed, cv.MORPH_OPEN, kernel);
+        cv.morphologyEx(morphed, morphed, cv.MORPH_CLOSE, kernel);
 
         contours = new cv.MatVector();
         hier = new cv.Mat();
         cv.findContours(morphed, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         const frameArea = canvas.width * canvas.height;
-        const minArea   = frameArea * 0.03;
+        const minArea   = frameArea * 0.02;
         const maxArea   = frameArea * 0.60;
         // Tiles cut off at the frame edge give wrong pip counts — skip them
-        const edgeMargin = Math.min(canvas.width, canvas.height) * 0.04;
+        const edgeMargin = Math.min(canvas.width, canvas.height) * 0.03;
 
-        const quads = [];
+        const tiles = [];
         for (let i = 0; i < contours.size(); i++) {
           const c    = contours.get(i);
           const area = cv.contourArea(c);
           if (area >= minArea && area <= maxArea) {
-            const peri   = cv.arcLength(c, true);
-            const approx = new cv.Mat();
-            cv.approxPolyDP(c, approx, 0.04 * peri, true);
-            if (approx.rows === 4) {
-              const d   = approx.data32S;
-              const pts = [
-                { x: d[0], y: d[1] },
-                { x: d[2], y: d[3] },
-                { x: d[4], y: d[5] },
-                { x: d[6], y: d[7] }
-              ];
+            const rect     = cv.minAreaRect(c);
+            const rw       = rect.size.width, rh = rect.size.height;
+            const rectArea = rw * rh;
+            const ratio    = Math.max(rw, rh) / Math.min(rw, rh);
+            const fill     = rectArea > 0 ? area / rectArea : 0;
+            if (ratio >= 1.4 && ratio <= 3.2 && fill >= 0.80) {
+              const pts = cv.RotatedRect.points(rect);
               const atEdge = pts.some(p =>
                 p.x < edgeMargin || p.x > canvas.width  - edgeMargin ||
                 p.y < edgeMargin || p.y > canvas.height - edgeMargin
               );
               if (!atEdge) {
-                const s0 = Math.hypot(pts[1].x-pts[0].x, pts[1].y-pts[0].y);
-                const s1 = Math.hypot(pts[2].x-pts[1].x, pts[2].y-pts[1].y);
-                const s2 = Math.hypot(pts[3].x-pts[2].x, pts[3].y-pts[2].y);
-                const s3 = Math.hypot(pts[0].x-pts[3].x, pts[0].y-pts[3].y);
-                const sw = (s0 + s2) / 2, sh = (s1 + s3) / 2;
-                const ratio = Math.max(sw, sh) / Math.min(sw, sh);
-                if (ratio >= 1.4 && ratio <= 3.2) {
-                  const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
-                  const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
-                  quads.push({ pts, area, cx, cy });
-                }
+                const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
+                const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
+                tiles.push({ pts, area, cx, cy });
               }
             }
-            approx.delete();
           }
           c.delete();
         }
 
-        // Deduplicate: if two centroids are closer than half the side of the
-        // smaller tile, they're the same tile — keep the larger contour.
-        const keep = new Array(quads.length).fill(true);
-        for (let i = 0; i < quads.length; i++) {
-          for (let j = i + 1; j < quads.length; j++) {
-            if (!keep[i] || !keep[j]) continue;
-            const d = Math.hypot(quads[i].cx - quads[j].cx, quads[i].cy - quads[j].cy);
-            if (d < Math.sqrt(Math.min(quads[i].area, quads[j].area)) * 0.5) {
-              keep[quads[i].area >= quads[j].area ? j : i] = false;
-            }
-          }
-        }
-
         // Sort top-to-bottom, left-to-right
-        const selected = quads
-          .filter((_, i) => keep[i])
-          .sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
+        tiles.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
 
-        for (const quad of selected) {
+        for (const tile of tiles) {
           let warped = null, halfA = null, halfB = null;
           try {
-            warped = perspectiveWarp(src, quad.pts);
+            warped = perspectiveWarp(src, tile.pts);
             const landscape = warped.cols >= warped.rows;
             const mid = landscape
               ? Math.floor(warped.cols / 2)
@@ -478,13 +449,11 @@
         if (src)      src.delete();
         if (gray)     gray.delete();
         if (blurred)  blurred.delete();
-        if (clahe)       clahe.delete();
-        if (enhanced)    enhanced.delete();
-        if (edges)       edges.delete();
-        if (morphKernel) morphKernel.delete();
-        if (morphed)     morphed.delete();
-        if (contours)    contours.delete();
-        if (hier)        hier.delete();
+        if (thresh)   thresh.delete();
+        if (kernel)   kernel.delete();
+        if (morphed)  morphed.delete();
+        if (contours) contours.delete();
+        if (hier)     hier.delete();
       }
 
       return results;
@@ -516,50 +485,33 @@
     }
 
     function countPips(halfMat) {
-      // halfMat is RGBA (warped from raw color frame)
+      // halfMat is warped from the preprocessed frame: bright tile, dark pips.
       const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
       const rw  = halfMat.cols - 2 * pad;
       const rh  = halfMat.rows - 2 * pad;
       if (rw < 10 || rh < 10) return 0;
 
       const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
-      let gray = null, thresh = null, rgb = null, hsv = null, chans = null,
-          sChan = null, satMask = null, combined = null,
-          kernel = null, closed = null, conts = null, hierP = null;
+      let gray = null, thresh = null, kernel = null, closed = null,
+          conts = null, hierP = null;
       try {
-        // Dark pip path — catches black/dark pips
         gray = new cv.Mat();
         cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
+        // Pips are dark dots on a bright tile face
         thresh = new cv.Mat();
         cv.adaptiveThreshold(gray, thresh, 255,
           cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 3);
 
-        // Colored pip path — catches yellow/orange/green/blue pips
-        // White tile background has S≈0; any colored pip has S>40
-        rgb = new cv.Mat();
-        cv.cvtColor(inner, rgb, cv.COLOR_RGBA2BGR);
-        hsv = new cv.Mat();
-        cv.cvtColor(rgb, hsv, cv.COLOR_BGR2HSV);
-        chans = new cv.MatVector();
-        cv.split(hsv, chans);
-        sChan = chans.get(1).clone();
-        satMask = new cv.Mat();
-        cv.threshold(sChan, satMask, 40, 255, cv.THRESH_BINARY);
-
-        // Pip = dark OR colored
-        combined = new cv.Mat();
-        cv.bitwise_or(thresh, satMask, combined);
-
         kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
         closed = new cv.Mat();
-        cv.morphologyEx(combined, closed, cv.MORPH_CLOSE, kernel);
+        cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel);
 
         conts = new cv.MatVector();
         hierP = new cv.Mat();
         cv.findContours(closed, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         const regionArea = rw * rh;
-        const minPip = regionArea * 0.002;
+        const minPip = regionArea * 0.004;
         const maxPip = regionArea * 0.12;
 
         let count = 0;
@@ -568,24 +520,19 @@
           const area = cv.contourArea(c);
           const peri = cv.arcLength(c, true);
           c.delete();
+          // Pips are round; the central divider bar is elongated → low circularity
           const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
-          if (area >= minPip && area <= maxPip && circ >= 0.4) count++;
+          if (area >= minPip && area <= maxPip && circ >= 0.55) count++;
         }
         return Math.min(count, 12);
       } finally {
         inner.delete();
-        if (gray)     gray.delete();
-        if (thresh)   thresh.delete();
-        if (rgb)      rgb.delete();
-        if (hsv)      hsv.delete();
-        if (chans)    chans.delete();
-        if (sChan)    sChan.delete();
-        if (satMask)  satMask.delete();
-        if (combined) combined.delete();
-        if (kernel)   kernel.delete();
-        if (closed)   closed.delete();
-        if (conts)    conts.delete();
-        if (hierP)    hierP.delete();
+        if (gray)   gray.delete();
+        if (thresh) thresh.delete();
+        if (kernel) kernel.delete();
+        if (closed) closed.delete();
+        if (conts)  conts.delete();
+        if (hierP)  hierP.delete();
       }
     }
 
