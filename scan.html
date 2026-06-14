@@ -292,8 +292,10 @@
     async function confirmAll(){
       if(!pendingTiles.length)return;
       showInfo("Saving...");
+      let baseTiles=tiles;
+      try{const current=await readSession(gameCode);if(current)baseTiles=current.tiles||[];}catch(_){}
       const newTiles=pendingTiles.map(t=>({left:t.left,right:t.right,player:playerName,verified:isVerified(t.left,t.right)}));
-      const merged=[...tiles,...newTiles];
+      const merged=[...baseTiles,...newTiles];
       const ok=await writeSession(gameCode,merged);if(!ok)return;
       tiles=merged;renderScoreboard();
       showInfo("Saved!");setTimeout(()=>infoEl.style.display="none",1200);
