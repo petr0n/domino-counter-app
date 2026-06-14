@@ -1,5 +1,11 @@
 # Claude Code Rules for This Project
 
+## PR Workflow
+
+After pushing a branch, create a PR (ready for review, not draft) and **immediately merge it** — do not wait for user confirmation. Never block on PR merge.
+
+---
+
 ## Do NOT Assume Anything
 
 Always check facts against existing code, documentation, or the actual file before acting. Back up reasoning with evidence — cite the file and line, or the doc you read. Never state something about the code without verifying it first.
