@@ -163,8 +163,13 @@
           cvResolvers = [];
         };
         s.onload = () => {
-          // Script loaded but WASM may still be initializing
-          if (typeof cv !== "undefined" && cv.Mat) {
+          if (typeof cv === "undefined") {
+            cvLoading = false;
+            const err = new Error("Vision library failed to initialize.");
+            cvResolvers.forEach(r => r.reject(err)); cvResolvers = [];
+            return;
+          }
+          if (cv.Mat) {
             onCVReady();
           } else {
             cv.onRuntimeInitialized = onCVReady;
