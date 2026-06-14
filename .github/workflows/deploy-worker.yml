@@ -15,3 +15,11 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: worker
+          # Re-apply the Worker secrets on every deploy so a redeploy can never
+          # leave the Worker without credentials. Values come from repo secrets.
+          secrets: |
+            ANTHROPIC_API_KEY
+            GITHUB_TOKEN
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.PROXY_ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.PROXY_GITHUB_TOKEN }}
