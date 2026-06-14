@@ -35,7 +35,7 @@
   <div class="bar">
     <input type="file" id="files" accept="image/*" multiple />
     <label>model <input type="text" id="model" value="claude-opus-4-8" /></label>
-    <label>max&nbsp;px <input type="text" id="maxpx" value="1280" style="width:70px" /></label>
+    <label>max&nbsp;px <input type="text" id="maxpx" value="1568" style="width:70px" /></label>
     <button id="testBtn" style="padding:8px 12px;border-radius:8px;border:none;background:#2a2a2a;color:#fff;cursor:pointer;font-size:0.85rem">Test proxy</button>
   </div>
   <pre id="diag" style="display:none"></pre>
@@ -83,18 +83,19 @@
     document.getElementById("testBtn").addEventListener("click", testProxy);
 
     const PROMPT =
-`You are looking at a photo of one or more domino tiles on a surface.
-Each domino tile is a rectangle split by a center bar into two square halves.
-Each half has 0 to 12 pip dots. Pips may be ANY color (yellow, orange, green,
-blue, purple, pink) or black — count every pip regardless of color. A blank
-half is 0.
+`This photo shows one or more domino tiles on a surface. Each tile is a
+rectangle split by a center bar into two square halves; each half shows 0 to 12
+pips in a regular pattern. Pips may be ANY color (yellow, orange, green, blue,
+purple, pink) or black — count every pip regardless of color. A blank half is 0.
 
-For EVERY domino tile visible:
-- find its two halves
-- count the pips in each half carefully (0-12 each)
+Work one tile at a time. For EACH half:
+1. Count the pips one by one.
+2. Verify against the standard arrangement (1=center, 2=diagonal, 3=diagonal,
+   4=corners, 5=corners+center, 6=two columns of three). A tidy 2x3 block is 6,
+   not 9.
+3. Use only pips inside that half; never include a neighbouring tile's pips.
 
-Ignore the background, wood grain, shadows, fingers, and anything that is not a
-domino tile.
+Double-check any count above 6 before committing to it.
 
 Reply with ONLY this JSON and nothing else:
 {"tiles":[{"left":<0-12>,"right":<0-12>}, ...]}`;
