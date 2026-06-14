@@ -36,13 +36,51 @@
     <input type="file" id="files" accept="image/*" multiple />
     <label>model <input type="text" id="model" value="claude-opus-4-8" /></label>
     <label>max&nbsp;px <input type="text" id="maxpx" value="1280" style="width:70px" /></label>
+    <button id="testBtn" style="padding:8px 12px;border-radius:8px;border:none;background:#2a2a2a;color:#fff;cursor:pointer;font-size:0.85rem">Test proxy</button>
   </div>
+  <pre id="diag" style="display:none"></pre>
 
   <div class="grid" id="grid"></div>
 
   <script>
     const PROXY = window.PROXY_URL;
     const grid = document.getElementById("grid");
+    const diag = document.getElementById("diag");
+
+    // Connectivity probe: isolates whether the Worker is reachable, whether CORS
+    // works, and whether /anthropic responds — without sending a big image.
+    async function testProxy() {
+      diag.style.display = "block";
+      diag.textContent = `PROXY_URL = ${PROXY}\norigin = ${location.origin}\n\nrunning…`;
+      const lines = [`PROXY_URL = ${PROXY}`, `origin = ${location.origin}`, ""];
+      // 1) simple GET to base (no preflight) — tests raw reachability + CORS
+      try {
+        const r = await fetch(PROXY, { method: "GET" });
+        lines.push(`[1] GET ${PROXY}  ->  HTTP ${r.status} (reachable, CORS ok)`);
+      } catch (e) {
+        lines.push(`[1] GET ${PROXY}  ->  ${e.message}  (worker unreachable or no CORS — likely not deployed)`);
+      }
+      // 2) GitHub route (known-good path) — tests a real proxied call
+      try {
+        const r = await fetch(`${PROXY}/github/repos/petr0n/domino-counter-app/contents/catalog.json`, { headers: { Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" } });
+        lines.push(`[2] GET /github/...catalog.json  ->  HTTP ${r.status}`);
+      } catch (e) {
+        lines.push(`[2] GET /github/...catalog.json  ->  ${e.message}`);
+      }
+      // 3) tiny POST to /anthropic (text only) — tests the route + preflight + key
+      try {
+        const r = await fetch(`${PROXY}/anthropic`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: document.getElementById("model").value.trim(), max_tokens: 16, messages: [{ role: "user", content: "Reply with the word ok." }] })
+        });
+        const body = await r.text();
+        lines.push(`[3] POST /anthropic (tiny)  ->  HTTP ${r.status}\n${body.slice(0, 500)}`);
+      } catch (e) {
+        lines.push(`[3] POST /anthropic (tiny)  ->  ${e.message}  (route/preflight/key problem)`);
+      }
+      diag.textContent = lines.join("\n");
+    }
+    document.getElementById("testBtn").addEventListener("click", testProxy);
 
     const PROMPT =
 `You are looking at a photo of one or more domino tiles on a surface.
@@ -138,7 +176,11 @@ Reply with ONLY this JSON and nothing else:
               `<div class="meta">${file.name} · ${ms} ms</div>` +
               `<details><summary>raw</summary><pre>${text.replace(/</g,"&lt;")}</pre></details>`;
           } catch (err) {
-            res.innerHTML = `<div class="err">${(err.message||err).replace(/</g,"&lt;")}</div><div class="meta">${file.name}</div>`;
+            const m = (err.message || String(err));
+            const hint = /failed to fetch|networkerror|load failed/i.test(m)
+              ? " — could not reach the proxy. Click “Test proxy” above to diagnose (Worker not deployed, CORS, or key)."
+              : "";
+            res.innerHTML = `<div class="err">${(m+hint).replace(/</g,"&lt;")}</div><div class="meta">${file.name}</div>`;
           }
         };
         img.src = reader.result;
