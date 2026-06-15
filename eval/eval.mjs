@@ -29,6 +29,7 @@ const PROMPT   = fs.readFileSync(path.join(__dirname, "prompt.txt"), "utf8");
 const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures.json"), "utf8"));
 const MODEL    = process.env.MODEL || "claude-opus-4-8";
 const PHOTOS   = path.join(__dirname, "photos");
+const KEY      = process.env.ANTHROPIC_API_KEY; // if set, call the API directly
 
 function preprocessB64(buf) {
   const raw = jpeg.decode(buf, { useTArray: true, formatAsRGBA: true });
@@ -38,17 +39,21 @@ function preprocessB64(buf) {
 }
 
 async function count(b64) {
-  const res = await fetch(`${PROXY}/anthropic`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Origin": "https://petr0n.github.io" },
-    body: JSON.stringify({
-      model: MODEL, max_tokens: 1024,
-      messages: [{ role: "user", content: [
-        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } },
-        { type: "text", text: PROMPT }
-      ] }]
-    })
+  const body = JSON.stringify({
+    model: MODEL, max_tokens: 1024,
+    messages: [{ role: "user", content: [
+      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } },
+      { type: "text", text: PROMPT }
+    ] }]
   });
+  // Prefer a direct API key (api.anthropic.com is on the default allowlist);
+  // fall back to the Worker proxy if no key is provided.
+  const [url, headers] = KEY
+    ? ["https://api.anthropic.com/v1/messages",
+       { "Content-Type": "application/json", "x-api-key": KEY, "anthropic-version": "2023-06-01" }]
+    : [`${PROXY}/anthropic`,
+       { "Content-Type": "application/json", "Origin": "https://petr0n.github.io" }];
+  const res = await fetch(url, { method: "POST", headers, body });
   const data = await res.json();
   if (!res.ok) throw new Error(`HTTP ${res.status} ${JSON.stringify(data).slice(0, 200)}`);
   const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
