@@ -1,0 +1,8 @@
+{
+  "name": "domino-eval",
+  "private": true,
+  "type": "module",
+  "description": "Offline accuracy eval for domino pip counting (not part of the app).",
+  "scripts": { "eval": "node eval.mjs" },
+  "dependencies": { "jpeg-js": "^0.4.4" }
+}

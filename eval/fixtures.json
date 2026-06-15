@@ -1,0 +1,11 @@
+{
+  "_README": "GROUND TRUTH — this is the scoring key for eval.mjs. CONFIRM/CORRECT every value; these are my unverified reads. Each tile is [a,b]; order within a tile and order of tiles do not matter. Keys are eval/photos/<key>.jpg.",
+  "464": [[9, 1], [9, 1], [9, 9]],
+  "465": [[9, 9], [9, 9], [9, 1], [9, 9]],
+  "466": [[6, 9], [9, 1], [2, 2]],
+  "467": [[9, 1], [9, 9]],
+  "468": [[2, 4], [9, 1], [9, 3]],
+  "469": [[9, 9], [9, 9]],
+  "470": [[0, 6], [6, 4]],
+  "471": [[3, 3], [0, 1]]
+}
