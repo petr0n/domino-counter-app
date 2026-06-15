@@ -40,7 +40,7 @@ function preprocessB64(buf) {
 
 async function count(b64) {
   const body = JSON.stringify({
-    model: MODEL, max_tokens: 1024,
+    model: MODEL, max_tokens: 2048,
     messages: [{ role: "user", content: [
       { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } },
       { type: "text", text: PROMPT }
