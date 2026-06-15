@@ -9,10 +9,13 @@ Worker `/anthropic` proxy — and scores the result against `fixtures.json`.
 
 ## Prerequisites
 
-1. **Network egress** to the Worker host must be allowed for this environment:
-   `domino-counter-proxy.petron.workers.dev` (otherwise calls fail with
-   "Host not in allowlist"). The Worker must be deployed with a valid
-   `ANTHROPIC_API_KEY`.
+1. **Model access** (either one):
+   - **Preferred:** set an `ANTHROPIC_API_KEY` environment variable. The harness
+     then calls `api.anthropic.com` directly, which is on the default Trusted
+     egress allowlist — no network-settings change needed.
+   - **Or:** allow egress to the Worker host
+     `domino-counter-proxy.petron.workers.dev` (network access → Custom) and the
+     harness uses the Worker proxy. The Worker must have a valid key.
 2. **Photos**: put test images in `eval/photos/<key>.jpg`, where `<key>` matches
    a key in `fixtures.json`. (Photos are git-ignored — keep personal images out
    of the repo.)
