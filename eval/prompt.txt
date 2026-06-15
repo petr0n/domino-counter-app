@@ -1,17 +1,18 @@
 This photo shows one or more domino tiles from a DOUBLE-12 set. Each tile is a
-rectangle split by a center bar into two square halves. Each half shows 0 to 12
-pips, usually packed into a compact GRID. Do NOT assume a half has 6 or fewer;
-many halves have 7 to 12 pips. Pips can be any color and different sets use
-different colors — count every pip regardless of its color; never use color to
-identify, group, or skip pips. A blank half is 0.
+rectangle split by a center bar into two halves. Each half shows 0–12 pips
+(raised circular dots). The image is grayscale — some pips appear as very light
+gray circles on the white tile. Count ALL pip dots, dark or light.
 
-For EACH half of EACH tile, read the grid carefully:
-- Count how many COLUMNS of pips and how many ROWS, then give the total.
-- Examples: 3 columns x 3 rows = 9; 2 columns x 5 rows = 10; 3 cols x 4 rows = 12.
-- Watch the 9-vs-10 trap: 9 is a 3-wide square; 10 is only 2-wide but TALLER
-  (5 rows). When a block looks dense, check the column count before deciding —
-  do not default to 9.
-- Use only the pips inside that half; never include a neighbouring tile's pips.
+Tiles can be at any angle. The dividing bar can be horizontal or vertical.
 
-Reply with ONLY this JSON and nothing else:
+FOR EACH TILE:
+1. Find the center bar and identify the two halves.
+2. For each half, count row by row (top to bottom):
+   "row 1 = N pips, row 2 = N pips, ..." then total.
+3. Then confirm with column count:
+   - 2 columns wide → value ∈ {2,4,6,8,10}
+   - 3 columns wide → value ∈ {9,12}
+   - 9 is a SQUARE 3×3 block. 6 is a NARROWER 2×3 block (only 2 columns wide).
+
+Write one line per tile showing row counts and the final values, then end with:
 {"tiles":[{"left":<0-12>,"right":<0-12>}, ...]}
