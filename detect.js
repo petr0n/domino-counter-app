@@ -381,8 +381,58 @@
     }
   }
 
+  // Returns [{left, right, dataUrl}, …] — same as scanCanvas but with a
+  // thumbnail of each cropped+rotated tile for visual debugging.
+  function scanCanvasDebug(canvas) {
+    let src = null;
+    try {
+      src = cv.imread(canvas);
+      const found = findTiles(src, 0.02, 0.60, 0.03);
+      found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
+      return found.map(t => {
+        const result = cropRotate(src, t.pts);
+        // Re-run cropRotate to also grab the image (can't get it from the count call)
+        const cx = (t.pts[0].x+t.pts[1].x+t.pts[2].x+t.pts[3].x)/4;
+        const cy = (t.pts[0].y+t.pts[1].y+t.pts[2].y+t.pts[3].y)/4;
+        const d01 = Math.hypot(t.pts[1].x-t.pts[0].x, t.pts[1].y-t.pts[0].y);
+        const d03 = Math.hypot(t.pts[3].x-t.pts[0].x, t.pts[3].y-t.pts[0].y);
+        let angle = d01>=d03
+          ? Math.atan2(t.pts[1].y-t.pts[0].y, t.pts[1].x-t.pts[0].x)*180/Math.PI
+          : Math.atan2(t.pts[3].y-t.pts[0].y, t.pts[3].x-t.pts[0].x)*180/Math.PI;
+        const tileW = Math.max(d01,d03), tileH = Math.min(d01,d03);
+        while (angle > 90) angle -= 180;
+        while (angle <= -90) angle += 180;
+        const pad = 0.08;
+        const outW = Math.round(tileW*(1+2*pad)), outH = Math.round(tileH*(1+2*pad));
+        let M = null, rotated = null, cropped = null, tmpCanvas = null;
+        let dataUrl = "";
+        try {
+          M = cv.getRotationMatrix2D(new cv.Point(cx,cy), angle, 1.0);
+          rotated = new cv.Mat();
+          cv.warpAffine(src, rotated, M, new cv.Size(src.cols, src.rows), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+          const x = Math.max(0, Math.round(cx-outW/2));
+          const y = Math.max(0, Math.round(cy-outH/2));
+          const w = Math.min(src.cols-x, outW), h = Math.min(src.rows-y, outH);
+          if (w >= 20 && h >= 20) {
+            cropped = rotated.roi(new cv.Rect(x,y,w,h));
+            tmpCanvas = document.createElement("canvas");
+            cv.imshow(tmpCanvas, cropped);
+            dataUrl = tmpCanvas.toDataURL("image/jpeg", 0.85);
+          }
+        } finally {
+          if (M) M.delete();
+          if (cropped) cropped.delete();
+          if (rotated) rotated.delete();
+        }
+        return { left: result.left, right: result.right, dataUrl };
+      });
+    } finally {
+      if (src) src.delete();
+    }
+  }
+
   window.DominoCV = {
-    loadCV, preprocess, scanCanvas, scanCanvasSingle, isReady: () => cvReady,
+    loadCV, preprocess, scanCanvas, scanCanvasDebug, scanCanvasSingle, isReady: () => cvReady,
     // Headless-test hooks: operate on pixel arrays / Mats (no canvas/DOM).
     _test: { stretchGray, findTiles, scanMat, scanMatSingle }
   };
