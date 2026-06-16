@@ -82,7 +82,8 @@
       cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
       thresh = new cv.Mat();
       cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
-      kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(7, 7));
+      // Small kernel: closes pip holes without merging adjacent tiles.
+      kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
       morphed = new cv.Mat();
       cv.morphologyEx(thresh, morphed, cv.MORPH_OPEN, kernel);
       cv.morphologyEx(morphed, morphed, cv.MORPH_CLOSE, kernel);
