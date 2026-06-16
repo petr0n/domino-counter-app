@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pip Counter Test</title>
+<style>
+body { font-family: monospace; padding: 16px; background: #111; color: #eee; }
+.row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #333; padding-bottom: 16px; }
+img { width: 200px; height: auto; border: 1px solid #555; }
+.result { font-size: 1.2em; }
+.got { color: #7f7; }
+.exp { color: #aaa; }
+.match { color: #7f7; }
+.miss { color: #f77; }
+canvas { display: none; }
+</style>
+</head>
+<body>
+<h2>detect.js grid-sampling test — no API</h2>
+<div id="status">Loading OpenCV…</div>
+<div id="results"></div>
+<canvas id="c"></canvas>
+<script src="../config.js"></script>
+<script src="../detect.js"></script>
+<script>
+const FIXTURES = {
+  "464": [[9,1],[9,1],[9,9]],
+  "465": [[9,9],[9,9],[9,1],[9,9]],
+  "466": [[6,9],[9,1],[2,2]],
+  "467": [[9,1],[9,9]],
+  "468": [[2,4],[9,1],[9,3]],
+  "469": [[9,9],[9,9]],
+  "470": [[0,10],[10,4]],
+  "471": [[3,3],[0,1]],
+};
+
+const norm = t => t[0] <= t[1] ? `${t[0]}-${t[1]}` : `${t[1]}-${t[0]}`;
+function score(got, exp) {
+  const pool = exp.map(norm);
+  let c = 0;
+  for (const g of got.map(norm)) { const i = pool.indexOf(g); if (i >= 0) { c++; pool.splice(i,1); } }
+  return c;
+}
+
+async function runAll() {
+  await DominoCV.loadCV();
+  document.getElementById('status').textContent = 'OpenCV ready — running…';
+  const c = document.getElementById('c');
+  const ctx = c.getContext('2d');
+  const out = document.getElementById('results');
+  let totC = 0, totE = 0, perfect = 0;
+
+  for (const [name, exp] of Object.entries(FIXTURES)) {
+    const img = new Image();
+    img.src = `photos/${name}.jpg`;
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0);
+    DominoCV.preprocess(c);
+    const tiles = DominoCV.scanCanvas(c);
+    const got = tiles.map(t => [t.left, t.right]);
+
+    const c_ = score(got, exp);
+    totC += c_; totE += exp.length;
+    if (c_ === exp.length && got.length === exp.length) perfect++;
+    const mark = (c_ === exp.length && got.length === exp.length) ? '✓' : '✗';
+    const fmtArr = a => a.map(t=>`${t[0]}|${t[1]}`).join(' ') || '—';
+
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `
+      <img src="photos/${name}.jpg">
+      <div class="result">
+        <div>${mark} <b>${name}</b></div>
+        <div class="got">got: ${fmtArr(got)}</div>
+        <div class="exp">exp: ${fmtArr(exp)}</div>
+        <div class="${c_ === exp.length ? 'match':'miss'}">${c_}/${exp.length}</div>
+      </div>`;
+    out.appendChild(row);
+  }
+
+  document.getElementById('status').textContent =
+    `TOTAL: ${totC}/${totE} tiles correct · ${perfect}/${Object.keys(FIXTURES).length} photos perfect`;
+}
+
+DominoCV.loadCV().then(runAll).catch(e => {
+  document.getElementById('status').textContent = 'Error: ' + e.message;
+});
+</script>
+</body>
+</html>
