@@ -345,12 +345,9 @@
     try {
       gray = new cv.Mat();
       cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
-      thresh = new cv.Mat();
       cv.adaptiveThreshold(gray, thresh, 255,
         cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 3);
-      kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
       closed = new cv.Mat();
-      cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel);
       conts = new cv.MatVector();
       hierP = new cv.Mat();
       cv.findContours(closed, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
