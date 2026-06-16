@@ -72,24 +72,21 @@
   // becomes one solid blob), then accepted via minAreaRect — tolerant of
   // rounded corners and rotation. Returns [{pts, area, cx, cy}, …].
   function findTiles(src, minAreaFrac, maxAreaFrac, edgeMarginFrac) {
-    let gray = null, blurred = null, thresh = null, kernel = null, morphed = null,
-        contours = null, hier = null;
+    // Use Canny edge detection + polygon approximation to find individual tile
+    // rectangles. Works even when tiles touch because tile borders remain as
+    // distinct edges (unlike blob/threshold which merges touching tiles).
+    let gray = null, blurred = null, edges = null, contours = null, hier = null;
     const rects = [];
     try {
       gray = new cv.Mat();
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
       blurred = new cv.Mat();
       cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-      thresh = new cv.Mat();
-      cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
-      // Small kernel: closes pip holes without merging adjacent tiles.
-      kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
-      morphed = new cv.Mat();
-      cv.morphologyEx(thresh, morphed, cv.MORPH_OPEN, kernel);
-      cv.morphologyEx(morphed, morphed, cv.MORPH_CLOSE, kernel);
+      edges = new cv.Mat();
+      cv.Canny(blurred, edges, 30, 90);
       contours = new cv.MatVector();
       hier = new cv.Mat();
-      cv.findContours(morphed, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      cv.findContours(edges, contours, hier, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
       const frameArea = src.cols * src.rows;
       const minArea = frameArea * minAreaFrac, maxArea = frameArea * maxAreaFrac;
@@ -101,10 +98,8 @@
         if (area >= minArea && area <= maxArea) {
           const rect = cv.minAreaRect(c);
           const rw = rect.size.width, rh = rect.size.height;
-          const rectArea = rw * rh;
           const ratio = Math.max(rw, rh) / Math.min(rw, rh);
-          const fill = rectArea > 0 ? area / rectArea : 0;
-          if (ratio >= 1.4 && ratio <= 3.2 && fill >= 0.80) {
+          if (ratio >= 1.4 && ratio <= 3.2) {
             const pts = cv.RotatedRect.points(rect);
             const atEdge = edgeMargin > 0 && pts.some(p =>
               p.x < edgeMargin || p.x > src.cols - edgeMargin ||
@@ -112,7 +107,9 @@
             if (!atEdge) {
               const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
               const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
-              rects.push({ pts, area, cx, cy });
+              // Deduplicate: skip if we already have a tile centred nearby.
+              const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < Math.min(rw, rh) * 0.4);
+              if (!dup) rects.push({ pts, area: rw * rh, cx, cy });
             }
           }
         }
@@ -121,9 +118,7 @@
     } finally {
       if (gray)     gray.delete();
       if (blurred)  blurred.delete();
-      if (thresh)   thresh.delete();
-      if (kernel)   kernel.delete();
-      if (morphed)  morphed.delete();
+      if (edges)    edges.delete();
       if (contours) contours.delete();
       if (hier)     hier.delete();
     }
@@ -350,12 +345,9 @@
     try {
       gray = new cv.Mat();
       cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
-      thresh = new cv.Mat();
       cv.adaptiveThreshold(gray, thresh, 255,
         cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 3);
-      kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
       closed = new cv.Mat();
-      cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel);
       conts = new cv.MatVector();
       hierP = new cv.Mat();
       cv.findContours(closed, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
