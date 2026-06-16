@@ -88,8 +88,10 @@
 
   <div class="controls">
     <button id="scanBtn">Scan Tiles</button>
+    <button id="loadBtn">Load Photo</button>
     <button id="retakeBtn">Retake</button>
   </div>
+  <input type="file" id="fileInput" accept="image/*" style="display:none">
   <p class="msg error" id="error"></p>
   <p class="msg info"  id="info"></p>
 
@@ -123,6 +125,8 @@
     const canvas        = document.getElementById("canvas");
     const preview       = document.getElementById("preview");
     const scanBtn       = document.getElementById("scanBtn");
+    const loadBtn       = document.getElementById("loadBtn");
+    const fileInput     = document.getElementById("fileInput");
     const retakeBtn     = document.getElementById("retakeBtn");
     const errorEl       = document.getElementById("error");
     const infoEl        = document.getElementById("info");
@@ -261,27 +265,24 @@
       cameraWrapper.className = "camera-wrapper" + (state ? " " + state : "");
     }
 
-    // ── Scan button ──────────────────────────────────────────────────────────
-    scanBtn.addEventListener("click", async () => {
-      if (!video.videoWidth) { showError("Camera not ready."); return; }
+    // ── Shared scan logic ────────────────────────────────────────────────────
+    async function doScan() {
       hideMsg();
       reviewPanel.classList.remove("visible");
-
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
       DominoCV.preprocess(canvas);
 
       const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
       preview.src = dataUrl;
-      preview.style.display  = "block";
-      video.style.display    = "none";
-      camGuide.style.display = "none";
-      scanBtn.style.display  = "none";
+      preview.style.display   = "block";
+      video.style.display     = "none";
+      camGuide.style.display  = "none";
+      scanBtn.style.display   = "none";
+      loadBtn.style.display   = "none";
       retakeBtn.style.display = "block";
       stopAnalysis();
       setGuidance("", "");
       scanBtn.disabled = true;
+      loadBtn.disabled = true;
 
       try {
         showInfo("Detecting tiles…");
@@ -296,7 +297,37 @@
         showError(err.message);
       } finally {
         scanBtn.disabled = false;
+        loadBtn.disabled = false;
       }
+    }
+
+    // ── Scan button (camera) ─────────────────────────────────────────────────
+    scanBtn.addEventListener("click", async () => {
+      if (!video.videoWidth) { showError("Camera not ready."); return; }
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      await doScan();
+    });
+
+    // ── Load Photo button ────────────────────────────────────────────────────
+    loadBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      fileInput.value = "";
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = async () => {
+        canvas.width  = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext("2d").drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        await ensureCV();
+        await doScan();
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); showError("Could not load image."); };
+      img.src = url;
     });
 
     // ── Retake ───────────────────────────────────────────────────────────────
@@ -305,6 +336,7 @@
       video.style.display     = "block";
       camGuide.style.display  = "block";
       scanBtn.style.display   = "block";
+      loadBtn.style.display   = "block";
       retakeBtn.style.display = "none";
       reviewPanel.classList.remove("visible");
       hideMsg();
