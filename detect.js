@@ -149,15 +149,53 @@
     }
   }
 
-  // Warp one detected tile quad to a flat rectangle, then split + count.
-  function countQuad(src, pts) {
-    let warped = null;
-    try {
-      warped = perspectiveWarp(src, pts);
-      return splitAndCount(warped);
-    } finally {
-      if (warped) warped.delete();
+  // Rotate src so the tile is axis-aligned, crop it with padding, then count.
+  function cropRotate(src, pts) {
+    // Derive centre, long-axis angle, and tile dimensions from the 4 corners.
+    const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
+    const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
+    const d01 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    const d03 = Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y);
+    let angle, tileW, tileH;
+    if (d01 >= d03) {
+      angle  = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180 / Math.PI;
+      tileW  = d01; tileH = d03;
+    } else {
+      angle  = Math.atan2(pts[3].y - pts[0].y, pts[3].x - pts[0].x) * 180 / Math.PI;
+      tileW  = d03; tileH = d01;
     }
+    // Clamp angle to (-90, 90] so the tile ends up landscape.
+    while (angle >  90) angle -= 180;
+    while (angle <= -90) angle += 180;
+
+    // Crop dimensions with 8% padding each side so edges are never clipped.
+    const pad = 0.08;
+    const outW = Math.round(tileW * (1 + 2 * pad));
+    const outH = Math.round(tileH * (1 + 2 * pad));
+
+    let M = null, rotated = null, cropped = null;
+    try {
+      M = cv.getRotationMatrix2D(new cv.Point(cx, cy), angle, 1.0);
+      rotated = new cv.Mat();
+      cv.warpAffine(src, rotated, M, new cv.Size(src.cols, src.rows),
+                    cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+      const x = Math.max(0, Math.round(cx - outW / 2));
+      const y = Math.max(0, Math.round(cy - outH / 2));
+      const w = Math.min(src.cols - x, outW);
+      const h = Math.min(src.rows - y, outH);
+      if (w < 20 || h < 20) return splitAndCount(src);
+      cropped = rotated.roi(new cv.Rect(x, y, w, h));
+      return splitAndCount(cropped);
+    } finally {
+      if (M)       M.delete();
+      if (cropped) cropped.delete();
+      if (rotated) rotated.delete();
+    }
+  }
+
+  // Find, crop, rotate, then count each tile.
+  function countQuad(src, pts) {
+    return cropRotate(src, pts);
   }
 
   // Multi-tile core: every tile in an already-loaded src Mat → [{left,right}, …].
