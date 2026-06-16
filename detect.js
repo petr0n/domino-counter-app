@@ -213,7 +213,92 @@
   }
 
   function countPips(halfMat) {
-    // halfMat is warped from the preprocessed frame: bright tile, dark pips.
+    // Grid-sampling approach: normalize half to fixed size, sample brightness at
+    // canonical pip positions for each count 0-12, pick the count whose pip
+    // positions are darkest relative to its empty positions. Works on faint pips
+    // (light-coloured pips become slight gray shadows) where contour detection fails.
+    const SIZE = 150;
+    let resized = null, gray = null;
+    try {
+      resized = new cv.Mat();
+      cv.resize(halfMat, resized, new cv.Size(SIZE, SIZE));
+      gray = new cv.Mat();
+      cv.cvtColor(resized, gray, cv.COLOR_RGBA2GRAY);
+
+      // Sample mean brightness of a small patch centred at normalised (nx,ny)
+      const patch = 4;
+      const sample = (nx, ny) => {
+        const cx = Math.round(nx * (SIZE - 1)), cy = Math.round(ny * (SIZE - 1));
+        let sum = 0, n = 0;
+        for (let dy = -patch; dy <= patch; dy++) {
+          for (let dx = -patch; dx <= patch; dx++) {
+            const r = cy + dy, c = cx + dx;
+            if (r >= 0 && r < SIZE && c >= 0 && c < SIZE) { sum += gray.ucharAt(r, c); n++; }
+          }
+        }
+        return n ? sum / n : 255;
+      };
+
+      // Background brightness: average of tile-edge corners (should be bright white)
+      const bg = (sample(0.05,0.05) + sample(0.95,0.05) + sample(0.05,0.95) + sample(0.95,0.95)) / 4;
+      // Relative darkness: 0 = same as bg, 1 = completely black
+      const dark = (nx, ny) => Math.max(0, (bg - sample(nx, ny)) / Math.max(bg, 1));
+
+      // Canonical pip positions (normalised 0-1) for counts 0-12.
+      // Based on standard double-12 domino layouts (user-verified):
+      //   5=2+1+2  6=2+2+2  7=3+1+3  8=3+2+3(frame)  9=3+3+3(solid)
+      //   10=4+2+4(frame)  11=4+3+4  12=3+3+3+3
+      const L = [
+        [],                                                                          // 0
+        [[.5,.5]],                                                                   // 1
+        [[.5,.25],[.5,.75]],                                                         // 2
+        [[.25,.25],[.5,.5],[.75,.75]],                                               // 3
+        [[.25,.25],[.75,.25],[.25,.75],[.75,.75]],                                   // 4
+        [[.28,.2],[.72,.2],[.5,.5],[.28,.8],[.72,.8]],                               // 5
+        [[.28,.2],[.72,.2],[.28,.5],[.72,.5],[.28,.8],[.72,.8]],                     // 6
+        [[.2,.2],[.5,.2],[.8,.2],[.5,.5],[.2,.8],[.5,.8],[.8,.8]],                   // 7
+        [[.2,.2],[.5,.2],[.8,.2],[.2,.5],[.8,.5],[.2,.8],[.5,.8],[.8,.8]],           // 8
+        [[.2,.2],[.5,.2],[.8,.2],[.2,.5],[.5,.5],[.8,.5],[.2,.8],[.5,.8],[.8,.8]],   // 9
+        [[.15,.2],[.38,.2],[.62,.2],[.85,.2],[.15,.5],[.85,.5],[.15,.8],[.38,.8],[.62,.8],[.85,.8]], // 10
+        [[.15,.2],[.38,.2],[.62,.2],[.85,.2],[.15,.5],[.5,.5],[.85,.5],[.15,.8],[.38,.8],[.62,.8],[.85,.8]], // 11
+        [[.2,.15],[.5,.15],[.8,.15],[.2,.38],[.5,.38],[.8,.38],[.2,.62],[.5,.62],[.8,.62],[.2,.85],[.5,.85],[.8,.85]], // 12
+      ];
+
+      // Collect all unique sample positions across all layouts
+      const posMap = new Map();
+      L.forEach(layout => layout.forEach(([x,y]) => { const k=`${x},${y}`; if (!posMap.has(k)) posMap.set(k,[x,y]); }));
+      const allPos = [...posMap.values()];
+
+      // Sample darkness at every position once
+      const dMap = new Map();
+      allPos.forEach(([x,y]) => dMap.set(`${x},${y}`, dark(x,y)));
+
+      // Score each count: pip positions should be darker than non-pip positions.
+      // Use avg(dark at pip spots) - avg(dark at empty spots) as the signal.
+      let best = 0, bestScore = -Infinity;
+      for (let n = 0; n <= 12; n++) {
+        const pipKeys = new Set(L[n].map(([x,y]) => `${x},${y}`));
+        let pipD = 0, emptyD = 0, pipN = 0, emptyN = 0;
+        allPos.forEach(([x,y]) => {
+          const d = dMap.get(`${x},${y}`);
+          if (pipKeys.has(`${x},${y}`)) { pipD += d; pipN++; }
+          else { emptyD += d; emptyN++; }
+        });
+        // For n=0: no pip positions → score = -(avg darkness of all positions)
+        const avgPip   = pipN   ? pipD   / pipN   : 0;
+        const avgEmpty = emptyN ? emptyD / emptyN : 0;
+        const score = n === 0 ? -avgEmpty : avgPip - avgEmpty;
+        if (score > bestScore) { bestScore = score; best = n; }
+      }
+      return best;
+    } finally {
+      if (resized) resized.delete();
+      if (gray)    gray.delete();
+    }
+  }
+
+  function countPipsContour(halfMat) {
+    // Original contour-based approach (kept for reference / fallback).
     const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
     const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
     if (rw < 10 || rh < 10) return 0;
