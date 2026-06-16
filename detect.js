@@ -213,6 +213,10 @@
   }
 
   function countPips(halfMat) {
+    return countPipsContour(halfMat);
+  }
+
+  function countPipsGrid(halfMat) {
     // Grid-sampling approach: normalize half to fixed size, sample brightness at
     // canonical pip positions for each count 0-12, pick the count whose pip
     // positions are darkest relative to its empty positions. Works on faint pips
