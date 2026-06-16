@@ -7,12 +7,21 @@ Tiles can be at any angle. The dividing bar can be horizontal or vertical.
 
 FOR EACH TILE:
 1. Find the center bar and identify the two halves.
-2. For each half, count row by row (top to bottom):
-   "row 1 = N pips, row 2 = N pips, ..." then total.
-3. Then confirm with column count:
-   - 2 columns wide → value ∈ {2,4,6,8,10}
-   - 3 columns wide → value ∈ {9,12}
-   - 9 is a SQUARE 3×3 block. 6 is a NARROWER 2×3 block (only 2 columns wide).
+2. For each half, count row by row (top to bottom) and match to the standard layout:
+   0 = empty
+   1 = 1
+   2 = 1+1
+   3 = diagonal (3 pips)
+   4 = 2+2
+   5 = 2+1+2
+   6 = 2+2+2
+   7 = 3+1+3
+   8 = 3+2+3  (frame: center of middle row is EMPTY)
+   9 = 3+3+3  (solid square: middle row is FULL)
+  10 = 4+2+4  (frame: center of middle row is EMPTY)
+  11 = 4+3+4
+  12 = 3+3+3+3
+3. Write the row counts and the matched value.
 
-Write one line per tile showing row counts and the final values, then end with:
+End with:
 {"tiles":[{"left":<0-12>,"right":<0-12>}, ...]}

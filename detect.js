@@ -302,6 +302,7 @@
   }
 
   function countPipsContour(halfMat) {
+    // Original contour-based approach (kept for reference / fallback).
     const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
     const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
     if (rw < 10 || rh < 10) return 0;
