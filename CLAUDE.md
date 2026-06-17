@@ -22,6 +22,9 @@ If you think the pipeline needs improving, say so and wait for the user to appro
 
 After pushing a branch, create a PR (ready for review, not draft) and **immediately merge it** — do not wait for user confirmation. Never block on PR merge.
 
+After every merge, provide a fresh cache-busting link to the app so the user can immediately test:
+`https://petr0n.github.io/domino-counter-app/quick.html?v=<PR number>`
+
 ---
 
 ## Do NOT Assume Anything
