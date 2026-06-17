@@ -433,7 +433,12 @@
       let count = pipAreas.length;
       if (pipAreas.length >= 8 && pipAreas.length < 10) {
         for (const ba of bigBlobs) {
-          if (ba >= pipArea * 2.5) count += Math.round(ba / pipArea);
+          if (ba >= pipArea * 2.5) {
+            count += Math.round(ba / pipArea);
+            if (pipAreas.length === 8) count += 1;
+          } else if (ba >= pipArea * 1.5 && pipAreas.length === 8) {
+            count += 1;
+          }
         }
       }
       return Math.min(count, 12);
