@@ -67,26 +67,24 @@
     ctx.putImageData(d, 0, 0);
   }
 
-  // Find candidate tile rectangles on a (preprocessed) src Mat. Bright tiles
-  // are isolated with Otsu + morphology (touching tiles stay apart, each tile
-  // becomes one solid blob), then accepted via minAreaRect — tolerant of
-  // rounded corners and rotation. Returns [{pts, area, cx, cy}, …].
+  // Find candidate tile rectangles on a (preprocessed) src Mat.
+  // Returns [{pts, cx, cy, n}, …] where n=1 means single tile, n=2 means two
+  // touching tiles that should be split. Accepts single tiles (ratio ~2),
+  // two portrait tiles side-by-side (ratio ~1), and two landscape tiles
+  // end-to-end (ratio ~4).
   function findTiles(src, minAreaFrac, maxAreaFrac, edgeMarginFrac) {
-    // Use Canny edge detection + polygon approximation to find individual tile
-    // rectangles. Works even when tiles touch because tile borders remain as
-    // distinct edges (unlike blob/threshold which merges touching tiles).
-    let gray = null, blurred = null, edges = null, contours = null, hier = null;
+    let gray = null, blurred = null, binary = null, contours = null, hier = null;
     const rects = [];
     try {
       gray = new cv.Mat();
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
       blurred = new cv.Mat();
       cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-      edges = new cv.Mat();
-      cv.Canny(blurred, edges, 30, 90);
+      binary = new cv.Mat();
+      cv.threshold(blurred, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
       contours = new cv.MatVector();
       hier = new cv.Mat();
-      cv.findContours(edges, contours, hier, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+      cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
       const frameArea = src.cols * src.rows;
       const minArea = frameArea * minAreaFrac, maxArea = frameArea * maxAreaFrac;
@@ -98,8 +96,13 @@
         if (area >= minArea && area <= maxArea) {
           const rect = cv.minAreaRect(c);
           const rw = rect.size.width, rh = rect.size.height;
-          const ratio = Math.max(rw, rh) / Math.min(rw, rh);
-          if (ratio >= 1.4 && ratio <= 3.2) {
+          const longSide = Math.max(rw, rh), shortSide = Math.min(rw, rh);
+          const ratio = longSide / shortSide;
+          // Accept: single tile (~2:1), two portrait side-by-side (~1:1), two landscape end-to-end (~4:1)
+          const isSingle  = ratio >= 1.6 && ratio <= 2.8;
+          const isTwoAdj  = ratio >= 0.7 && ratio <= 1.4;  // two tiles side by side → ~1:1
+          const isTwoEnd  = ratio >= 3.2 && ratio <= 5.5;  // two tiles end to end  → ~4:1
+          if (isSingle || isTwoAdj || isTwoEnd) {
             const pts = cv.RotatedRect.points(rect);
             const atEdge = edgeMargin > 0 && pts.some(p =>
               p.x < edgeMargin || p.x > src.cols - edgeMargin ||
@@ -107,9 +110,9 @@
             if (!atEdge) {
               const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
               const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
-              // Deduplicate: skip if we already have a tile centred nearby.
-              const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < Math.min(rw, rh) * 0.4);
-              if (!dup) rects.push({ pts, area: rw * rh, cx, cy });
+              const n = isSingle ? 1 : 2;
+              const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
+              if (!dup) rects.push({ pts, cx, cy, n, longSide, shortSide });
             }
           }
         }
@@ -118,11 +121,39 @@
     } finally {
       if (gray)     gray.delete();
       if (blurred)  blurred.delete();
-      if (edges)    edges.delete();
+      if (binary)   binary.delete();
       if (contours) contours.delete();
       if (hier)     hier.delete();
     }
     return rects;
+  }
+
+  // Split a rotated rect (described by 4 corner pts) into two half-rects along
+  // the long axis. Returns [{pts,cx,cy,n}, {pts,cx,cy,n}].
+  function splitRect(tile) {
+    const p = tile.pts;
+    // Find the two pairs of adjacent corners that form the long sides.
+    // Midpoints of the short sides become the shared edge of the two halves.
+    const d01 = Math.hypot(p[1].x-p[0].x, p[1].y-p[0].y);
+    const d12 = Math.hypot(p[2].x-p[1].x, p[2].y-p[1].y);
+    let m0, m1; // midpoints of the two short sides
+    if (d01 >= d12) {
+      // long sides are 01 and 23; short sides are 12 and 30
+      m0 = { x: (p[1].x+p[2].x)/2, y: (p[1].y+p[2].y)/2 };
+      m1 = { x: (p[3].x+p[0].x)/2, y: (p[3].y+p[0].y)/2 };
+      return [
+        { pts: [p[0], p[1], m0, m1], cx: (p[0].x+p[1].x+m0.x+m1.x)/4, cy: (p[0].y+p[1].y+m0.y+m1.y)/4, n: 1 },
+        { pts: [m1, m0, p[2], p[3]], cx: (m1.x+m0.x+p[2].x+p[3].x)/4, cy: (m1.y+m0.y+p[2].y+p[3].y)/4, n: 1 },
+      ];
+    } else {
+      // long sides are 12 and 30; short sides are 01 and 23
+      m0 = { x: (p[0].x+p[1].x)/2, y: (p[0].y+p[1].y)/2 };
+      m1 = { x: (p[2].x+p[3].x)/2, y: (p[2].y+p[3].y)/2 };
+      return [
+        { pts: [p[0], m0, m1, p[3]], cx: (p[0].x+m0.x+m1.x+p[3].x)/4, cy: (p[0].y+m0.y+m1.y+p[3].y)/4, n: 1 },
+        { pts: [m0, p[1], p[2], m1], cx: (m0.x+p[1].x+p[2].x+m1.x)/4, cy: (m0.y+p[1].y+p[2].y+m1.y)/4, n: 1 },
+      ];
+    }
   }
 
   // Split a tile Mat at the midpoint of its longer axis and count each half.
@@ -194,9 +225,18 @@
     return cropRotate(src, pts);
   }
 
+  // Expand merged-tile rects (n=2) into individual tile rects using splitRect.
+  function expandTiles(found) {
+    const out = [];
+    for (const t of found) {
+      if (t.n === 2) { out.push(...splitRect(t)); } else { out.push(t); }
+    }
+    return out;
+  }
+
   // Multi-tile core: every tile in an already-loaded src Mat → [{left,right}, …].
   function scanMat(src) {
-    const found = findTiles(src, 0.02, 0.60, 0.03);
+    const found = expandTiles(findTiles(src, 0.02, 0.70, 0.03));
     found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
     return found.map(t => countQuad(src, t.pts));
   }
@@ -371,49 +411,51 @@
     }
   }
 
+  // Crop + rotate a tile to a canvas dataUrl (shared helper for scanCanvasDebug).
+  function cropToDataUrl(src, pts) {
+    const cx = (pts[0].x+pts[1].x+pts[2].x+pts[3].x)/4;
+    const cy = (pts[0].y+pts[1].y+pts[2].y+pts[3].y)/4;
+    const d01 = Math.hypot(pts[1].x-pts[0].x, pts[1].y-pts[0].y);
+    const d03 = Math.hypot(pts[3].x-pts[0].x, pts[3].y-pts[0].y);
+    let angle = d01>=d03
+      ? Math.atan2(pts[1].y-pts[0].y, pts[1].x-pts[0].x)*180/Math.PI
+      : Math.atan2(pts[3].y-pts[0].y, pts[3].x-pts[0].x)*180/Math.PI;
+    const tileW = Math.max(d01,d03), tileH = Math.min(d01,d03);
+    while (angle > 90) angle -= 180;
+    while (angle <= -90) angle += 180;
+    const pad = 0.08;
+    const outW = Math.round(tileW*(1+2*pad)), outH = Math.round(tileH*(1+2*pad));
+    let M = null, rotated = null, cropped = null;
+    try {
+      M = cv.getRotationMatrix2D(new cv.Point(cx,cy), angle, 1.0);
+      rotated = new cv.Mat();
+      cv.warpAffine(src, rotated, M, new cv.Size(src.cols, src.rows), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+      const x = Math.max(0, Math.round(cx-outW/2));
+      const y = Math.max(0, Math.round(cy-outH/2));
+      const w = Math.min(src.cols-x, outW), h = Math.min(src.rows-y, outH);
+      if (w < 20 || h < 20) return "";
+      cropped = rotated.roi(new cv.Rect(x,y,w,h));
+      const tmp = document.createElement("canvas");
+      cv.imshow(tmp, cropped);
+      return tmp.toDataURL("image/jpeg", 0.85);
+    } finally {
+      if (M) M.delete();
+      if (cropped) cropped.delete();
+      if (rotated) rotated.delete();
+    }
+  }
+
   // Returns [{left, right, dataUrl}, …] — same as scanCanvas but with a
   // thumbnail of each cropped+rotated tile for visual debugging.
   function scanCanvasDebug(canvas) {
     let src = null;
     try {
       src = cv.imread(canvas);
-      const found = findTiles(src, 0.02, 0.60, 0.03);
+      const found = expandTiles(findTiles(src, 0.02, 0.70, 0.03));
       found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
       return found.map(t => {
-        const result = cropRotate(src, t.pts);
-        // Re-run cropRotate to also grab the image (can't get it from the count call)
-        const cx = (t.pts[0].x+t.pts[1].x+t.pts[2].x+t.pts[3].x)/4;
-        const cy = (t.pts[0].y+t.pts[1].y+t.pts[2].y+t.pts[3].y)/4;
-        const d01 = Math.hypot(t.pts[1].x-t.pts[0].x, t.pts[1].y-t.pts[0].y);
-        const d03 = Math.hypot(t.pts[3].x-t.pts[0].x, t.pts[3].y-t.pts[0].y);
-        let angle = d01>=d03
-          ? Math.atan2(t.pts[1].y-t.pts[0].y, t.pts[1].x-t.pts[0].x)*180/Math.PI
-          : Math.atan2(t.pts[3].y-t.pts[0].y, t.pts[3].x-t.pts[0].x)*180/Math.PI;
-        const tileW = Math.max(d01,d03), tileH = Math.min(d01,d03);
-        while (angle > 90) angle -= 180;
-        while (angle <= -90) angle += 180;
-        const pad = 0.08;
-        const outW = Math.round(tileW*(1+2*pad)), outH = Math.round(tileH*(1+2*pad));
-        let M = null, rotated = null, cropped = null, tmpCanvas = null;
-        let dataUrl = "";
-        try {
-          M = cv.getRotationMatrix2D(new cv.Point(cx,cy), angle, 1.0);
-          rotated = new cv.Mat();
-          cv.warpAffine(src, rotated, M, new cv.Size(src.cols, src.rows), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
-          const x = Math.max(0, Math.round(cx-outW/2));
-          const y = Math.max(0, Math.round(cy-outH/2));
-          const w = Math.min(src.cols-x, outW), h = Math.min(src.rows-y, outH);
-          if (w >= 20 && h >= 20) {
-            cropped = rotated.roi(new cv.Rect(x,y,w,h));
-            tmpCanvas = document.createElement("canvas");
-            cv.imshow(tmpCanvas, cropped);
-            dataUrl = tmpCanvas.toDataURL("image/jpeg", 0.85);
-          }
-        } finally {
-          if (M) M.delete();
-          if (cropped) cropped.delete();
-          if (rotated) rotated.delete();
-        }
+        const result = countQuad(src, t.pts);
+        const dataUrl = cropToDataUrl(src, t.pts);
         return { left: result.left, right: result.right, dataUrl };
       });
     } finally {
