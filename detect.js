@@ -432,12 +432,23 @@
       // detected, the count is not deficient and adding blobs would overcount.
       let count = pipAreas.length;
       if (pipAreas.length >= 8 && pipAreas.length < 10) {
-        for (const ba of bigBlobs) {
-          if (ba >= pipArea * 2.5) {
-            count += Math.round(ba / pipArea);
-            if (pipAreas.length === 8) count += 1;
-          } else if (ba >= pipArea * 1.5 && pipAreas.length === 8) {
-            count += 1;
+        if (pipAreas.length === 9 && bigBlobs.length >= 2) {
+          // Two bigBlobs with n=9: signature of a 12-pip half where one marginal
+          // pip failed the circularity test (small blob < 0.6×) and a group of
+          // 3 pips fused into a medium blob (1.5-2×). Single-artifact 9-pip halves
+          // produce only ONE bigBlob, so this two-blob path is exclusive to 12-pip.
+          for (const ba of bigBlobs) {
+            if (ba < pipArea * 0.6) count += 1;
+            else if (ba >= pipArea * 1.5) count += Math.round(ba / pipArea);
+          }
+        } else {
+          for (const ba of bigBlobs) {
+            if (ba >= pipArea * 2.5) {
+              count += Math.round(ba / pipArea);
+              if (pipAreas.length === 8) count += 1;
+            } else if (ba >= pipArea * 1.5 && pipAreas.length === 8) {
+              count += 1;
+            }
           }
         }
       }
