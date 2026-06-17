@@ -401,6 +401,7 @@
     try {
       gray = new cv.Mat();
       cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
+      thresh = new cv.Mat();
       cv.adaptiveThreshold(gray, thresh, 255,
         cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 4);
       conts = new cv.MatVector();
