@@ -27,6 +27,17 @@ After every merge, provide a fresh cache-busting link to the app so the user can
 
 ---
 
+## Triple-Check All Code Before Pushing
+
+Before every commit, verify:
+1. Every OpenCV function call uses an API that actually exists in OpenCV.js 4.x — do not assume an API exists; check it.
+2. Every `cv.Mat` destination argument is initialized with `new cv.Mat()` before being passed to any OpenCV function — never pass `null`.
+3. Every `new cv.Mat()` created in a `try` block is deleted in the matching `finally` block.
+
+After a merge conflict resolution, re-check all three points above on the resolved file before pushing.
+
+---
+
 ## Do NOT Assume Anything
 
 Always check facts against existing code, documentation, or the actual file before acting. Back up reasoning with evidence — cite the file and line, or the doc you read. Never state something about the code without verifying it first.
