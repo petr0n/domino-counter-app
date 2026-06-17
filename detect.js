@@ -102,13 +102,11 @@
         if (area >= minArea && area <= maxArea) {
           const rect = cv.minAreaRect(c);
           const rw = rect.size.width, rh = rect.size.height;
-          const longSide = Math.max(rw, rh), shortSide = Math.min(rw, rh);
-          const ratio = longSide / shortSide;
-          // Accept: single tile (~2:1), two portrait side-by-side (~1:1), two landscape end-to-end (~4:1)
-          const isSingle  = ratio >= 1.6 && ratio <= 2.8;
-          const isTwoAdj  = ratio >= 0.7 && ratio <= 1.4;  // two tiles side by side → ~1:1
-          const isTwoEnd  = ratio >= 3.2 && ratio <= 5.5;  // two tiles end to end  → ~4:1
-          if (isSingle || isTwoAdj || isTwoEnd) {
+          const ratio = Math.max(rw, rh) / Math.min(rw, rh);
+          // Accept only single-tile shapes (~2:1). Erosion separates touching
+          // tiles into their own contours, so accepting ~1:1 or ~4:1 blobs only
+          // lets two merged tiles through as one and miscounts them.
+          if (ratio >= 1.5 && ratio <= 3.0) {
             const pts = cv.RotatedRect.points(rect);
             const atEdge = edgeMargin > 0 && pts.some(p =>
               p.x < edgeMargin || p.x > src.cols - edgeMargin ||
