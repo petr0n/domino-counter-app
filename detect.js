@@ -103,10 +103,13 @@
           const rect = cv.minAreaRect(c);
           const rw = rect.size.width, rh = rect.size.height;
           const ratio = Math.max(rw, rh) / Math.min(rw, rh);
+          const fill = area / (rw * rh);
           // Accept only single-tile shapes (~2:1). Erosion separates touching
           // tiles into their own contours, so accepting ~1:1 or ~4:1 blobs only
           // lets two merged tiles through as one and miscounts them.
-          if (ratio >= 1.5 && ratio <= 3.0) {
+          // Also reject blobs with very low fill ratio — merged tile pairs span
+          // two tiles in their minAreaRect (fill ≈ 0.55-0.65 vs ≥ 0.80 single).
+          if (ratio >= 1.5 && ratio <= 3.0 && fill >= 0.72) {
             const pts = cv.RotatedRect.points(rect);
             const atEdge = edgeMargin > 0 && pts.some(p =>
               p.x < edgeMargin || p.x > src.cols - edgeMargin ||
@@ -116,7 +119,7 @@
               const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
               const shortSide = Math.min(rw, rh);
               const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
-              if (!dup) rects.push({ pts, cx, cy, fill: area / (rw * rh) });
+              if (!dup) rects.push({ pts, cx, cy, fill });
             }
           }
         }
@@ -242,7 +245,7 @@
 
   // Multi-tile core: every tile in an already-loaded src Mat → [{left,right}, …].
   function scanMat(src) {
-    const found = findTiles(src, 0.02, 0.70, 0.03);
+    const found = findTiles(src, 0.015, 0.70, 0.03);
     found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
     return found.map(t => Object.assign(countQuad(src, t.pts), { fill: t.fill }));
   }
@@ -502,7 +505,7 @@
     let src = null;
     try {
       src = cv.imread(canvas);
-      const found = findTiles(src, 0.02, 0.70, 0.03);
+      const found = findTiles(src, 0.015, 0.70, 0.03);
       found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
       return found.map(t => {
         const result = countQuad(src, t.pts);
