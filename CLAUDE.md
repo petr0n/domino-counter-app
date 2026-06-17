@@ -67,6 +67,9 @@ These decisions were made deliberately after testing. Do not second-guess, rever
 ### These are DOUBLE-12 tiles
 **Each half holds 0–12 pips, usually laid out in a compact grid (e.g. 3×3 = 9, 2×5 = 10, 3×4 = 12). Do not assume halves are ≤6.** Counting logic and prompts must handle the full 0–12 range per half.
 
+### Tiles NEVER overlap
+**Tiles may touch edge-to-edge but they NEVER overlap or sit on top of each other — this is a hard rule.** Every tile blob is therefore fully separable; detection may rely on this (e.g. erosion / distance-transform watershed to split touching tiles). Never add logic to handle overlapping tiles — that case cannot occur.
+
 ### Tile Detection: OpenCV.js in one shared module
 **OpenCV.js is the ONLY tile detection and pip counting engine. There is exactly ONE implementation — `detect.js` (`window.DominoCV`) — shared by every page that detects or preprocesses (`quick.html`, `scan.html`, `catalog.html`, `test.html`). Do not duplicate it back into the pages, and do not replace it with Claude AI or any other approach.**
 
