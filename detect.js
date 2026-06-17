@@ -68,12 +68,10 @@
   }
 
   // Find candidate tile rectangles on a (preprocessed) src Mat.
-  // Returns [{pts, cx, cy, n}, …] where n=1 means single tile, n=2 means two
-  // touching tiles that should be split. Accepts single tiles (ratio ~2),
-  // two portrait tiles side-by-side (ratio ~1), and two landscape tiles
-  // end-to-end (ratio ~4).
+  // Returns [{pts, cx, cy}, …] — one entry per individual tile.
   function findTiles(src, minAreaFrac, maxAreaFrac, edgeMarginFrac) {
-    let gray = null, blurred = null, binary = null, contours = null, hier = null;
+    let gray = null, blurred = null, binary = null, eroded = null, kernel = null;
+    let contours = null, hier = null;
     const rects = [];
     try {
       gray = new cv.Mat();
@@ -82,9 +80,17 @@
       cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
       binary = new cv.Mat();
       cv.threshold(blurred, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+
+      // Erode to separate any touching tiles. Kernel = ~1% of shortest image side,
+      // minimum 3px. This creates a visible gap between tiles that were touching.
+      const kSize = Math.max(3, Math.round(Math.min(src.cols, src.rows) * 0.01));
+      kernel = cv.Mat.ones(kSize, kSize, cv.CV_8U);
+      eroded = new cv.Mat();
+      cv.erode(binary, eroded, kernel);
+
       contours = new cv.MatVector();
       hier = new cv.Mat();
-      cv.findContours(binary, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      cv.findContours(eroded, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
       const frameArea = src.cols * src.rows;
       const minArea = frameArea * minAreaFrac, maxArea = frameArea * maxAreaFrac;
@@ -110,9 +116,9 @@
             if (!atEdge) {
               const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
               const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
-              const n = isSingle ? 1 : 2;
+              const shortSide = Math.min(rw, rh);
               const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
-              if (!dup) rects.push({ pts, cx, cy, n, longSide, shortSide });
+              if (!dup) rects.push({ pts, cx, cy });
             }
           }
         }
@@ -122,6 +128,8 @@
       if (gray)     gray.delete();
       if (blurred)  blurred.delete();
       if (binary)   binary.delete();
+      if (eroded)   eroded.delete();
+      if (kernel)   kernel.delete();
       if (contours) contours.delete();
       if (hier)     hier.delete();
     }
@@ -236,7 +244,7 @@
 
   // Multi-tile core: every tile in an already-loaded src Mat → [{left,right}, …].
   function scanMat(src) {
-    const found = expandTiles(findTiles(src, 0.02, 0.70, 0.03));
+    const found = findTiles(src, 0.02, 0.70, 0.03);
     found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
     return found.map(t => countQuad(src, t.pts));
   }
@@ -245,7 +253,15 @@
   function scanMatSingle(src) {
     const found = findTiles(src, 0.05, 0.95, 0);
     if (found.length) {
-      found.sort((a, b) => b.area - a.area);
+      // Pick the tile with the largest bounding area.
+      found.sort((a, b) => {
+        const areaOf = t => {
+          const p = t.pts;
+          return Math.hypot(p[1].x-p[0].x, p[1].y-p[0].y) *
+                 Math.hypot(p[3].x-p[0].x, p[3].y-p[0].y);
+        };
+        return areaOf(b) - areaOf(a);
+      });
       return countQuad(src, found[0].pts);
     }
     return splitAndCount(src);
@@ -451,7 +467,7 @@
     let src = null;
     try {
       src = cv.imread(canvas);
-      const found = expandTiles(findTiles(src, 0.02, 0.70, 0.03));
+      const found = findTiles(src, 0.02, 0.70, 0.03);
       found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
       return found.map(t => {
         const result = countQuad(src, t.pts);
