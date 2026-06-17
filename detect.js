@@ -397,12 +397,18 @@
     const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
     if (rw < 10 || rh < 10) return 0;
     const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
-    let gray = null, thresh = null, conts = null, hierP = null;
+    let gray = null, enhanced = null, thresh = null, conts = null, hierP = null;
     try {
       gray = new cv.Mat();
       cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
+      // CLAHE boosts local contrast so light-coloured pips (yellow, orange)
+      // become visible even when their global contrast against the tile is low.
+      enhanced = new cv.Mat();
+      const clahe = cv.createCLAHE(4.0, new cv.Size(4, 4));
+      clahe.apply(gray, enhanced);
+      clahe.delete();
       thresh = new cv.Mat();
-      cv.adaptiveThreshold(gray, thresh, 255,
+      cv.adaptiveThreshold(enhanced, thresh, 255,
         cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 4);
       conts = new cv.MatVector();
       hierP = new cv.Mat();
@@ -421,7 +427,8 @@
       return Math.min(count, 12);
     } finally {
       inner.delete();
-      if (gray)   gray.delete();
+      if (gray)     gray.delete();
+      if (enhanced) enhanced.delete();
       if (thresh) thresh.delete();
       if (conts)  conts.delete();
       if (hierP)  hierP.delete();
