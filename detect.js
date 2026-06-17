@@ -103,10 +103,14 @@
           const rect = cv.minAreaRect(c);
           const rw = rect.size.width, rh = rect.size.height;
           const ratio = Math.max(rw, rh) / Math.min(rw, rh);
+          const fill = area / (rw * rh);
           // Accept only single-tile shapes (~2:1). Erosion separates touching
           // tiles into their own contours, so accepting ~1:1 or ~4:1 blobs only
           // lets two merged tiles through as one and miscounts them.
-          if (ratio >= 1.5 && ratio <= 3.0) {
+          // Also reject blobs with very low fill ratio — these are merged tile
+          // pairs whose minAreaRect spans both tiles (fill ≈ 0.55-0.65 vs ≥0.80
+          // for a genuine single tile).
+          if (ratio >= 1.5 && ratio <= 3.0 && fill >= 0.72) {
             const pts = cv.RotatedRect.points(rect);
             const atEdge = edgeMargin > 0 && pts.some(p =>
               p.x < edgeMargin || p.x > src.cols - edgeMargin ||
@@ -116,7 +120,7 @@
               const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
               const shortSide = Math.min(rw, rh);
               const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
-              if (!dup) rects.push({ pts, cx, cy });
+              if (!dup) rects.push({ pts, cx, cy, fill });
             }
           }
         }
@@ -242,9 +246,9 @@
 
   // Multi-tile core: every tile in an already-loaded src Mat → [{left,right}, …].
   function scanMat(src) {
-    const found = findTiles(src, 0.02, 0.70, 0.03);
+    const found = findTiles(src, 0.015, 0.70, 0.03);
     found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
-    return found.map(t => countQuad(src, t.pts));
+    return found.map(t => Object.assign(countQuad(src, t.pts), { fill: t.fill }));
   }
 
   // Single-tile core: the one largest tile in src, with whole-frame fallback.
@@ -432,8 +436,24 @@
       // detected, the count is not deficient and adding blobs would overcount.
       let count = pipAreas.length;
       if (pipAreas.length >= 8 && pipAreas.length < 10) {
-        for (const ba of bigBlobs) {
-          if (ba >= pipArea * 2.5) count += Math.round(ba / pipArea);
+        if (pipAreas.length === 9 && bigBlobs.length >= 2) {
+          // Two bigBlobs with n=9: signature of a 12-pip half where one marginal
+          // pip failed the circularity test (small blob < 0.6×) and a group of
+          // 3 pips fused into a medium blob (1.5-2×). Single-artifact 9-pip halves
+          // produce only ONE bigBlob, so this two-blob path is exclusive to 12-pip.
+          for (const ba of bigBlobs) {
+            if (ba < pipArea * 0.6) count += 1;
+            else if (ba >= pipArea * 1.5) count += Math.round(ba / pipArea);
+          }
+        } else {
+          for (const ba of bigBlobs) {
+            if (ba >= pipArea * 2.5) {
+              count += Math.round(ba / pipArea);
+              if (pipAreas.length === 8) count += 1;
+            } else if (ba >= pipArea * 1.5 && pipAreas.length === 8) {
+              count += 1;
+            }
+          }
         }
       }
       return Math.min(count, 12);
@@ -486,7 +506,7 @@
     let src = null;
     try {
       src = cv.imread(canvas);
-      const found = findTiles(src, 0.02, 0.70, 0.03);
+      const found = findTiles(src, 0.015, 0.70, 0.03);
       found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
       return found.map(t => {
         const result = countQuad(src, t.pts);
