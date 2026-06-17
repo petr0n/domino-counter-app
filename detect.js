@@ -116,7 +116,7 @@
               const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
               const shortSide = Math.min(rw, rh);
               const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
-              if (!dup) rects.push({ pts, cx, cy });
+              if (!dup) rects.push({ pts, cx, cy, fill: area / (rw * rh) });
             }
           }
         }
@@ -244,7 +244,7 @@
   function scanMat(src) {
     const found = findTiles(src, 0.02, 0.70, 0.03);
     found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
-    return found.map(t => countQuad(src, t.pts));
+    return found.map(t => Object.assign(countQuad(src, t.pts), { fill: t.fill }));
   }
 
   // Single-tile core: the one largest tile in src, with whole-frame fallback.

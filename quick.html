@@ -361,9 +361,12 @@
     function renderReview() {
       tileRows.innerHTML = pendingTiles.map((t, i) => {
         const ok    = inCatalog(t.left, t.right);
-        const badge = ok
-          ? `<span class="badge ok">&#x2713; catalog</span>`
-          : `<span class="badge unk">? check</span>`;
+        const blur  = t.fill != null && t.fill < 0.75;
+        const badge = blur
+          ? `<span class="badge unk">? merged tiles?</span>`
+          : ok
+            ? `<span class="badge ok">&#x2713; catalog</span>`
+            : `<span class="badge unk">? check</span>`;
         const img = t.dataUrl ? `<img src="${t.dataUrl}" alt="tile ${i+1}">` : "";
         return `<div class="tile-card">
           ${img}
