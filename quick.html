@@ -71,8 +71,16 @@
     .empty { color:#444; font-size:0.85rem; text-align:center; padding:8px 0; }
     .reset-btn { background:#1a1a1a; color:#555; font-size:0.85rem; padding:10px; border-radius:10px; border:none; cursor:pointer; width:100%; max-width:480px; }
   </style>
-  <script src="config.js"></script>
-  <script src="detect.js"></script>
+  <script>
+    // Propagate the page's ?v= cache-buster to config.js and detect.js so a
+    // fresh link actually reloads the detection module (not just this HTML).
+    (function () {
+      const v = new URLSearchParams(location.search).get("v");
+      const q = v ? "?v=" + encodeURIComponent(v) : "";
+      document.write('<script src="config.js' + q + '"><\/script>');
+      document.write('<script src="detect.js' + q + '"><\/script>');
+    })();
+  </script>
 </head>
 <body>
   <header>
