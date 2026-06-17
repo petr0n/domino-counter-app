@@ -3,6 +3,11 @@
   "private": true,
   "type": "module",
   "description": "Offline accuracy eval for domino pip counting (not part of the app).",
-  "scripts": { "eval": "node eval.mjs" },
-  "dependencies": { "jpeg-js": "^0.4.4" }
+  "scripts": {
+    "eval": "node eval.mjs"
+  },
+  "dependencies": {
+    "@techstark/opencv-js": "^4.12.0-release.1",
+    "jpeg-js": "^0.4.4"
+  }
 }
