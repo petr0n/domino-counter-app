@@ -409,15 +409,32 @@
       hierP = new cv.Mat();
       cv.findContours(thresh, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
       const regionArea = rw * rh, minPip = regionArea * 0.002, maxPip = regionArea * 0.10;
-      let count = 0;
+      const pipAreas = [], bigBlobs = [];
       for (let i = 0; i < conts.size(); i++) {
         const c = conts.get(i);
         const area = cv.contourArea(c);
         const peri = cv.arcLength(c, true);
         c.delete();
-        // Pips are round; the central divider bar is elongated → low circularity
         const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
-        if (area >= minPip && area <= maxPip && circ >= 0.45) count++;
+        if (area >= minPip && area <= maxPip && circ >= 0.45) {
+          pipAreas.push(area);
+        } else if (area >= minPip && area <= maxPip * 8 && circ < 0.45) {
+          // Low-circularity blob — may be 2-4 adjacent pips merged in a dense grid.
+          bigBlobs.push(area);
+        }
+      }
+      const pipArea = pipAreas.length
+        ? pipAreas.reduce((a, b) => a + b, 0) / pipAreas.length
+        : maxPip * 0.25;
+      // Apply merged-blob estimation only when 8-9 individual pips are cleanly
+      // detected — the signature of a 12-pip (4×3) dense half where 3-4 adjacent
+      // pips fuse into one low-circularity blob. If ≥10 are already individually
+      // detected, the count is not deficient and adding blobs would overcount.
+      let count = pipAreas.length;
+      if (pipAreas.length >= 8 && pipAreas.length < 10) {
+        for (const ba of bigBlobs) {
+          if (ba >= pipArea * 2.5) count += Math.round(ba / pipArea);
+        }
       }
       return Math.min(count, 12);
     } finally {
