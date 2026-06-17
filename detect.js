@@ -397,21 +397,20 @@
     const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
     if (rw < 10 || rh < 10) return 0;
     const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
-    let gray = null, enhanced = null, thresh = null, conts = null, hierP = null;
+    let gray = null, thresh = null, conts = null, hierP = null;
     try {
       gray = new cv.Mat();
       cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
-      // equalizeHist spreads pixel values across 0-255, making light-coloured
-      // pips (yellow/orange appear gray) visible for adaptive thresholding.
-      enhanced = new cv.Mat();
-      cv.equalizeHist(gray, enhanced);
+      // Global Otsu threshold cleanly separates dark pips from the bright tile.
+      // (adaptiveThreshold with a small block hollows large pips into thin rings
+      // that fail the area/circularity filters; equalizeHist over-amplifies and
+      // merges pips — both verified worse on the reference photos.)
       thresh = new cv.Mat();
-      cv.adaptiveThreshold(enhanced, thresh, 255,
-        cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 4);
+      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
       conts = new cv.MatVector();
       hierP = new cv.Mat();
       cv.findContours(thresh, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-      const regionArea = rw * rh, minPip = regionArea * 0.004, maxPip = regionArea * 0.12;
+      const regionArea = rw * rh, minPip = regionArea * 0.002, maxPip = regionArea * 0.10;
       let count = 0;
       for (let i = 0; i < conts.size(); i++) {
         const c = conts.get(i);
@@ -420,13 +419,12 @@
         c.delete();
         // Pips are round; the central divider bar is elongated → low circularity
         const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
-        if (area >= minPip && area <= maxPip && circ >= 0.55) count++;
+        if (area >= minPip && area <= maxPip && circ >= 0.45) count++;
       }
       return Math.min(count, 12);
     } finally {
       inner.delete();
-      if (gray)     gray.delete();
-      if (enhanced) enhanced.delete();
+      if (gray)   gray.delete();
       if (thresh) thresh.delete();
       if (conts)  conts.delete();
       if (hierP)  hierP.delete();
