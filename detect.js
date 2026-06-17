@@ -401,12 +401,10 @@
     try {
       gray = new cv.Mat();
       cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
-      // CLAHE boosts local contrast so light-coloured pips (yellow, orange)
-      // become visible even when their global contrast against the tile is low.
+      // equalizeHist spreads pixel values across 0-255, making light-coloured
+      // pips (yellow/orange appear gray) visible for adaptive thresholding.
       enhanced = new cv.Mat();
-      const clahe = cv.createCLAHE(4.0, new cv.Size(4, 4));
-      clahe.apply(gray, enhanced);
-      clahe.delete();
+      cv.equalizeHist(gray, enhanced);
       thresh = new cv.Mat();
       cv.adaptiveThreshold(enhanced, thresh, 255,
         cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 4);
