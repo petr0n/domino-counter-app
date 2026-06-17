@@ -67,6 +67,51 @@
     ctx.putImageData(d, 0, 0);
   }
 
+  // Try to split a low-fill merged blob by applying a stronger local erosion
+  // within the blob's bounding box, then re-finding individual tile contours.
+  // Returns [{pts,cx,cy,fill}, …] (0 or ≥2 entries) or [].
+  function splitMergedBlob(binary, brect, minArea) {
+    const pad = Math.round(Math.max(brect.width, brect.height) * 0.04);
+    const rx = Math.max(0, brect.x - pad);
+    const ry = Math.max(0, brect.y - pad);
+    const rw = Math.min(binary.cols - rx, brect.width  + 2 * pad);
+    const rh = Math.min(binary.rows - ry, brect.height + 2 * pad);
+    let roi = null, cp = null, k2 = null, er2 = null, c2 = null, h2 = null;
+    try {
+      roi = binary.roi(new cv.Rect(rx, ry, rw, rh));
+      cp = new cv.Mat(); roi.copyTo(cp);
+      // Use 5% of the ROI's short side — much smaller than full-image erosion,
+      // but enough to break the narrow contact between touching tiles.
+      const kSz = Math.max(5, Math.round(Math.min(rw, rh) * 0.05));
+      k2 = cv.Mat.ones(kSz, kSz, cv.CV_8U);
+      er2 = new cv.Mat(); cv.erode(cp, er2, k2);
+      c2 = new cv.MatVector(); h2 = new cv.Mat();
+      cv.findContours(er2, c2, h2, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      const out = [];
+      for (let i = 0; i < c2.size(); i++) {
+        const c = c2.get(i);
+        const area = cv.contourArea(c);
+        if (area < minArea * 0.30) { c.delete(); continue; }
+        const r = cv.minAreaRect(c); c.delete();
+        const rw2 = r.size.width, rh2 = r.size.height;
+        const ratio = Math.max(rw2, rh2) / Math.min(rw2, rh2);
+        if (ratio < 1.5 || ratio > 3.0) continue;
+        const pts = cv.RotatedRect.points(r).map(p => ({ x: p.x + rx, y: p.y + ry }));
+        const hcx = (pts[0].x+pts[1].x+pts[2].x+pts[3].x)/4;
+        const hcy = (pts[0].y+pts[1].y+pts[2].y+pts[3].y)/4;
+        out.push({ pts, cx: hcx, cy: hcy, fill: area / (rw2 * rh2) });
+      }
+      return out.length >= 2 ? out : [];
+    } finally {
+      if (roi) roi.delete();
+      if (cp)  cp.delete();
+      if (k2)  k2.delete();
+      if (er2) er2.delete();
+      if (c2)  c2.delete();
+      if (h2)  h2.delete();
+    }
+  }
+
   // Find candidate tile rectangles on a (preprocessed) src Mat.
   // Returns [{pts, cx, cy}, …] — one entry per individual tile.
   function findTiles(src, minAreaFrac, maxAreaFrac, edgeMarginFrac) {
@@ -120,6 +165,15 @@
               const shortSide = Math.min(rw, rh);
               const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
               if (!dup) rects.push({ pts, cx, cy, fill });
+            }
+          } else if (fill >= 0.40 && fill < 0.72 && ratio >= 2.0) {
+            // Possible merged tile pair — try targeted-erosion split
+            const brect = cv.boundingRect(c);
+            const splits = splitMergedBlob(binary, brect, minArea);
+            const shortSide = Math.min(rw, rh);
+            for (const t of splits) {
+              const dup = rects.some(r => Math.hypot(r.cx - t.cx, r.cy - t.cy) < shortSide * 0.4);
+              if (!dup) rects.push(t);
             }
           }
         }
