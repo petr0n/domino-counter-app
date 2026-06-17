@@ -341,16 +341,15 @@
     const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
     if (rw < 10 || rh < 10) return 0;
     const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
-    let gray = null, thresh = null, kernel = null, closed = null, conts = null, hierP = null;
+    let gray = null, thresh = null, conts = null, hierP = null;
     try {
       gray = new cv.Mat();
       cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
       cv.adaptiveThreshold(gray, thresh, 255,
-        cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 3);
-      closed = new cv.Mat();
+        cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 4);
       conts = new cv.MatVector();
       hierP = new cv.Mat();
-      cv.findContours(closed, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      cv.findContours(thresh, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
       const regionArea = rw * rh, minPip = regionArea * 0.004, maxPip = regionArea * 0.12;
       let count = 0;
       for (let i = 0; i < conts.size(); i++) {
@@ -367,8 +366,6 @@
       inner.delete();
       if (gray)   gray.delete();
       if (thresh) thresh.delete();
-      if (kernel) kernel.delete();
-      if (closed) closed.delete();
       if (conts)  conts.delete();
       if (hierP)  hierP.delete();
     }

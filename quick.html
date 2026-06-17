@@ -54,7 +54,9 @@
     .badge.ok  { color:#4ade80; }
     .badge.unk { color:#f97316; }
     .tile-row .del { flex:none; width:28px; height:28px; padding:0; border-radius:6px; background:#2a2a2a; color:#666; font-size:0.8rem; }
-    .tile-crop { width:72px; height:36px; object-fit:contain; border-radius:4px; background:#111; flex:none; }
+    .tile-card { background:#111; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
+    .tile-card img { width:100%; height:auto; display:block; object-fit:contain; max-height:120px; }
+    .tile-card .tile-row { padding:8px; }
     .review-total { font-size:0.85rem; color:#888; text-align:right; }
     .btn-confirm { background:#7c3aed; color:#fff; font-weight:700; padding:14px; border-radius:12px; border:none; width:100%; font-size:1rem; cursor:pointer; }
     .btn-confirm:active { transform:scale(0.97); }
@@ -354,15 +356,17 @@
         const badge = ok
           ? `<span class="badge ok">&#x2713; catalog</span>`
           : `<span class="badge unk">? check</span>`;
-        const thumb = t.dataUrl ? `<img class="tile-crop" src="${t.dataUrl}" alt="">` : "";
-        return `<div class="tile-row">
-          ${thumb}
-          <input type="number" min="0" max="12" value="${t.left}"  onchange="upd(${i},'left',this.value)" />
-          <span class="sep">|</span>
-          <input type="number" min="0" max="12" value="${t.right}" onchange="upd(${i},'right',this.value)" />
-          <span class="total">= ${t.left + t.right}</span>
-          ${badge}
-          <button class="del" onclick="rmv(${i})">&#x2715;</button>
+        const img = t.dataUrl ? `<img src="${t.dataUrl}" alt="tile ${i+1}">` : "";
+        return `<div class="tile-card">
+          ${img}
+          <div class="tile-row">
+            <input type="number" min="0" max="12" value="${t.left}"  onchange="upd(${i},'left',this.value)" />
+            <span class="sep">|</span>
+            <input type="number" min="0" max="12" value="${t.right}" onchange="upd(${i},'right',this.value)" />
+            <span class="total">= ${t.left + t.right}</span>
+            ${badge}
+            <button class="del" onclick="rmv(${i})">&#x2715;</button>
+          </div>
         </div>`;
       }).join("");
       const sum = pendingTiles.reduce((s, t) => s + t.left + t.right, 0);
