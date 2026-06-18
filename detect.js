@@ -489,15 +489,7 @@
       // pips fuse into one low-circularity blob. If ≥10 are already individually
       // detected, the count is not deficient and adding blobs would overcount.
       let count = pipAreas.length;
-      if (pipAreas.length >= 6 && pipAreas.length < 8) {
-        // accepted 6-7 pips + large fused blobs: likely a 9-pip (3×3) half where
-        // some pips merged under thresholding. Upper bound 4× excludes the tile's
-        // central dividing line (which appears as a huge blob, often >8×).
-        for (const ba of bigBlobs) {
-          const r = ba / pipArea;
-          if (r >= 0.8 && r <= 4.0) count += Math.round(r);
-        }
-      } else if (pipAreas.length >= 8 && pipAreas.length < 10) {
+      if (pipAreas.length >= 8 && pipAreas.length < 10) {
         if (pipAreas.length === 9 && bigBlobs.length >= 2) {
           // Two bigBlobs with n=9 and at least one large (≥1.5×): signature of a
           // 12-pip half where pips fused. Require the large blob to avoid
