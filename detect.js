@@ -187,7 +187,7 @@
   }
 
   // Rotate src so the tile is axis-aligned, crop it with padding, then count.
-  function cropRotate(src, pts) {
+  function cropRotate(src, pts, fill) {
     // Derive centre, long-axis angle, and tile dimensions from the 4 corners.
     const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
     const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
@@ -205,8 +205,9 @@
     while (angle >  90) angle -= 180;
     while (angle <= -90) angle += 180;
 
-    // Crop dimensions with 8% padding each side so edges are never clipped.
-    const pad = 0.08;
+    // Crop dimensions with padding each side. Split tiles (fill < 0.72) use 2%
+    // to avoid bleeding into the adjacent tile; normal tiles use 8%.
+    const pad = (fill != null && fill < 0.72) ? 0.02 : 0.08;
     const outW = Math.round(tileW * (1 + 2 * pad));
     const outH = Math.round(tileH * (1 + 2 * pad));
 
@@ -231,8 +232,8 @@
   }
 
   // Find, crop, rotate, then count each tile.
-  function countQuad(src, pts) {
-    return cropRotate(src, pts);
+  function countQuad(src, pts, fill) {
+    return cropRotate(src, pts, fill);
   }
 
   // Expand merged-tile rects (n=2) into individual tile rects using splitRect.
@@ -248,7 +249,7 @@
   function scanMat(src) {
     const found = findTiles(src, 0.015, 0.70, 0.03);
     found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
-    return found.map(t => Object.assign(countQuad(src, t.pts), { fill: t.fill }));
+    return found.map(t => Object.assign(countQuad(src, t.pts, t.fill), { fill: t.fill }));
   }
 
   // Single-tile core: the one largest tile in src, with whole-frame fallback.
@@ -435,15 +436,25 @@
       // pips fuse into one low-circularity blob. If ≥10 are already individually
       // detected, the count is not deficient and adding blobs would overcount.
       let count = pipAreas.length;
-      if (pipAreas.length >= 8 && pipAreas.length < 10) {
+      if (pipAreas.length >= 6 && pipAreas.length < 8) {
+        // accepted 6-7 pips + large fused blobs: likely a 9-pip (3×3) half where
+        // some pips merged under thresholding. Upper bound 4× excludes the tile's
+        // central dividing line (which appears as a huge blob, often >8×).
+        for (const ba of bigBlobs) {
+          const r = ba / pipArea;
+          if (r >= 0.8 && r <= 4.0) count += Math.round(r);
+        }
+      } else if (pipAreas.length >= 8 && pipAreas.length < 10) {
         if (pipAreas.length === 9 && bigBlobs.length >= 2) {
-          // Two bigBlobs with n=9: signature of a 12-pip half where one marginal
-          // pip failed the circularity test (small blob < 0.6×) and a group of
-          // 3 pips fused into a medium blob (1.5-2×). Single-artifact 9-pip halves
-          // produce only ONE bigBlob, so this two-blob path is exclusive to 12-pip.
-          for (const ba of bigBlobs) {
-            if (ba < pipArea * 0.6) count += 1;
-            else if (ba >= pipArea * 1.5) count += Math.round(ba / pipArea);
+          // Two bigBlobs with n=9 and at least one large (≥1.5×): signature of a
+          // 12-pip half where pips fused. Require the large blob to avoid
+          // miscounting genuine 9-pip halves with two small noise blobs.
+          const hasLargeBigBlob = bigBlobs.some(ba => ba >= pipArea * 1.5);
+          if (hasLargeBigBlob) {
+            for (const ba of bigBlobs) {
+              if (ba < pipArea * 0.6) count += 1;
+              else if (ba >= pipArea * 1.5) count += Math.round(ba / pipArea);
+            }
           }
         } else {
           for (const ba of bigBlobs) {
