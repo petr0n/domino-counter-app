@@ -638,8 +638,10 @@
         const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
         if (area >= minPip && area <= maxPip && circ >= 0.45) {
           pipAreas.push(area);
-        } else if (area >= minPip && area <= maxPip * 8 && circ < 0.45) {
+        } else if (area >= minPip && area <= maxPip * 8 && circ >= 0.15 && circ < 0.45) {
           // Low-circularity blob — may be 2-4 adjacent pips merged in a dense grid.
+          // Floor of 0.15 rejects thin divider-bar / edge slivers (circ ~0.1),
+          // which are lines, not pips, and were being added as phantom counts.
           bigBlobs.push(area);
         }
       }
