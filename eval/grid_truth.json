@@ -1,0 +1,17 @@
+{
+  "_README": "GROUND TRUTH for per-half pip counting, rebuilt by visually inspecting each ref_*_tile*.jpg crop. Ordered [left,right] as seen in the image. Two-tile crops (465_tile1, 466_tile1) are findTiles merge errors and are excluded — they are not valid single-tile inputs for countPips.",
+  "ref_464_tile0": [6, 6],
+  "ref_465_tile0": [6, 7],
+  "ref_466_tile0": [3, 2],
+  "ref_467_tile0": [5, 9],
+  "ref_467_tile1": [10, 1],
+  "ref_468_tile0": [3, 5],
+  "ref_468_tile1": [5, 9],
+  "ref_468_tile2": [10, 1],
+  "ref_469_tile0": [9, 9],
+  "ref_469_tile1": [8, 8],
+  "ref_470_tile0": [0, 10],
+  "ref_470_tile1": [4, 10],
+  "ref_471_tile0": [0, 1],
+  "ref_471_tile1": [3, 3]
+}
