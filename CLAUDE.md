@@ -44,6 +44,16 @@ Always check facts against existing code, documentation, or the actual file befo
 
 ---
 
+## Accuracy Is the Job — Use the Internet, Own Your Mistakes
+
+**Improving pip-counting accuracy is the top goal of every iteration. Every change must move accuracy forward — measure it with the `eval/` harness, do not guess it.**
+
+- **Do not limit yourself to what is already in your head.** When you get stuck — an OpenCV API you're unsure exists, a segmentation/counting technique you don't know cold, an error you can't place — search the Internet for a working solution or example *before* guessing. The web is a first-class reference and resource, not a last resort. Always verify what you find against the actual code and the real OpenCV.js 4.x API (see "Do NOT Assume Anything" and the Triple-Check list).
+- **No excuses.** Do not explain away a broken result, hand-wave past a failure, or ship something you haven't verified. Diagnose the real cause and do it correctly.
+- **If you screw up, fix it.** Own the mistake and produce a concrete fix — a corrected change, a regression test that catches it, or a clean rollback — not an apology. An iteration is not done until accuracy is restored or improved and verified.
+
+---
+
 ## DRY — Don't Repeat Yourself
 
 **Never recreate something that already exists. Before writing any function, constant, or block of logic, search the codebase for it first — if it exists, reuse it; if it nearly exists, extend or refactor it. Never copy-paste a second implementation of the same thing.**
