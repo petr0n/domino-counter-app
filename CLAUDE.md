@@ -38,6 +38,17 @@ After a merge conflict resolution, re-check all three points above on the resolv
 
 ---
 
+## Keep CLAUDE.md In Sync With the Code
+
+**This file is a guardrail — a wrong statement here sends the next session down the wrong path (it has already happened). When a change makes anything here inaccurate, update CLAUDE.md in the SAME PR as the change.**
+
+- Especially detection/counter behavior: if you change what `detect.js` does, change its description here too. Never leave the doc claiming behavior the code no longer has.
+- Don't document intended/aspirational behavior as if it ships. If something exists but is dormant or reverted, say so explicitly.
+- Verify before you write: confirm a claim against the actual code (see "Do NOT Assume Anything"). Don't describe a function from its name or an old comment.
+- **Regressions are unacceptable.** After any `detect.js` change, run the free `grid_eval` (see below) and confirm accuracy held or improved before pushing — never ship a number you didn't measure.
+
+---
+
 ## Do NOT Assume Anything
 
 Always check facts against existing code, documentation, or the actual file before acting. Back up reasoning with evidence — cite the file and line, or the doc you read. Never state something about the code without verifying it first.
