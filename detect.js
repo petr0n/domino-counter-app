@@ -220,7 +220,7 @@
   }
 
   // Split a tile Mat at the midpoint of its longer axis and count each half.
-  function splitAndCount(mat) {
+  function splitAndCount(mat, fill) {
     let halfA = null, halfB = null;
     try {
       const landscape = mat.cols >= mat.rows;
@@ -232,7 +232,7 @@
         halfA = mat.roi(new cv.Rect(0, 0, mat.cols, mid));
         halfB = mat.roi(new cv.Rect(0, mid, mat.cols, mat.rows - mid));
       }
-      return { left: countPips(halfA), right: countPips(halfB) };
+      return { left: countPips(halfA, fill), right: countPips(halfB, fill) };
     } finally {
       if (halfA) halfA.delete();
       if (halfB) halfB.delete();
@@ -274,9 +274,9 @@
       const y = Math.max(0, Math.round(cy - outH / 2));
       const w = Math.min(src.cols - x, outW);
       const h = Math.min(src.rows - y, outH);
-      if (w < 20 || h < 20) return splitAndCount(src);
+      if (w < 20 || h < 20) return splitAndCount(src, fill);
       cropped = rotated.roi(new cv.Rect(x, y, w, h));
-      return splitAndCount(cropped);
+      return splitAndCount(cropped, fill);
     } finally {
       if (M)       M.delete();
       if (cropped) cropped.delete();
@@ -320,7 +320,7 @@
       });
       return countQuad(src, found[0].pts);
     }
-    return splitAndCount(src);
+    return splitAndCount(src, null);
   }
 
   // Multi-tile: every tile laid out in frame → [{left,right}, …].
@@ -358,8 +358,8 @@
     return warped;
   }
 
-  function countPips(halfMat) {
-    return countPipsContour(halfMat);
+  function countPips(halfMat, fill) {
+    return countPipsContour(halfMat, fill);
   }
 
   function countPipsGrid(halfMat) {
@@ -447,7 +447,7 @@
     }
   }
 
-  function countPipsContour(halfMat) {
+  function countPipsContour(halfMat, fill) {
     // Original contour-based approach (kept for reference / fallback).
     const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
     const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
@@ -520,6 +520,10 @@
           }
         }
       }
+      // Split tiles (fill < 0.72) sometimes pick up one spurious pip from the
+      // adjacent tile's inner edge. If accepted=10 and there are leftover bigBlobs,
+      // that's the signature of a 9-pip half with one artifact — subtract one.
+      if (fill != null && fill < 0.72 && count === 10 && bigBlobs.length > 0) count = 9;
       return Math.min(count, 12);
     } finally {
       inner.delete();
