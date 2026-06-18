@@ -119,13 +119,17 @@
               const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
               if (!dup) rects.push({ pts, cx, cy, fill });
             }
-          } else if (ratio >= 0.85 && ratio < 1.5 && fill >= 0.60) {
-            // Near-square blob: two tiles touching end-to-end. Split at midpoint
-            // along the long axis to recover the individual tiles.
+          } else if ((ratio >= 0.85 && ratio < 1.5 && fill >= 0.60) ||
+                     (ratio > 3.0 && ratio < 5.0 && fill >= 0.55)) {
+            // Two tiles merged: either touching long-side-to-long-side (~1:1 blob)
+            // or touching end-to-end (~4:1 blob). Split at midpoint along long axis.
             const pts = cv.RotatedRect.points(rect);
-            const atEdge = edgeMargin > 0 && pts.some(p =>
-              p.x < edgeMargin || p.x > src.cols - edgeMargin ||
-              p.y < edgeMargin || p.y > src.rows - edgeMargin);
+            // 1% margin: reject merges whose bounding box is near the frame edge —
+            // a half-tile at the boundary crops poorly and gives garbage pip counts.
+            const splitMargin = Math.min(src.cols, src.rows) * 0.01;
+            const atEdge = pts.some(p =>
+              p.x < splitMargin || p.x > src.cols - splitMargin ||
+              p.y < splitMargin || p.y > src.rows - splitMargin);
             if (!atEdge) {
               for (const h of splitRect({ pts })) {
                 const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw,rh) * 0.4);
@@ -257,7 +261,7 @@
 
   // Multi-tile core: every tile in an already-loaded src Mat → [{left,right}, …].
   function scanMat(src) {
-    const found = findTiles(src, 0.015, 0.70, 0.03);
+    const found = findTiles(src, 0.015, 0.70, 0.01);
     found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
     return found.map(t => Object.assign(countQuad(src, t.pts, t.fill), { fill: t.fill }));
   }
@@ -566,7 +570,7 @@
         [[.2,.2],[.5,.2],[.8,.2],[.2,.5],[.5,.5],[.8,.5],[.2,.8],[.5,.8],[.8,.8]],   // 9
         [[.15,.2],[.38,.2],[.62,.2],[.85,.2],[.15,.5],[.85,.5],[.15,.8],[.38,.8],[.62,.8],[.85,.8]], // 10
         [[.15,.2],[.38,.2],[.62,.2],[.85,.2],[.15,.5],[.5,.5],[.85,.5],[.15,.8],[.38,.8],[.62,.8],[.85,.8]], // 11
-        [[.2,.15],[.5,.15],[.8,.15],[.2,.38],[.5,.38],[.8,.38],[.2,.62],[.5,.62],[.8,.62],[.2,.85],[.5,.85],[.8,.85]], // 12
+        [[.15,.2],[.38,.2],[.62,.2],[.85,.2],[.15,.5],[.38,.5],[.62,.5],[.85,.5],[.15,.8],[.38,.8],[.62,.8],[.85,.8]], // 12
       ];
 
       // Collect all unique sample positions across all layouts
