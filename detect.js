@@ -749,6 +749,6 @@
   window.DominoCV = {
     loadCV, preprocess, scanCanvas, scanCanvasDebug, scanCanvasSingle, isReady: () => cvReady,
     // Headless-test hooks: operate on pixel arrays / Mats (no canvas/DOM).
-    _test: { stretchGray, findTiles, scanMat, scanMatSingle, halfDensity, getHalvesMats }
+    _test: { stretchGray, findTiles, splitAndCount, scanMat, scanMatSingle, halfDensity, getHalvesMats }
   };
 })();
