@@ -104,12 +104,9 @@
           const rw = rect.size.width, rh = rect.size.height;
           const ratio = Math.max(rw, rh) / Math.min(rw, rh);
           const fill = area / (rw * rh);
-          // Accept only single-tile shapes (~2:1). Erosion separates touching
-          // tiles into their own contours, so accepting ~1:1 or ~4:1 blobs only
-          // lets two merged tiles through as one and miscounts them.
-          // Also reject blobs with very low fill ratio — these are merged tile
-          // pairs whose minAreaRect spans both tiles (fill ≈ 0.55-0.65 vs ≥0.80
-          // for a genuine single tile).
+          // Accept single-tile shapes (~2:1, fill ≥ 0.72). Erosion normally
+          // separates touching tiles, but when two tiles touch side-by-side they
+          // can survive as one near-square (~1:1) blob — detect and split those.
           if (ratio >= 1.5 && ratio <= 3.0 && fill >= 0.72) {
             const pts = cv.RotatedRect.points(rect);
             const atEdge = edgeMargin > 0 && pts.some(p =>
@@ -121,6 +118,19 @@
               const shortSide = Math.min(rw, rh);
               const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
               if (!dup) rects.push({ pts, cx, cy, fill });
+            }
+          } else if (ratio >= 0.85 && ratio < 1.5 && fill >= 0.60) {
+            // Near-square blob: two tiles touching end-to-end. Split at midpoint
+            // along the long axis to recover the individual tiles.
+            const pts = cv.RotatedRect.points(rect);
+            const atEdge = edgeMargin > 0 && pts.some(p =>
+              p.x < edgeMargin || p.x > src.cols - edgeMargin ||
+              p.y < edgeMargin || p.y > src.rows - edgeMargin);
+            if (!atEdge) {
+              for (const h of splitRect({ pts })) {
+                const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw,rh) * 0.4);
+                if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: 0.5 });
+              }
             }
           }
         }
