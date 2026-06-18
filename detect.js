@@ -309,6 +309,204 @@
     return countPipsContour(halfMat);
   }
 
+  // Returns cloned half-tile Mats for all tiles in src. Caller must delete each Mat.
+  function getHalvesMats(src) {
+    const found = findTiles(src, 0.015, 0.70, 0.03);
+    found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
+    const halves = [];
+    for (const t of found) {
+      const { cx, cy, pts, fill } = t;
+      const d01 = Math.hypot(pts[1].x-pts[0].x, pts[1].y-pts[0].y);
+      const d03 = Math.hypot(pts[3].x-pts[0].x, pts[3].y-pts[0].y);
+      let angle, tileW, tileH;
+      if (d01 >= d03) { angle = Math.atan2(pts[1].y-pts[0].y, pts[1].x-pts[0].x)*180/Math.PI; tileW=d01; tileH=d03; }
+      else            { angle = Math.atan2(pts[3].y-pts[0].y, pts[3].x-pts[0].x)*180/Math.PI; tileW=d03; tileH=d01; }
+      while (angle >  90) angle -= 180;
+      while (angle <= -90) angle += 180;
+      const pad = (fill != null && fill < 0.72) ? 0.02 : 0.08;
+      const outW = Math.round(tileW*(1+2*pad)), outH = Math.round(tileH*(1+2*pad));
+      let M = null, rotated = null;
+      try {
+        M = cv.getRotationMatrix2D(new cv.Point(cx, cy), angle, 1.0);
+        rotated = new cv.Mat();
+        cv.warpAffine(src, rotated, M, new cv.Size(src.cols, src.rows), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+        const x = Math.max(0, Math.round(cx - outW/2));
+        const y = Math.max(0, Math.round(cy - outH/2));
+        const w = Math.min(src.cols - x, outW), h = Math.min(src.rows - y, outH);
+        if (w < 20 || h < 20) continue;
+        const tile = rotated.roi(new cv.Rect(x, y, w, h));
+        const landscape = tile.cols >= tile.rows;
+        const mid = landscape ? Math.floor(tile.cols/2) : Math.floor(tile.rows/2);
+        let hA, hB;
+        if (landscape) { hA = tile.roi(new cv.Rect(0,0,mid,tile.rows)).clone(); hB = tile.roi(new cv.Rect(mid,0,tile.cols-mid,tile.rows)).clone(); }
+        else           { hA = tile.roi(new cv.Rect(0,0,tile.cols,mid)).clone();  hB = tile.roi(new cv.Rect(0,mid,tile.cols,tile.rows-mid)).clone(); }
+        halves.push({ left: hA, right: hB, fill });
+      } finally {
+        if (M)       M.delete();
+        if (rotated) rotated.delete();
+      }
+    }
+    return halves;
+  }
+
+  // Returns a NxN density map (fraction of dark pixels per cell) for a half-tile Mat.
+  // Used only by the measurement script to determine correct grid margins.
+  function halfDensity(halfMat, N) {
+    const SZ = 120;
+    let resized = null, gray = null, bin = null;
+    try {
+      resized = new cv.Mat();
+      cv.resize(halfMat, resized, new cv.Size(SZ, SZ));
+      gray = new cv.Mat();
+      cv.cvtColor(resized, gray, cv.COLOR_RGBA2GRAY);
+      bin = new cv.Mat();
+      cv.threshold(gray, bin, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+      const cw = SZ / N, ch = SZ / N;
+      const grid = [];
+      for (let r = 0; r < N; r++) {
+        const row = [];
+        for (let c = 0; c < N; c++) {
+          const x1 = Math.round(c * cw), x2 = Math.round((c + 1) * cw);
+          const y1 = Math.round(r * ch), y2 = Math.round((r + 1) * ch);
+          let pip = 0, total = 0;
+          for (let py = y1; py < y2; py++) {
+            const rowData = bin.ucharPtr(Math.min(SZ - 1, py));
+            for (let px = x1; px < x2; px++) {
+              if (rowData[Math.min(SZ - 1, px)] > 0) pip++;
+              total++;
+            }
+          }
+          row.push(pip / total);
+        }
+        grid.push(row);
+      }
+      return grid;
+    } finally {
+      if (resized) resized.delete();
+      if (gray)    gray.delete();
+      if (bin)     bin.delete();
+    }
+  }
+
+  // Grid-sampling pip counter. Divides the half into a 3×4 grid (12 cells)
+  // and a 3×3 grid (9 cells), sampling each cell center for darkness.
+  // If 10+ cells are dark in the 3×4 grid, that is the count (10/11/12-pip half).
+  // Otherwise the 3×3 grid count is used (0-9-pip half).
+  // This avoids all contour/circularity logic and is immune to the divider bar.
+  function countPipsGridSample(halfMat, fill) {
+    const SZ = 120, N = 20;
+    let resized = null, gray = null, bin = null;
+    try {
+      resized = new cv.Mat();
+      cv.resize(halfMat, resized, new cv.Size(SZ, SZ));
+      gray = new cv.Mat();
+      cv.cvtColor(resized, gray, cv.COLOR_RGBA2GRAY);
+      bin = new cv.Mat();
+      cv.threshold(gray, bin, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+      // Build NxN density grid. Each cell = fraction of dark pixels in its region.
+      const cw = SZ / N, ch = SZ / N;
+      const grid = [];
+      for (let r = 0; r < N; r++) {
+        const row = [];
+        for (let c = 0; c < N; c++) {
+          const x1 = Math.round(c * cw), x2 = Math.round((c + 1) * cw);
+          const y1 = Math.round(r * ch), y2 = Math.round((r + 1) * ch);
+          let pip = 0, total = 0;
+          for (let py = y1; py < y2; py++) {
+            const rd = bin.ucharPtr(Math.min(SZ - 1, py));
+            for (let px = x1; px < x2; px++) {
+              if (rd[Math.min(SZ - 1, px)] > 0) pip++;
+              total++;
+            }
+          }
+          row.push(pip / total);
+        }
+        grid.push(row);
+      }
+
+      // N-bin projections (sum of density across each row/col).
+      const colP = new Array(N).fill(0);
+      const rowP = new Array(N).fill(0);
+      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+        colP[c] += grid[r][c]; rowP[r] += grid[r][c];
+      }
+      // Zero solid bins (>75% of N = tile border or divider bar) and outer 2 bins (tile edge).
+      for (let i = 0; i < N; i++) {
+        if (colP[i] > 0.75 * N) colP[i] = 0;
+        if (rowP[i] > 0.75 * N) rowP[i] = 0;
+      }
+      colP[0] = colP[1] = colP[N-2] = colP[N-1] = 0;
+      rowP[0] = rowP[1] = rowP[N-2] = rowP[N-1] = 0;
+
+      // Find weighted centroids of groups above 40% of max, merging groups <2 bins apart.
+      function centroids(proj) {
+        let maxV = 0;
+        for (let i = 0; i < N; i++) if (proj[i] > maxV) maxV = proj[i];
+        if (maxV < 1.0) return [];
+        const thresh = maxV * 0.40;
+        const raw = [];
+        let ws = 0, ps = 0, on = false;
+        for (let i = 0; i < N; i++) {
+          if (proj[i] >= thresh) { ws += proj[i] * i; ps += proj[i]; on = true; }
+          else if (on) { raw.push(ws / ps); ws = 0; ps = 0; on = false; }
+        }
+        if (on) raw.push(ws / ps);
+        const out = [];
+        for (const v of raw) {
+          if (out.length && v - out[out.length-1] < 2) out[out.length-1] = (out[out.length-1] + v) / 2;
+          else out.push(v);
+        }
+        return out;
+      }
+
+      // Filter centroids too close to the edge (border artifact zone: last 3 bins).
+      const allColC = centroids(colP).filter(c => c <= N - 4);
+      const allRowC = centroids(rowP).filter(r => r <= N - 4);
+      if (!allColC.length || !allRowC.length) return 0;
+
+      // Sort centroid groups by Voronoi area (sum of proj in each group's territory).
+      // Top-3 vs top-4 selection disambiguates 12-pip (4-col) from tiles with spurious border groups.
+      function topByArea(cs, proj, n) {
+        if (cs.length <= n) return cs.slice();
+        const areas = cs.map((c, i) => {
+          const lo = i === 0 ? 0 : Math.round((cs[i-1] + c) / 2);
+          const hi = i === cs.length-1 ? N-1 : Math.round((c + cs[i+1]) / 2);
+          let s = 0; for (let j = lo; j <= hi; j++) s += proj[j]; return s;
+        });
+        return cs.map((c, i) => ({ c, a: areas[i] }))
+          .sort((a, b) => b.a - a.a).slice(0, n).map(x => x.c).sort((a, b) => a - b);
+      }
+
+      function countGrid(cols, rows) {
+        let n = 0;
+        for (const rC of rows) for (const cC of cols) {
+          const bc = Math.max(0, Math.min(N-1, Math.round(cC)));
+          const br = Math.max(0, Math.min(N-1, Math.round(rC)));
+          if (grid[br][bc] >= 0.25) n++;
+        }
+        return n;
+      }
+
+      const cols3 = topByArea(allColC, colP, 3);
+      const cols4 = topByArea(allColC, colP, 4);
+      const rows3 = topByArea(allRowC, rowP, 3);
+      const rows4 = topByArea(allRowC, rowP, 4);
+
+      const c3x3 = countGrid(cols3, rows3);
+      const c4x3 = countGrid(cols4, rows3);
+      const c3x4 = countGrid(cols3, rows4);
+
+      // 12-pip tile fills all 12 cells of the 4×3 grid (4 cols or 4 rows).
+      // Spurious 4th groups from border artifacts don't fill all 12 → count stays at c3x3.
+      return (c4x3 === 12 || c3x4 === 12) ? 12 : c3x3;
+    } finally {
+      if (resized) resized.delete();
+      if (gray)    gray.delete();
+      if (bin)     bin.delete();
+    }
+  }
+
   function countPipsGrid(halfMat) {
     // Grid-sampling approach: normalize half to fixed size, sample brightness at
     // canonical pip positions for each count 0-12, pick the count whose pip
@@ -457,8 +655,10 @@
             }
           }
         } else {
+          const sortedBig = bigBlobs.slice().sort((a, b) => a - b);
+          const hasSubstantialSmall = sortedBig.length >= 2 && sortedBig[0] >= pipArea * 0.15;
           for (const ba of bigBlobs) {
-            if (ba >= pipArea * 2.5) {
+            if (!hasSubstantialSmall && ba >= pipArea * 2.5) {
               count += Math.round(ba / pipArea);
               if (pipAreas.length === 8) count += 1;
             } else if (ba >= pipArea * 1.5 && pipAreas.length === 8) {
@@ -532,6 +732,6 @@
   window.DominoCV = {
     loadCV, preprocess, scanCanvas, scanCanvasDebug, scanCanvasSingle, isReady: () => cvReady,
     // Headless-test hooks: operate on pixel arrays / Mats (no canvas/DOM).
-    _test: { stretchGray, findTiles, scanMat, scanMatSingle }
+    _test: { stretchGray, findTiles, scanMat, scanMatSingle, halfDensity, getHalvesMats }
   };
 })();
