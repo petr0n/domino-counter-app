@@ -65,7 +65,15 @@ These decisions were made deliberately after testing. Do not second-guess, rever
 **Different domino sets use different pip colors (yellow, orange, green, blue, purple, pink, black, …). NEVER base tile detection, pip counting, prompts, thresholds, or any logic on a specific color or color palette.** Count every pip regardless of its color. Any approach must be fully color-agnostic — do not assume pips are a particular color, and do not identify or group tiles/pips by color.
 
 ### These are DOUBLE-12 tiles
-**Each half holds 0–12 pips, usually laid out in a compact grid (e.g. 3×3 = 9, 2×5 = 10, 3×4 = 12). Do not assume halves are ≤6.** Counting logic and prompts must handle the full 0–12 range per half.
+**Each half holds 0–12 pips. Do not assume halves are ≤6.** Counting logic must handle the full 0–12 range per half.
+
+### Pip grid model — exactly two layouts, 3 rows always
+**Every half lays its pips on one of only two grids, and no half deviates:**
+- **0–9 pips → a 3×3 grid** (e.g. 6 = two full outer columns with the middle column empty; 8 = the ring, all but centre; 9 = all nine).
+- **10–12 pips → a 4×3 grid** (4 columns × 3 rows). Top and bottom rows are always full (4 each); the middle row holds the remainder: **10 = 2 (outer), 11 = 3, 12 = 4**.
+- **The 11 middle row is special:** its 3 pips are spaced left/centre/right across the full width — the centre pip sits dead-centre and does NOT align to the 4 columns. Count the 4×3 middle row by its blobs, not by column position.
+
+`countPips` relies on this: it detects clean round pip blobs, infers this 3-row / 3-or-4-column lattice, then counts occupied cells (occupancy-testing each lattice cell on the mask). This both recovers a pip the contour filter dropped and rejects off-lattice noise. Do not reintroduce blob-area "merged-pip" heuristics — they overcounted real halves and were removed.
 
 ### Tiles NEVER overlap
 **Tiles may touch edge-to-edge but they NEVER overlap or sit on top of each other — this is a hard rule.** Every tile blob is therefore fully separable; detection may rely on this (e.g. erosion / distance-transform watershed to split touching tiles). Never add logic to handle overlapping tiles — that case cannot occur.
@@ -222,7 +230,7 @@ Stored as JSON files on GitHub at `sessions/{code}.json` in this repo. The `sess
 2. Open/close morphology makes each tile one solid blob (touching tiles stay separate)
 3. `minAreaRect` per blob, filtered by area, aspect ratio, and fill ratio → tile rectangles (tolerant of rounded corners and rotation)
 4. Perspective warp to isolate each tile, split into halves
-5. Adaptive threshold → contour filtering by area and circularity → pip count
+5. Otsu threshold → round-contour (area + circularity) pip detection → infer the 3×3 / 4×3 pip lattice → count occupied cells (see "Pip grid model" above)
 
 **Memory management (OpenCV):** Every `cv.Mat` created must be explicitly `.delete()`d in a `finally` block. Missing deletions cause memory leaks that crash the page over time.
 
