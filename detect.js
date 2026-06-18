@@ -522,19 +522,26 @@
   }
 
   function countPipsGrid(halfMat) {
-    // Grid-sampling approach: normalize half to fixed size, sample brightness at
-    // canonical pip positions for each count 0-12, pick the count whose pip
-    // positions are darkest relative to its empty positions. Works on faint pips
-    // (light-coloured pips become slight gray shadows) where contour detection fails.
+    // Hybrid grid approach: binarize the half-tile with Otsu (same as countPipsContour,
+    // same inner-crop to strip the dark table padding that corrupts global bg estimation),
+    // then score each canonical pip layout by how well its positions match the binary mask.
+    // This handles merged pips (no blob splitting needed) and any pip color.
+    const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
+    const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
+    if (rw < 10 || rh < 10) return 0;
+    const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
     const SIZE = 150;
-    let resized = null, gray = null;
+    let resized = null, gray = null, thresh = null;
     try {
       resized = new cv.Mat();
-      cv.resize(halfMat, resized, new cv.Size(SIZE, SIZE));
+      cv.resize(inner, resized, new cv.Size(SIZE, SIZE));
       gray = new cv.Mat();
       cv.cvtColor(resized, gray, cv.COLOR_RGBA2GRAY);
+      thresh = new cv.Mat();
+      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-      // Sample mean brightness of a small patch centred at normalised (nx,ny)
+      // Sample fraction of pip-mask coverage at a patch centred on (nx,ny).
+      // Returns 0 (no pip) to 1 (fully pip) in the binary mask.
       const patch = 4;
       const sample = (nx, ny) => {
         const cx = Math.round(nx * (SIZE - 1)), cy = Math.round(ny * (SIZE - 1));
@@ -542,16 +549,11 @@
         for (let dy = -patch; dy <= patch; dy++) {
           for (let dx = -patch; dx <= patch; dx++) {
             const r = cy + dy, c = cx + dx;
-            if (r >= 0 && r < SIZE && c >= 0 && c < SIZE) { sum += gray.ucharAt(r, c); n++; }
+            if (r >= 0 && r < SIZE && c >= 0 && c < SIZE) { sum += thresh.ucharAt(r, c); n++; }
           }
         }
-        return n ? sum / n : 255;
+        return n ? sum / n / 255 : 0;
       };
-
-      // Background brightness: average of tile-edge corners (should be bright white)
-      const bg = (sample(0.05,0.05) + sample(0.95,0.05) + sample(0.05,0.95) + sample(0.95,0.95)) / 4;
-      // Relative darkness: 0 = same as bg, 1 = completely black
-      const dark = (nx, ny) => Math.max(0, (bg - sample(nx, ny)) / Math.max(bg, 1));
 
       // Canonical pip positions (normalised 0-1) for counts 0-12.
       // Based on standard double-12 domino layouts (user-verified):
@@ -578,12 +580,12 @@
       L.forEach(layout => layout.forEach(([x,y]) => { const k=`${x},${y}`; if (!posMap.has(k)) posMap.set(k,[x,y]); }));
       const allPos = [...posMap.values()];
 
-      // Sample darkness at every position once
+      // Sample pip-mask coverage at every position once
       const dMap = new Map();
-      allPos.forEach(([x,y]) => dMap.set(`${x},${y}`, dark(x,y)));
+      allPos.forEach(([x,y]) => dMap.set(`${x},${y}`, sample(x,y)));
 
-      // Score each count: pip positions should be darker than non-pip positions.
-      // Use avg(dark at pip spots) - avg(dark at empty spots) as the signal.
+      // Score each count: pip positions should have high mask coverage (pip detected),
+      // empty positions should have low coverage. Signal = avg(pip) - avg(empty).
       let best = 0, bestScore = -Infinity;
       for (let n = 0; n <= 12; n++) {
         const pipKeys = new Set(L[n].map(([x,y]) => `${x},${y}`));
@@ -593,7 +595,6 @@
           if (pipKeys.has(`${x},${y}`)) { pipD += d; pipN++; }
           else { emptyD += d; emptyN++; }
         });
-        // For n=0: no pip positions → score = -(avg darkness of all positions)
         const avgPip   = pipN   ? pipD   / pipN   : 0;
         const avgEmpty = emptyN ? emptyD / emptyN : 0;
         const score = n === 0 ? -avgEmpty : avgPip - avgEmpty;
@@ -601,8 +602,10 @@
       }
       return best;
     } finally {
-      if (resized) resized.delete();
-      if (gray)    gray.delete();
+      if (resized)  resized.delete();
+      if (gray)     gray.delete();
+      if (thresh)   thresh.delete();
+      inner.delete();
     }
   }
 
