@@ -46,8 +46,9 @@ Always check facts against existing code, documentation, or the actual file befo
 
 ## Accuracy Is the Job — Use the Internet, Own Your Mistakes
 
-**Improving pip-counting accuracy is the top goal of every iteration. Every change must move accuracy forward — measure it with the `eval/` harness, do not guess it.**
+**Improving pip-counting accuracy is the top goal of every iteration. Every change must move accuracy forward — measure it locally and free with `eval/grid_eval.cjs` (the shipped OpenCV counter scored against `grid_truth.json` using the committed `ref_*.jpg` crops), do not guess it.**
 
+- **NEVER spend money on API tokens.** Do NOT run anything that calls the paid Claude API — `eval/eval.mjs` (`npm run eval`), `model-test.html`, or any direct `api.anthropic.com` / Worker `/anthropic` call — for validation, experimentation, or anything else, without the user's explicit per-task approval. The shipped pip counter is 100% local OpenCV; validate it the same way, with `grid_eval.cjs`. It costs nothing and needs no network.
 - **Do not limit yourself to what is already in your head.** When you get stuck — an OpenCV API you're unsure exists, a segmentation/counting technique you don't know cold, an error you can't place — search the Internet for a working solution or example *before* guessing. The web is a first-class reference and resource, not a last resort. Always verify what you find against the actual code and the real OpenCV.js 4.x API (see "Do NOT Assume Anything" and the Triple-Check list).
 - **No excuses.** Do not explain away a broken result, hand-wave past a failure, or ship something you haven't verified. Diagnose the real cause and do it correctly.
 - **If you screw up, fix it.** Own the mistake and produce a concrete fix — a corrected change, a regression test that catches it, or a clean rollback — not an apology. An iteration is not done until accuracy is restored or improved and verified.
@@ -285,10 +286,11 @@ None of this is part of the shipped app — it is tooling for verifying and iter
 Internally the scan functions share the same primitives: `findTiles` → `cropRotate` / `perspectiveWarp` → `splitRect` / `getHalvesMats` → `countPips` (which dispatches to the grid/contour counters implementing the locked "Pip grid model"). Keep this singular — do not duplicate detection logic into pages.
 
 ### `eval/` — pip-counting eval harness (Node, NOT shipped)
-- Purpose: score pipeline output against ground truth so prompt/pipeline changes are *verified*, not guessed. See `eval/README.md`.
-- `npm install` then `npm run eval` (from `eval/`) runs every photo in `eval/photos/<key>.jpg` through the LOCKED `preprocess`, counts via Claude through the Worker `/anthropic` proxy (or `api.anthropic.com` directly if `ANTHROPIC_API_KEY` is set), and scores against `fixtures.json`.
-- `eval/photos/` and `eval/node_modules/` are git-ignored — keep personal test images out of the repo.
-- The many `eval/test_*.cjs` files are one-off diagnostic/scratch scripts (erosion, thresholding, grid sampling, margins, etc.), **not** a maintained test suite. `headless.cjs` wires `DominoCV._test` into Node. The `ref_*.jpg` / `*_proper.jpg` / `crop_*.jpg` images are committed reference crops.
+- Purpose: score the pip counter against ground truth so changes are *verified*, not guessed. See `eval/README.md`.
+- **DEFAULT, FREE accuracy gate — `node grid_eval.cjs`:** feeds the committed `ref_*_tile*.jpg` crops straight into the shipped local OpenCV counter (`splitAndCount` → `countPips`) and scores left/right halves against `grid_truth.json`. **100% local — no API tokens, no network.** This is what you run to measure accuracy after a `detect.js` change. (Needs `npm install` once for `jpeg-js` + `@techstark/opencv-js`.)
+- **PAID — do NOT run without explicit approval:** `npm run eval` (`eval.mjs`) counts via the Claude API (Worker `/anthropic`, or `api.anthropic.com` if `ANTHROPIC_API_KEY` is set) and scores against `fixtures.json`. It costs money and only matters for evaluating a *vision-model* approach, which is not shipped. The shipped counter is local OpenCV — use `grid_eval.cjs` for it.
+- `eval/photos/` and `eval/node_modules/` are git-ignored — keep personal test images out of the repo. The `ref_*.jpg` / `*_proper.jpg` / `crop_*.jpg` reference crops used by `grid_eval.cjs` ARE committed, so the free eval runs in a fresh clone.
+- The many `eval/test_*.cjs` files are one-off diagnostic/scratch scripts (erosion, thresholding, grid sampling, margins, etc.), **not** a maintained test suite. `headless.cjs` wires `DominoCV._test` into Node.
 
 ### Browser dev pages
 - `test.html` — visual preprocessing regression check (no counting).
