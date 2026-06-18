@@ -135,6 +135,17 @@ domino-counter-app/
 │   └── README.md             # Worker deployment & secret rotation guide
 ├── sessions/
 │   └── .gitkeep              # Placeholder — actual session files written by app
+├── eval/                     # Pip-counting eval harness + scratch scripts (NOT shipped)
+│   ├── README.md             # How to run the eval harness
+│   ├── eval.mjs              # Node runner: scores pipeline output vs ground truth
+│   ├── prompt.txt            # Counting prompt under test
+│   ├── fixtures.json         # Ground-truth tiles per photo (scoring key)
+│   ├── headless.cjs          # Loads detect.js _test hooks for Node-side testing
+│   ├── grid_truth.json       # Ground truth for grid-counter experiments
+│   ├── test_*.cjs            # One-off diagnostic/debug scripts (not a test suite)
+│   ├── ref_*.jpg / *_proper.jpg / crop_*.jpg  # Reference tile/half crops
+│   └── package.json          # eval-only deps (canvas, opencv); photos/ git-ignored
+├── .gitignore                # Ignores test-results/, eval/node_modules/, eval/photos/
 ├── CLAUDE.md                 # This file
 ├── catalog.json              # Tile database: all 56 tiles in a double-12 set
 ├── config.js                 # Sets window.PROXY_URL to the deployed Worker URL
@@ -142,7 +153,9 @@ domino-counter-app/
 ├── index.html                # Landing page (New Game / Join Game / Catalog)
 ├── scan.html                 # Multiplayer tile scanner
 ├── quick.html                # Single-player quick scan (no backend required)
-└── catalog.html              # Tile catalog builder UI
+├── catalog.html              # Tile catalog builder UI
+├── test.html                 # Preprocessing regression-test page (visual check)
+└── model-test.html           # Engine-test page: experiments with Claude counting (NOT shipped)
 ```
 
 ---
@@ -159,7 +172,7 @@ Entry point. Three navigation buttons: New Game, Join Game, Catalog. No logic.
 - Displays a live scoreboard; current player's tiles shown individually with per-tile delete
 
 ### `quick.html` — Single-Player Quick Scan
-- Canvas 2D preprocessing (grayscale + contrast stretch) → OpenCV.js pipeline running locally
+- Canvas 2D preprocessing (grayscale + contrast stretch) → OpenCV.js pipeline running locally (uses `DominoCV.scanCanvasDebug`, which returns each tile's `{left,right,dataUrl}` thumbnail for the history list)
 - No backend calls; state is in-memory only (not persisted between page reloads)
 - Real-time guidance: checks image brightness and sharpness at 2 fps
 - History list of scanned tiles with running pip totals
@@ -168,6 +181,16 @@ Entry point. Three navigation buttons: New Game, Join Game, Catalog. No logic.
 - Scans individual tiles via `DominoCV.scanCanvasSingle` and records them into `catalog.json` via GitHub API
 - Includes manual verification UI to correct CV misdetections
 - Same OpenCV guidance loop as quick.html
+
+### `test.html` — Preprocessing Regression Test (dev tool)
+- Loads an image, runs `DominoCV.preprocess` on it, and shows original vs preprocessed side by side for **visual** verification that pips of any color become dark, high-contrast dots
+- Lets you save test images to `localStorage` and re-run preprocessing on all of them
+- Detection-only sanity check; not part of the user-facing app flow
+
+### `model-test.html` — Engine Test, Claude counting (experimental, NOT shipped)
+- Sandbox for evaluating Claude vision pip counting via the Worker `/anthropic` proxy: single-pass or two-pass "zoom" (locate each tile, then count each crop)
+- Always runs the LOCKED `DominoCV.preprocess` on every image first (grayscale + contrast stretch), consistent with the rest of the app
+- Exists **only** to validate counting accuracy before any future decision to wire a vision model in. It is NOT used by the shipped scanning pages — those remain 100% local OpenCV (see "Claude API: Not Used for Detection"). Must be opened on `petr0n.github.io` because the proxy only accepts that origin.
 
 ### `config.js`
 Sets `window.PROXY_URL = "https://domino-counter-proxy.petron.workers.dev"`. This must be configured before any page that calls the Worker. **Do not hard-code this URL elsewhere.**
@@ -233,6 +256,35 @@ Stored as JSON files on GitHub at `sessions/{code}.json` in this repo. The `sess
 5. Otsu threshold → round-contour (area + circularity) pip detection → infer the 3×3 / 4×3 pip lattice → count occupied cells (see "Pip grid model" above)
 
 **Memory management (OpenCV):** Every `cv.Mat` created must be explicitly `.delete()`d in a `finally` block. Missing deletions cause memory leaks that crash the page over time.
+
+---
+
+## Evaluation & Dev Tooling
+
+None of this is part of the shipped app — it is tooling for verifying and iterating on the detection pipeline. The shipped pages remain 100% local OpenCV (see the locked decisions).
+
+### `detect.js` full export surface (`window.DominoCV`)
+- `loadCV()` — lazy-load OpenCV.js
+- `preprocess(canvas)` — grayscale + contrast stretch (in place) — **LOCKED, runs first on every image**
+- `scanCanvas(canvas)` → `[{left,right}, …]` — every tile (`scan.html`)
+- `scanCanvasDebug(canvas)` → `[{left,right,dataUrl}, …]` — every tile plus a cropped thumbnail per tile (`quick.html`)
+- `scanCanvasSingle(canvas)` → `{left,right}` — single largest tile, whole-frame fallback (`catalog.html`)
+- `isReady()` → boolean — whether OpenCV.js has finished loading
+- `_test` — headless hooks that operate on pixel arrays / Mats with no canvas or DOM: `{ stretchGray, findTiles, scanMat, scanMatSingle, halfDensity, getHalvesMats }`. Used by the Node eval/diagnostic scripts in `eval/`.
+
+Internally the scan functions share the same primitives: `findTiles` → `cropRotate` / `perspectiveWarp` → `splitRect` / `getHalvesMats` → `countPips` (which dispatches to the grid/contour counters implementing the locked "Pip grid model"). Keep this singular — do not duplicate detection logic into pages.
+
+### `eval/` — pip-counting eval harness (Node, NOT shipped)
+- Purpose: score pipeline output against ground truth so prompt/pipeline changes are *verified*, not guessed. See `eval/README.md`.
+- `npm install` then `npm run eval` (from `eval/`) runs every photo in `eval/photos/<key>.jpg` through the LOCKED `preprocess`, counts via Claude through the Worker `/anthropic` proxy (or `api.anthropic.com` directly if `ANTHROPIC_API_KEY` is set), and scores against `fixtures.json`.
+- `eval/photos/` and `eval/node_modules/` are git-ignored — keep personal test images out of the repo.
+- The many `eval/test_*.cjs` files are one-off diagnostic/scratch scripts (erosion, thresholding, grid sampling, margins, etc.), **not** a maintained test suite. `headless.cjs` wires `DominoCV._test` into Node. The `ref_*.jpg` / `*_proper.jpg` / `crop_*.jpg` images are committed reference crops.
+
+### Browser dev pages
+- `test.html` — visual preprocessing regression check (no counting).
+- `model-test.html` — experimental Claude-counting sandbox via the `/anthropic` proxy.
+
+Both call only `DominoCV.preprocess` from the shared module; neither changes what the shipped scanners do.
 
 ---
 
