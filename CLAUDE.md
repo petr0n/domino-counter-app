@@ -84,7 +84,9 @@ These decisions were made deliberately after testing. Do not second-guess, rever
 - **10–12 pips → a 4×3 grid** (4 columns × 3 rows). Top and bottom rows are always full (4 each); the middle row holds the remainder: **10 = 2 (outer), 11 = 3, 12 = 4**.
 - **The 11 middle row is special:** its 3 pips are spaced left/centre/right across the full width — the centre pip sits dead-centre and does NOT align to the 4 columns. Count the 4×3 middle row by its blobs, not by column position.
 
-`countPips` relies on this: it detects clean round pip blobs, infers this 3-row / 3-or-4-column lattice, then counts occupied cells (occupancy-testing each lattice cell on the mask). This both recovers a pip the contour filter dropped and rejects off-lattice noise. Do not reintroduce blob-area "merged-pip" heuristics — they overcounted real halves and were removed.
+**Shipped counter — `countPips` → `countPipsContour`:** Otsu-threshold each half, find external contours, and keep round blobs (area in range AND circularity ≥ 0.45) as pips. A guarded "merged-pip" correction then adds count for low-circularity blobs that are genuine fused pips — but only when their area-ratio is in a window **and** their circularity is **≥ 0.15**, so thin divider-bar / edge slivers (circ ~0.1) are never counted as pips (that floor fixed the `ref_464` 6→7 overcount). The layouts above are what the counter must reproduce — its job is to land on the right 0–12 total per half.
+
+A lattice/occupancy counter (`countPipsGrid`) that infers the 3×3 / 4×3 grid and occupancy-tests each cell **exists in `detect.js` but is currently DORMANT** — it was wired into `countPips` and reverted (`1846da9`) as an accuracy regression. The lattice model remains the *intended* direction; if you revisit it, prove it beats the contour counter on `grid_eval` before switching. Be cautious extending the merged-pip heuristic — it has historically overcounted real halves.
 
 ### Tiles NEVER overlap
 **Tiles may touch edge-to-edge but they NEVER overlap or sit on top of each other — this is a hard rule.** Every tile blob is therefore fully separable; detection may rely on this (e.g. erosion / distance-transform watershed to split touching tiles). Never add logic to handle overlapping tiles — that case cannot occur.
@@ -264,7 +266,7 @@ Stored as JSON files on GitHub at `sessions/{code}.json` in this repo. The `sess
 2. Open/close morphology makes each tile one solid blob (touching tiles stay separate)
 3. `minAreaRect` per blob, filtered by area, aspect ratio, and fill ratio → tile rectangles (tolerant of rounded corners and rotation)
 4. Perspective warp to isolate each tile, split into halves
-5. Otsu threshold → round-contour (area + circularity) pip detection → infer the 3×3 / 4×3 pip lattice → count occupied cells (see "Pip grid model" above)
+5. Otsu threshold → round-contour (area + circularity) pip detection, plus a circularity-gated merged-pip correction for fused blobs → pip count (see "Pip grid model" above). A lattice/occupancy counter (`countPipsGrid`) exists but is dormant.
 
 **Memory management (OpenCV):** Every `cv.Mat` created must be explicitly `.delete()`d in a `finally` block. Missing deletions cause memory leaks that crash the page over time.
 
@@ -283,7 +285,7 @@ None of this is part of the shipped app — it is tooling for verifying and iter
 - `isReady()` → boolean — whether OpenCV.js has finished loading
 - `_test` — headless hooks that operate on pixel arrays / Mats with no canvas or DOM: `{ stretchGray, findTiles, scanMat, scanMatSingle, halfDensity, getHalvesMats }`. Used by the Node eval/diagnostic scripts in `eval/`.
 
-Internally the scan functions share the same primitives: `findTiles` → `cropRotate` / `perspectiveWarp` → `splitRect` / `getHalvesMats` → `countPips` (which dispatches to the grid/contour counters implementing the locked "Pip grid model"). Keep this singular — do not duplicate detection logic into pages.
+Internally the scan functions share the same primitives: `findTiles` → `cropRotate` / `perspectiveWarp` → `splitRect` / `getHalvesMats` → `countPips` (currently the contour counter `countPipsContour`; `countPipsGrid` / `countPipsGridSample` are present but dormant — see "Pip grid model"). Keep this singular — do not duplicate detection logic into pages.
 
 ### `eval/` — pip-counting eval harness (Node, NOT shipped)
 - Purpose: score the pip counter against ground truth so changes are *verified*, not guessed. See `eval/README.md`.
