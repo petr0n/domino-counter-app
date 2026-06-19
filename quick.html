@@ -280,6 +280,15 @@
     async function doScan() {
       hideMsg();
       reviewPanel.classList.remove("visible");
+      // Crop to the guide box region (8% margin each side) before detection
+      (function cropToGuide() {
+        const cw = canvas.width, ch = canvas.height;
+        const x1 = Math.round(cw * 0.08), y1 = Math.round(ch * 0.08);
+        const w  = Math.round(cw * 0.84), h  = Math.round(ch * 0.84);
+        const d  = canvas.getContext("2d").getImageData(x1, y1, w, h);
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").putImageData(d, 0, 0);
+      })();
       DominoCV.preprocess(canvas);
 
       const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
