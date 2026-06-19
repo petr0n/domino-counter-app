@@ -99,55 +99,55 @@
       for (let i = 0; i < contours.size(); i++) {
         const c = contours.get(i);
         const area = cv.contourArea(c);
-        if (area >= minArea && area <= maxArea) {
-          const rect = cv.minAreaRect(c);
-          const rw = rect.size.width, rh = rect.size.height;
-          const ratio = Math.max(rw, rh) / Math.min(rw, rh);
-          const fill = area / (rw * rh);
-          // Accept single-tile shapes (~2:1, fill ≥ 0.72). Erosion normally
-          // separates touching tiles, but when two tiles touch side-by-side they
-          // can survive as one near-square (~1:1) blob — detect and split those.
-          if (ratio >= 1.5 && ratio <= 3.0 && fill >= 0.72) {
-            const pts = cv.RotatedRect.points(rect);
-            const atEdge = edgeMargin > 0 && pts.some(p =>
-              p.x < edgeMargin || p.x > src.cols - edgeMargin ||
-              p.y < edgeMargin || p.y > src.rows - edgeMargin);
-            if (!atEdge) {
-              const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
-              const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
-              const shortSide = Math.min(rw, rh);
-              const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
-              if (!dup) rects.push({ pts, cx, cy, fill });
-            }
-          } else if ((ratio >= 0.85 && ratio < 1.5 && fill >= 0.60) ||
-                     (ratio > 3.0 && ratio < 5.0 && fill >= 0.55)) {
-            // Two tiles merged: either touching long-side-to-long-side (~1:1 blob)
-            // or touching end-to-end (~4:1 blob). Split at midpoint along long axis.
-            const pts = cv.RotatedRect.points(rect);
-            // 1% margin: reject merges whose bounding box is near the frame edge —
-            // a half-tile at the boundary crops poorly and gives garbage pip counts.
-            const splitMargin = Math.min(src.cols, src.rows) * 0.01;
-            const atEdge = pts.some(p =>
-              p.x < splitMargin || p.x > src.cols - splitMargin ||
-              p.y < splitMargin || p.y > src.rows - splitMargin);
-            if (!atEdge) {
-              for (const h of splitRect({ pts })) {
-                const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw,rh) * 0.4);
-                if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: 0.5 });
-              }
-            }
-          } else {
-            // Blob the single-tile and geometric-split tests both rejected
-            // (e.g. two tiles touching at an angle): recover tiles from their
-            // centre divider bars. Additive — previously this blob was dropped.
-            const sm = Math.min(src.cols, src.rows) * 0.01;
-            for (const h of dividerSplit(src, binary, contours, i, minArea, maxArea)) {
-              const atEdge = h.pts.some(p =>
-                p.x < sm || p.x > src.cols - sm || p.y < sm || p.y > src.rows - sm);
-              if (atEdge) continue;
-              const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw, rh) * 0.4);
-              if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: h.fill });
-            }
+        if (area < minArea || area > maxArea) { c.delete(); continue; }
+        const rect = cv.minAreaRect(c);
+        const rw = rect.size.width, rh = rect.size.height;
+        const ratio = Math.max(rw, rh) / Math.min(rw, rh);
+        const fill = area / (rw * rh);
+        // Accept single-tile shapes (~2:1, fill ≥ 0.72). Erosion normally
+        // separates touching tiles, but when two tiles touch side-by-side they
+        // can survive as one near-square (~1:1) blob — detect and split those.
+        if (ratio >= 1.3 && ratio <= 3.0 && fill >= 0.72) {
+          const pts = cv.RotatedRect.points(rect);
+          const atEdge = edgeMargin > 0 && pts.some(p =>
+            p.x < edgeMargin || p.x > src.cols - edgeMargin ||
+            p.y < edgeMargin || p.y > src.rows - edgeMargin);
+          if (atEdge) { c.delete(); continue; }
+          const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
+          const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
+          const shortSide = Math.min(rw, rh);
+          const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
+          if (dup) { c.delete(); continue; }
+          rects.push({ pts, cx, cy, fill });
+        } else if ((ratio >= 0.85 && ratio < 1.3 && fill >= 0.60) ||
+                   (ratio > 3.0 && ratio < 5.0 && fill >= 0.55)) {
+          // Two tiles merged: either touching long-side-to-long-side (~1:1 blob)
+          // or touching end-to-end (~4:1 blob). Split at midpoint along long axis.
+          const pts = cv.RotatedRect.points(rect);
+          // 1% margin: reject merges whose bounding box is near the frame edge —
+          // a half-tile at the boundary crops poorly and gives garbage pip counts.
+          const splitMargin = Math.min(src.cols, src.rows) * 0.01;
+          const atEdge = pts.some(p =>
+            p.x < splitMargin || p.x > src.cols - splitMargin ||
+            p.y < splitMargin || p.y > src.rows - splitMargin);
+          if (atEdge) { c.delete(); continue; }
+          const halves = splitRect({ pts });
+          for (const h of halves) {
+            const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw,rh) * 0.4);
+            if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: 0.5 });
+          }
+        } else {
+          // Blob the single-tile and geometric-split tests both rejected
+          // (e.g. two tiles touching at an angle): recover tiles from their
+          // centre divider bars. Additive — previously this blob was dropped.
+          const sm = Math.min(src.cols, src.rows) * 0.01;
+          const found = dividerSplit(src, binary, contours, i, minArea, maxArea);
+          for (const h of found) {
+            const atEdge = h.pts.some(p =>
+              p.x < sm || p.x > src.cols - sm || p.y < sm || p.y > src.rows - sm);
+            if (atEdge) continue;
+            const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw, rh) * 0.4);
+            if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: h.fill });
           }
         }
         c.delete();
