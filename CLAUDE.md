@@ -100,7 +100,7 @@ These decisions were made deliberately after testing. Do not second-guess, rever
 A lattice/occupancy counter (`countPipsGrid`) that infers the 3×3 / 4×3 grid and occupancy-tests each cell **exists in `detect.js` but is currently DORMANT** — it was wired into `countPips` and reverted (`1846da9`) as an accuracy regression. The lattice model remains the *intended* direction; if you revisit it, prove it beats the contour counter on `grid_eval` before switching. Be cautious extending the merged-pip heuristic — it has historically overcounted real halves.
 
 ### Tiles NEVER overlap
-**Tiles may touch edge-to-edge but they NEVER overlap or sit on top of each other — this is a hard rule.** Every tile blob is therefore fully separable; detection may rely on this (e.g. erosion / distance-transform watershed to split touching tiles). Never add logic to handle overlapping tiles — that case cannot occur.
+**Tiles may touch edge-to-edge but they NEVER overlap or sit on top of each other — this is a hard rule.** Every tile blob is therefore fully separable; detection may rely on this. In practice `findTiles` first erodes to separate touching tiles, then for any blob that still merges two tiles it falls back to `dividerSplit` (reconstruct each tile from its centre divider bar). Never add logic to handle overlapping tiles — that case cannot occur.
 
 ### Tile Detection: OpenCV.js in one shared module
 **OpenCV.js is the ONLY tile detection and pip counting engine. There is exactly ONE implementation — `detect.js` (`window.DominoCV`) — shared by every page that detects or preprocesses (`quick.html`, `scan.html`, `catalog.html`, `test.html`). Do not duplicate it back into the pages, and do not replace it with Claude AI or any other approach.**
@@ -275,7 +275,7 @@ Stored as JSON files on GitHub at `sessions/{code}.json` in this repo. The `sess
 ### Step 2 — OpenCV.js (`detect.js`, every scan page)
 1. Otsu threshold on the preprocessed image isolates the bright tiles
 2. Open/close morphology makes each tile one solid blob (touching tiles stay separate)
-3. `minAreaRect` per blob, filtered by area, aspect ratio, and fill ratio → tile rectangles (tolerant of rounded corners and rotation)
+3. `minAreaRect` per blob, filtered by area, aspect ratio, and fill ratio → tile rectangles (tolerant of rounded corners and rotation). A blob that matches neither a single tile nor the geometric two-tile split (e.g. tiles touching at an angle) is passed to `dividerSplit`, which finds each tile's centre divider bar inside the blob and reconstructs the full rectangle from it via the 2:1 model (short side = divider length, long side = 2×, perpendicular). This is additive — such blobs were previously discarded.
 4. Perspective warp to isolate each tile, split into halves
 5. Otsu threshold → round-contour (area + circularity) pip detection, plus a circularity-gated merged-pip correction for fused blobs → pip count (see "Pip grid model" above). A lattice/occupancy counter (`countPipsGrid`) exists but is dormant.
 
@@ -296,11 +296,12 @@ None of this is part of the shipped app — it is tooling for verifying and iter
 - `isReady()` → boolean — whether OpenCV.js has finished loading
 - `_test` — headless hooks that operate on pixel arrays / Mats with no canvas or DOM: `{ stretchGray, findTiles, scanMat, scanMatSingle, halfDensity, getHalvesMats }`. Used by the Node eval/diagnostic scripts in `eval/`.
 
-Internally the scan functions share the same primitives: `findTiles` → `cropRotate` / `perspectiveWarp` → `splitRect` / `getHalvesMats` → `countPips` (currently the contour counter `countPipsContour`; `countPipsGrid` / `countPipsGridSample` are present but dormant — see "Pip grid model"). Keep this singular — do not duplicate detection logic into pages.
+Internally the scan functions share the same primitives: `findTiles` (with `dividerSplit` to recover touching tiles) → `cropRotate` / `perspectiveWarp` → `splitRect` / `getHalvesMats` → `countPips` (currently the contour counter `countPipsContour`; `countPipsGrid` / `countPipsGridSample` are present but dormant — see "Pip grid model"). Keep this singular — do not duplicate detection logic into pages.
 
 ### `eval/` — pip-counting eval harness (Node, NOT shipped)
 - Purpose: score the pip counter against ground truth so changes are *verified*, not guessed. See `eval/README.md`.
 - **DEFAULT, FREE accuracy gate — `node grid_eval.cjs`:** feeds the committed `ref_*_tile*.jpg` crops straight into the shipped local OpenCV counter (`splitAndCount` → `countPips`) and scores left/right halves against `grid_truth.json`. **100% local — no API tokens, no network.** This is what you run to measure accuracy after a `detect.js` change. (Needs `npm install` once for `jpeg-js` + `@techstark/opencv-js`.)
+- **DETECTION gate — `node detect_eval.cjs` (free, local):** `grid_eval` feeds pre-cropped single tiles to the counter and never exercises `findTiles`; this runs the real `preprocess` + `findTiles` on committed multi-tile photos (e.g. `detect_4tiles.jpg`, four tiles with two touching) and checks the detected tile count. Run it after any `findTiles` / `dividerSplit` change.
 - **PAID — do NOT run without explicit approval:** `npm run eval` (`eval.mjs`) counts via the Claude API (Worker `/anthropic`, or `api.anthropic.com` if `ANTHROPIC_API_KEY` is set) and scores against `fixtures.json`. It costs money and only matters for evaluating a *vision-model* approach, which is not shipped. The shipped counter is local OpenCV — use `grid_eval.cjs` for it.
 - `eval/photos/` and `eval/node_modules/` are git-ignored — keep personal test images out of the repo. The `ref_*.jpg` / `*_proper.jpg` / `crop_*.jpg` reference crops used by `grid_eval.cjs` ARE committed, so the free eval runs in a fresh clone.
 - The many `eval/test_*.cjs` files are one-off diagnostic/scratch scripts (erosion, thresholding, grid sampling, margins, etc.), **not** a maintained test suite. `headless.cjs` wires `DominoCV._test` into Node.

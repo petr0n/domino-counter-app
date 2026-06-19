@@ -136,6 +136,18 @@
                 if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: 0.5 });
               }
             }
+          } else {
+            // Blob the single-tile and geometric-split tests both rejected
+            // (e.g. two tiles touching at an angle): recover tiles from their
+            // centre divider bars. Additive — previously this blob was dropped.
+            const sm = Math.min(src.cols, src.rows) * 0.01;
+            for (const h of dividerSplit(src, binary, contours, i, minArea, maxArea)) {
+              const atEdge = h.pts.some(p =>
+                p.x < sm || p.x > src.cols - sm || p.y < sm || p.y > src.rows - sm);
+              if (atEdge) continue;
+              const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw, rh) * 0.4);
+              if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: h.fill });
+            }
           }
         }
         c.delete();
@@ -150,6 +162,63 @@
       if (hier)     hier.delete();
     }
     return rects;
+  }
+
+  // Recover tiles from a merged/ambiguous blob using each domino's centre
+  // divider bar. Within the blob, a divider is a thin dark bar; reconstruct the
+  // full tile rect from it via the 2:1 model — short side = divider length,
+  // long side = 2× that, perpendicular to the bar. Returns [{pts,cx,cy,fill}].
+  function dividerSplit(src, binary, contours, idx, minArea, maxArea) {
+    const out = [];
+    let filled = null, notBin = null, darkIn = null, conts = null, hier = null;
+    try {
+      filled = cv.Mat.zeros(src.rows, src.cols, cv.CV_8U);
+      cv.drawContours(filled, contours, idx, new cv.Scalar(255), -1);
+      notBin = new cv.Mat();
+      cv.bitwise_not(binary, notBin);
+      darkIn = new cv.Mat();
+      cv.bitwise_and(notBin, filled, darkIn);
+      conts = new cv.MatVector();
+      hier = new cv.Mat();
+      cv.findContours(darkIn, conts, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      for (let i = 0; i < conts.size(); i++) {
+        const d = conts.get(i);
+        const a = cv.contourArea(d);
+        const r = cv.minAreaRect(d);
+        d.delete();
+        if (a < 100) continue;
+        const W = r.size.width, H = r.size.height;
+        const L = Math.max(W, H), S = Math.min(W, H);
+        if (L / Math.max(1, S) < 3.5) continue;          // not a thin bar
+        const tileArea = 2 * L * L;                       // L (short) × 2L (long)
+        if (tileArea < minArea || tileArea > maxArea) continue;
+        const ang = (W >= H ? r.angle : r.angle + 90) * Math.PI / 180;
+        const ux = Math.cos(ang), uy = Math.sin(ang);     // along divider (tile short axis)
+        const px = -uy, py = ux;                          // perpendicular (tile long axis)
+        const cx = r.center.x, cy = r.center.y;
+        const hs = L / 2, hl = L;                         // half short, half long
+        const pts = [[-hs, -hl], [hs, -hl], [hs, hl], [-hs, hl]].map(([s, l]) =>
+          ({ x: cx + s * ux + l * px, y: cy + s * uy + l * py }));
+        const step = Math.max(3, L / 14);
+        let inside = 0, total = 0;
+        for (let s = -hs; s <= hs; s += step) {
+          for (let l = -hl; l <= hl; l += step) {
+            const xx = Math.round(cx + s * ux + l * px), yy = Math.round(cy + s * uy + l * py);
+            total++;
+            if (xx >= 0 && yy >= 0 && xx < src.cols && yy < src.rows && filled.ucharPtr(yy, xx)[0] > 0) inside++;
+          }
+        }
+        if (!total || inside / total < 0.6) continue;
+        out.push({ pts, cx, cy, fill: inside / total });
+      }
+    } finally {
+      if (filled) filled.delete();
+      if (notBin) notBin.delete();
+      if (darkIn) darkIn.delete();
+      if (conts)  conts.delete();
+      if (hier)   hier.delete();
+    }
+    return out;
   }
 
   // Split a rotated rect (described by 4 corner pts) into two half-rects along
