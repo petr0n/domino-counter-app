@@ -108,6 +108,21 @@
         // separates touching tiles, but when two tiles touch side-by-side they
         // can survive as one near-square (~1:1) blob — detect and split those.
         if (ratio >= 1.3 && ratio <= 3.0 && fill >= 0.72) {
+          // A single-tile aspect ratio can hide several tiles stacked with small
+          // gaps that erosion didn't separate (3 landscape tiles ≈ 3:2, 4 ≈ 2:1 —
+          // shape alone can't tell them from one tile). Each domino has exactly one
+          // centre divider bar, so count them: if the blob holds ≥2 dividers it is
+          // ≥2 tiles, recovered individually via dividerSplit.
+          const multi = dividerSplit(src, binary, contours, i, minArea, maxArea);
+          if (multi.length >= 2) {
+            const sm = Math.min(src.cols, src.rows) * 0.01;
+            for (const h of multi) {
+              if (h.pts.some(p => p.x < sm || p.x > src.cols - sm || p.y < sm || p.y > src.rows - sm)) continue;
+              const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw, rh) * 0.4);
+              if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: h.fill });
+            }
+            c.delete(); continue;
+          }
           const pts = cv.RotatedRect.points(rect);
           const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
           const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
@@ -168,7 +183,22 @@
     // dividerScan is validated to reject non-tile bars, so a correct bright-blob
     // result (which ties or wins) is never overridden.
     const div = dividerScan(src, minAreaFrac, maxAreaFrac);
-    return div.length > rects.length ? div : rects;
+    const inQuad = (p, q) => {
+      let s = 0;
+      for (let i = 0; i < 4; i++) {
+        const a = q[i], b = q[(i + 1) % 4];
+        const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+        const sign = Math.sign(cross);
+        if (sign !== 0) { if (s === 0) s = sign; else if (sign !== s) return false; }
+      }
+      return true;
+    };
+    for (const d of div) {
+      const overlaps = rects.some(r =>
+        inQuad({ x: d.cx, y: d.cy }, r.pts) || inQuad({ x: r.cx, y: r.cy }, d.pts));
+      if (!overlaps) rects.push(d);
+    }
+    return rects;
   }
 
   // Recover tiles from a merged/ambiguous blob using each domino's centre
