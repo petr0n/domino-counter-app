@@ -109,12 +109,14 @@
         // can survive as one near-square (~1:1) blob — detect and split those.
         if (ratio >= 1.3 && ratio <= 3.0 && fill >= 0.72) {
           const pts = cv.RotatedRect.points(rect);
-          const atEdge = edgeMargin > 0 && pts.some(p =>
-            p.x < edgeMargin || p.x > src.cols - edgeMargin ||
-            p.y < edgeMargin || p.y > src.rows - edgeMargin);
-          if (atEdge) { c.delete(); continue; }
           const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
           const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
+          // Use centroid rather than rotated-rect corners — a tile near the edge
+          // can have corners that extend past the frame boundary even when fully visible.
+          const atEdge = edgeMargin > 0 && (
+            cx < edgeMargin || cx > src.cols - edgeMargin ||
+            cy < edgeMargin || cy > src.rows - edgeMargin);
+          if (atEdge) { c.delete(); continue; }
           const shortSide = Math.min(rw, rh);
           const dup = rects.some(r => Math.hypot(r.cx - cx, r.cy - cy) < shortSide * 0.4);
           if (dup) { c.delete(); continue; }
@@ -124,8 +126,7 @@
           // Two tiles merged: either touching long-side-to-long-side (~1:1 blob)
           // or touching end-to-end (~4:1 blob). Split at midpoint along long axis.
           const pts = cv.RotatedRect.points(rect);
-          // 1% margin: reject merges whose bounding box is near the frame edge —
-          // a half-tile at the boundary crops poorly and gives garbage pip counts.
+          // Corner-based check for merged blobs — a clipped half gives garbage pip counts.
           const splitMargin = Math.min(src.cols, src.rows) * 0.01;
           const atEdge = pts.some(p =>
             p.x < splitMargin || p.x > src.cols - splitMargin ||
