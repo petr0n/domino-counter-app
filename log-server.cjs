@@ -20,7 +20,7 @@ http.createServer((req, res) => {
         const log = fs.existsSync(LOG) ? JSON.parse(fs.readFileSync(LOG, 'utf8')) : [];
         log.push(entry);
         fs.writeFileSync(LOG, JSON.stringify(log, null, 2));
-        console.log('[log]', entry.ts, entry.tileCount, 'tile(s):', (entry.tiles||[]).map(t=>t.left+'|'+t.right).join('  '));
+        console.log('[log]', entry.ts, entry.file||'(camera)', entry.tileCount, 'tile(s):', (entry.tiles||[]).map(t=>t.left+'|'+t.right).join('  '));
         res.writeHead(200); res.end('ok');
       } catch(e) { res.writeHead(400); res.end(e.message); }
     });
