@@ -4,6 +4,17 @@
 
 **Scan a phone camera image of domino tiles and return accurate pip counts every time. Every decision, change, and line of code must serve this goal. If a change doesn't make pip detection more accurate, more consistent, or more reliable, don't make it.**
 
+### Pursue It Cheaply — Token Cost Is a First-Class Constraint
+
+**Accuracy is the goal; reaching it without burning tokens is how the goal must be pursued. Wasted context and tokens are a real cost the user pays out of pocket — treat them like a production resource, not free. Being economical is never an excuse to cut an accuracy corner; it means landing the same *verified* result with less waste.**
+
+- **Read narrowly.** Never read a large file in full when `offset`/`limit` or a targeted `grep`/search will do. `detect.js` and the page files are large — pull only the lines you need.
+- **Never re-read** a file already read this session unless its contents changed.
+- **Mute noisy commands.** Pipe anything that can dump huge output through `tail`/`head` — a failed `grid_eval` spews the entire minified OpenCV source. Use `node eval/grid_eval.cjs 2>&1 | tail -20`.
+- **Fewer loops.** Every accuracy iteration (change → eval → diagnose) costs tokens. Think the change through and verify locally before iterating; more/better test photos converge accuracy in fewer loops.
+- **Keep files small.** Prefer extracting large inline `<script>` blocks into their own files so future edits read tens of lines, not hundreds.
+- **Be concise.** Don't pad replies, re-explain settled decisions, or re-derive facts already established.
+
 ---
 
 ## Detection Pipeline Gate
