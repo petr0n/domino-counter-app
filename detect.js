@@ -727,35 +727,42 @@
       const pipArea = pipAreas.length
         ? pipAreas.reduce((a, b) => a + b, 0) / pipAreas.length
         : maxPip * 0.25;
-      // Apply merged-blob estimation only when 8-9 individual pips are cleanly
-      // detected — the signature of a 12-pip (4×3) dense half where 3-4 adjacent
-      // pips fuse into one low-circularity blob. If ≥10 are already individually
+      // Split low-circularity blobs by area. A blob ~1× pip area is a single pip
+      // whose outline was distorted — a faint shadow rim (raised pip the same
+      // colour as the tile) or a slight edge-merge — NOT a divider sliver (circ
+      // <0.15, already excluded) and NOT a multi-pip fusion. Count each such
+      // "unit" blob as one pip at ANY total: this fixes single-pip undercounts
+      // (3→2, 6→5, 9→8). Slivers/noise measure ≤0.3× here, well below the 0.55×
+      // floor, so genuine full halves are untouched. Blobs >1.6× are true
+      // fusions, left to the dense-grid estimator below.
+      const unitBig = [], fusedBig = [];
+      for (const ba of bigBlobs) {
+        if (ba >= pipArea * 0.55 && ba <= pipArea * 1.6) unitBig.push(ba);
+        else if (ba > pipArea * 1.6) fusedBig.push(ba);
+      }
+      let count = pipAreas.length + unitBig.length;
+      // Apply merged-blob estimation only when 6-9 individual pips are cleanly
+      // detected — the signature of a dense (3×3 / 4×3) half where adjacent pips
+      // fuse into one low-circularity blob. If ≥10 are already individually
       // detected, the count is not deficient and adding blobs would overcount.
-      let count = pipAreas.length;
       if (pipAreas.length >= 6 && pipAreas.length < 8) {
-        // accepted 6-7 pips + large fused blobs: likely a 9-pip (3×3) half where
-        // some pips merged under thresholding. Upper bound 4× excludes the tile's
-        // central dividing line (which appears as a huge blob, often >8×).
-        for (const ba of bigBlobs) {
+        for (const ba of fusedBig) {
           const r = ba / pipArea;
           if (r >= 0.8 && r <= 4.0) count += Math.round(r);
         }
       } else if (pipAreas.length >= 8 && pipAreas.length < 10) {
-        if (pipAreas.length === 9 && bigBlobs.length >= 2) {
-          // Two bigBlobs with n=9 and at least one large (≥1.5×): signature of a
-          // 12-pip half where pips fused. Require the large blob to avoid
-          // miscounting genuine 9-pip halves with two small noise blobs.
-          const hasLargeBigBlob = bigBlobs.some(ba => ba >= pipArea * 1.5);
+        if (pipAreas.length === 9 && fusedBig.length >= 2) {
+          const hasLargeBigBlob = fusedBig.some(ba => ba >= pipArea * 1.5);
           if (hasLargeBigBlob) {
-            for (const ba of bigBlobs) {
+            for (const ba of fusedBig) {
               if (ba < pipArea * 0.6) count += 1;
               else if (ba >= pipArea * 1.5) count += Math.round(ba / pipArea);
             }
           }
         } else {
-          const sortedBig = bigBlobs.slice().sort((a, b) => a - b);
+          const sortedBig = fusedBig.slice().sort((a, b) => a - b);
           const hasSubstantialSmall = sortedBig.length >= 2 && sortedBig[0] >= pipArea * 0.15;
-          for (const ba of bigBlobs) {
+          for (const ba of fusedBig) {
             if (!hasSubstantialSmall && ba >= pipArea * 2.5) {
               count += Math.round(ba / pipArea);
               if (pipAreas.length === 8) count += 1;
