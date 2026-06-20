@@ -278,7 +278,7 @@
     let padded = null, M = null, rotated = null;
     try {
       padded = new cv.Mat();
-      cv.copyMakeBorder(src, padded, p, p, p, p, cv.BORDER_REPLICATE);
+      cv.copyMakeBorder(src, padded, p, p, p, p, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
       M = cv.getRotationMatrix2D(new cv.Point(cx + p, cy + p), angle, 1.0);
       rotated = new cv.Mat();
       cv.warpAffine(padded, rotated, M, new cv.Size(padded.cols, padded.rows),
@@ -697,7 +697,20 @@
       // that fail the area/circularity filters; equalizeHist over-amplifies and
       // merges pips — both verified worse on the reference photos.)
       thresh = new cv.Mat();
-      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+      const otsuT = cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+      // Low-contrast pips (e.g. yellow on white) sit close to the Otsu boundary —
+      // a slightly lighter pip lands just above it and is missed. A second pass
+      // 15 units higher catches those outliers; OR merges without double-counting.
+      if (otsuT > 200) {
+        let thresh2 = null;
+        try {
+          thresh2 = new cv.Mat();
+          cv.threshold(gray, thresh2, Math.min(otsuT + 15, 250), 255, cv.THRESH_BINARY_INV);
+          cv.bitwise_or(thresh, thresh2, thresh);
+        } finally {
+          if (thresh2) thresh2.delete();
+        }
+      }
       conts = new cv.MatVector();
       hierP = new cv.Mat();
       cv.findContours(thresh, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
