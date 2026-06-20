@@ -99,6 +99,9 @@ These decisions were made deliberately after testing. Do not second-guess, rever
 
 A lattice/occupancy counter (`countPipsGrid`) that infers the 3×3 / 4×3 grid and occupancy-tests each cell **exists in `detect.js` but is currently DORMANT** — it was wired into `countPips` and reverted (`1846da9`) as an accuracy regression. The lattice model remains the *intended* direction; if you revisit it, prove it beats the contour counter on `grid_eval` before switching. Be cautious extending the merged-pip heuristic — it has historically overcounted real halves.
 
+### Tile Detection Code Is Locked — Do Not Touch Until More Photos Are Available
+**`findTiles`, `dividerSplit`, `padAndRotateCrop`, `cropRotate`, and the edge-margin logic in `detect.js` are locked as of PR #106.** Tile detection scored 8/8 on the available photo set. Do not touch any of this code until the user provides additional multi-tile test photos and explicitly asks for a tile detection change. Only pip counting work is in scope in the meantime.
+
 ### Tiles NEVER overlap
 **Tiles may touch edge-to-edge but they NEVER overlap or sit on top of each other — this is a hard rule.** Every tile blob is therefore fully separable; detection may rely on this. In practice `findTiles` first erodes to separate touching tiles, then for any blob that still merges two tiles it falls back to `dividerSplit` (reconstruct each tile from its centre divider bar). Never add logic to handle overlapping tiles — that case cannot occur.
 

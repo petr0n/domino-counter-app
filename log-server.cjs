@@ -1,0 +1,28 @@
+// Local dev tool — log server for quick.html scan results.
+// Run alongside the static file server: node log-server.cjs
+// Writes to eval/scan-log.json. Not shipped — dev only.
+const http = require('http');
+const fs   = require('fs');
+const path = require('path');
+const LOG  = path.join(__dirname, 'eval', 'scan-log.json');
+
+http.createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
+  if (req.method === 'POST' && req.url === '/log') {
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', () => {
+      try {
+        const entry = { ts: new Date().toISOString(), ...JSON.parse(body) };
+        const log = fs.existsSync(LOG) ? JSON.parse(fs.readFileSync(LOG, 'utf8')) : [];
+        log.push(entry);
+        fs.writeFileSync(LOG, JSON.stringify(log, null, 2));
+        console.log('[log]', entry.ts, entry.tileCount, 'tile(s):', (entry.tiles||[]).map(t=>t.left+'|'+t.right).join('  '));
+        res.writeHead(200); res.end('ok');
+      } catch(e) { res.writeHead(400); res.end(e.message); }
+    });
+  } else { res.writeHead(404); res.end(); }
+}).listen(8766, () => console.log('Log server listening on :8766 → eval/scan-log.json'));
