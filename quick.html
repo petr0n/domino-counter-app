@@ -308,6 +308,9 @@
         showInfo("Detecting tiles…");
         await ensureCV();
         const found = DominoCV.scanCanvasDebug(canvas);
+        fetch("http://localhost:8766/log", { method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ tileCount: (found||[]).length, tiles: (found||[]).map(t=>({left:t.left,right:t.right})) })
+        }).catch(()=>{});
         if (!found || !found.length) throw new Error("No tiles found. Make sure tiles are fully in frame and well-lit.");
         pendingTiles = found;
         renderReview();
