@@ -788,69 +788,47 @@
     }
   }
 
-  function countPipsContour(halfMat) {
-    // Original contour-based approach (kept for reference / fallback).
-    const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
-    const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
-    if (rw < 10 || rh < 10) return 0;
-    const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
-    let gray = null, thresh = null, conts = null, hierP = null;
+  // Count round pip blobs in one binarised half. External contours kept as pips
+  // (area in range AND circularity ≥ 0.45); low-circularity blobs are split by
+  // area into single distorted pips (~1×, counted at any total — fixes 3→2/6→5/
+  // 9→8) and genuine multi-pip fusions (>1.6×, added only by the guarded dense-
+  // grid estimator). Slivers/divider bars (circ <0.15) are excluded.
+  function countBlobs(thresh, regionArea, unitRecovery) {
+    let conts = null, hierP = null;
     try {
-      gray = new cv.Mat();
-      cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
-      // Large-block adaptive threshold: sets threshold per local neighbourhood,
-      // so pip detection is relative to local background not absolute brightness.
-      // Handles any pip colour (yellow on white is indistinguishable to Otsu when
-      // background noise shifts the Otsu cut; adaptive sees each pip vs its own
-      // local background). Block must be larger than the pip or the centre of each
-      // pip is all-pip in the window → hollow rings. Here block ≈ 3× pip radius
-      // keeps most of the window on background while still adapting locally.
-      thresh = new cv.Mat();
-      const pipR    = Math.max(6, Math.round(Math.sqrt(rw * rh * 0.025 / Math.PI)));
-      const blockSz = pipR * 3 | 1;
-      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-                           cv.THRESH_BINARY_INV, blockSz, 8);
       conts = new cv.MatVector();
       hierP = new cv.Mat();
       cv.findContours(thresh, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-      const regionArea = rw * rh, minPip = regionArea * 0.002, maxPip = regionArea * 0.10;
+      const minPip = regionArea * 0.002, maxPip = regionArea * 0.10;
       const pipAreas = [], bigBlobs = [];
       for (let i = 0; i < conts.size(); i++) {
         const c = conts.get(i);
         const area = cv.contourArea(c);
         const peri = cv.arcLength(c, true);
-        c.delete();
         const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
         if (area >= minPip && area <= maxPip && circ >= 0.45) {
           pipAreas.push(area);
+          c.delete();
         } else if (area >= minPip && area <= maxPip * 8 && circ >= 0.15 && circ < 0.45) {
-          // Low-circularity blob — may be 2-4 adjacent pips merged in a dense grid.
-          // Floor of 0.15 rejects thin divider-bar / edge slivers (circ ~0.1),
-          // which are lines, not pips, and were being added as phantom counts.
-          bigBlobs.push(area);
-        }
+          const r = cv.minAreaRect(c);
+          const aspect = Math.max(r.size.width, r.size.height) / Math.max(1, Math.min(r.size.width, r.size.height));
+          bigBlobs.push({ area, aspect });
+          c.delete();
+        } else c.delete();
       }
       const pipArea = pipAreas.length
         ? pipAreas.reduce((a, b) => a + b, 0) / pipAreas.length
         : maxPip * 0.25;
-      // Split low-circularity blobs by area. A blob ~1× pip area is a single pip
-      // whose outline was distorted — a faint shadow rim (raised pip the same
-      // colour as the tile) or a slight edge-merge — NOT a divider sliver (circ
-      // <0.15, already excluded) and NOT a multi-pip fusion. Count each such
-      // "unit" blob as one pip at ANY total: this fixes single-pip undercounts
-      // (3→2, 6→5, 9→8). Slivers/noise measure ≤0.3× here, well below the 0.55×
-      // floor, so genuine full halves are untouched. Blobs >1.6× are true
-      // fusions, left to the dense-grid estimator below.
+      // unitRecovery rescues single distorted pips (faint shadow rim) that leave a
+      // low-circularity blob. Require the blob to be COMPACT (aspect < 2.2): a real
+      // pip is roughly round, a divider sliver is elongated — without this the
+      // black-hat (which fattens the sliver) miscounts it as a unit pip (9 → 10).
       const unitBig = [], fusedBig = [];
-      for (const ba of bigBlobs) {
-        if (ba >= pipArea * 0.55 && ba <= pipArea * 1.6) unitBig.push(ba);
-        else if (ba > pipArea * 1.6) fusedBig.push(ba);
+      for (const b of bigBlobs) {
+        if (unitRecovery && b.area >= pipArea * 0.55 && b.area <= pipArea * 1.6 && b.aspect < 2.2) unitBig.push(b.area);
+        else if (b.area > pipArea * 1.6) fusedBig.push(b.area);
       }
       let count = pipAreas.length + unitBig.length;
-      // Apply merged-blob estimation only when 6-9 individual pips are cleanly
-      // detected — the signature of a dense (3×3 / 4×3) half where adjacent pips
-      // fuse into one low-circularity blob. If ≥10 are already individually
-      // detected, the count is not deficient and adding blobs would overcount.
       if (pipAreas.length >= 6 && pipAreas.length < 8) {
         for (const ba of fusedBig) {
           const r = ba / pipArea;
@@ -880,11 +858,50 @@
       }
       return Math.min(count, 12);
     } finally {
+      if (conts) conts.delete();
+      if (hierP) hierP.delete();
+    }
+  }
+
+  function countPipsContour(halfMat) {
+    const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
+    const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
+    if (rw < 10 || rh < 10) return 0;
+    const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
+    let gray = null, ta = null, tb = null, bh = null, kern = null;
+    try {
+      gray = new cv.Mat();
+      cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
+      const regionArea = rw * rh;
+      const pipR = Math.max(6, Math.round(Math.sqrt(regionArea * 0.025 / Math.PI)));
+      // Binarise two ways and take whichever finds MORE pips. Both only ever
+      // UNDER-count in their failure modes, so the larger count is the reliable
+      // one — no contrast threshold to tune (mean−min is contaminated by the dark
+      // divider bar, so a discriminator can't separate faint pips from bold ones).
+      //   (A) Large-block adaptive threshold: local cut relative to background,
+      //       robust for normal/bold pips of any colour or count.
+      //   (B) Black-hat + fixed cut: black-hat measures each pip vs its LOCAL
+      //       surround, so faint pips (yellow on white, barely darker than the
+      //       tile) become strong blobs that a fixed adaptive offset would miss.
+      //       Kernel must exceed the pip diameter so closing fills each pip solid.
+      ta = new cv.Mat();
+      const blockSz = pipR * 3 | 1;
+      cv.adaptiveThreshold(gray, ta, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+                           cv.THRESH_BINARY_INV, blockSz, 8);
+      const ks = (pipR * 2 + 1) | 1;
+      kern = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(ks, ks));
+      bh = new cv.Mat();
+      cv.morphologyEx(gray, bh, cv.MORPH_BLACKHAT, kern);
+      tb = new cv.Mat();
+      cv.threshold(bh, tb, 12, 255, cv.THRESH_BINARY);
+      return Math.max(countBlobs(ta, regionArea, true), countBlobs(tb, regionArea, true));
+    } finally {
       inner.delete();
-      if (gray)   gray.delete();
-      if (thresh) thresh.delete();
-      if (conts)  conts.delete();
-      if (hierP)  hierP.delete();
+      if (gray) gray.delete();
+      if (ta)   ta.delete();
+      if (tb)   tb.delete();
+      if (bh)   bh.delete();
+      if (kern) kern.delete();
     }
   }
 
