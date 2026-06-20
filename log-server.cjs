@@ -16,7 +16,15 @@ http.createServer((req, res) => {
     req.on('data', d => body += d);
     req.on('end', () => {
       try {
-        const entry = { ts: new Date().toISOString(), ...JSON.parse(body) };
+        const parsed = JSON.parse(body);
+        const slug = (parsed.file||'camera').replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const ts   = Date.now();
+        (parsed.tiles||[]).forEach((t, i) => {
+          if (!t.dataUrl) return;
+          const b64 = t.dataUrl.replace(/^data:image\/\w+;base64,/, '');
+          fs.writeFileSync(path.join(__dirname, 'eval', `crop_${slug}_t${i}_${t.left}-${t.right}.jpg`), Buffer.from(b64, 'base64'));
+        });
+        const entry = { ts: new Date().toISOString(), ...parsed, tiles: (parsed.tiles||[]).map(({dataUrl,...t})=>t) };
         const log = fs.existsSync(LOG) ? JSON.parse(fs.readFileSync(LOG, 'utf8')) : [];
         log.push(entry);
         fs.writeFileSync(LOG, JSON.stringify(log, null, 2));
