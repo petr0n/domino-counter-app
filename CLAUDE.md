@@ -33,8 +33,13 @@ If you think the pipeline needs improving, say so and wait for the user to appro
 
 After pushing a branch, create a PR (ready for review, not draft) and **immediately merge it** — do not wait for user confirmation. Never block on PR merge.
 
-After every merge, provide a fresh cache-busting link to the app so the user can immediately test:
-`https://petr0n.github.io/domino-counter-app/quick.html?v=<PR number>`
+After every merge, provide a fresh cache-busting link to the app so the user can immediately test. **Which link depends on the device the user is on:**
+- **Desktop (default):** the user runs a local static server — link to localhost:
+  `http://localhost:8765/quick.html?v=<PR number>`
+- **Phone:** link to the deployed GitHub Pages site:
+  `https://petr0n.github.io/domino-counter-app/quick.html?v=<PR number>`
+
+The user will say which device they're on (or it's clear from context). When unsure, assume desktop/localhost — the user works from their desktop by default and has asked not to be given GitHub Pages links while testing locally.
 
 ---
 
