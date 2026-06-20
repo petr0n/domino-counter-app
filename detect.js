@@ -692,25 +692,18 @@
     try {
       gray = new cv.Mat();
       cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
-      // Global Otsu threshold cleanly separates dark pips from the bright tile.
-      // (adaptiveThreshold with a small block hollows large pips into thin rings
-      // that fail the area/circularity filters; equalizeHist over-amplifies and
-      // merges pips — both verified worse on the reference photos.)
+      // Large-block adaptive threshold: sets threshold per local neighbourhood,
+      // so pip detection is relative to local background not absolute brightness.
+      // Handles any pip colour (yellow on white is indistinguishable to Otsu when
+      // background noise shifts the Otsu cut; adaptive sees each pip vs its own
+      // local background). Block must be larger than the pip or the centre of each
+      // pip is all-pip in the window → hollow rings. Here block ≈ 3× pip radius
+      // keeps most of the window on background while still adapting locally.
       thresh = new cv.Mat();
-      const otsuT = cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
-      // Low-contrast pips (e.g. yellow on white) sit close to the Otsu boundary —
-      // a slightly lighter pip lands just above it and is missed. A second pass
-      // 15 units higher catches those outliers; OR merges without double-counting.
-      if (otsuT > 200) {
-        let thresh2 = null;
-        try {
-          thresh2 = new cv.Mat();
-          cv.threshold(gray, thresh2, Math.min(otsuT + 15, 250), 255, cv.THRESH_BINARY_INV);
-          cv.bitwise_or(thresh, thresh2, thresh);
-        } finally {
-          if (thresh2) thresh2.delete();
-        }
-      }
+      const pipR    = Math.max(6, Math.round(Math.sqrt(rw * rh * 0.025 / Math.PI)));
+      const blockSz = pipR * 3 | 1;
+      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+                           cv.THRESH_BINARY_INV, blockSz, 8);
       conts = new cv.MatVector();
       hierP = new cv.Mat();
       cv.findContours(thresh, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
