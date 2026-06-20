@@ -162,7 +162,13 @@
       if (contours) contours.delete();
       if (hier)     hier.delete();
     }
-    return rects;
+    // Bright/cluttered-background fallback: when tiles fuse into a bright surface
+    // the Otsu segmentation above under-detects (often 0). Recover tiles from
+    // their dark divider bars and prefer that only when it finds strictly more —
+    // dividerScan is validated to reject non-tile bars, so a correct bright-blob
+    // result (which ties or wins) is never overridden.
+    const div = dividerScan(src, minAreaFrac, maxAreaFrac);
+    return div.length > rects.length ? div : rects;
   }
 
   // Recover tiles from a merged/ambiguous blob using each domino's centre
@@ -220,6 +226,93 @@
       if (hier)   hier.delete();
     }
     return out;
+  }
+
+  // Global divider-bar tile detection for bright/cluttered backgrounds where the
+  // bright-blob segmentation in findTiles fails (tiles fuse into a bright surface
+  // like a white towel or sun-glare, so Otsu can't separate them). A black-hat
+  // isolates dark marks (pips, divider bars) on bright tiles independent of
+  // background level — large dark regions (board, grass) exceed the kernel and
+  // are suppressed. Thin bars are reconstructed into 2:1 tiles (same geometry as
+  // dividerSplit), validated as bright tile interiors, then filtered by
+  // consistent size (tiles in one photo match) and overlap. Returns [{pts,cx,cy,fill}].
+  function dividerScan(src, minAreaFrac, maxAreaFrac) {
+    let gray = null, bh = null, bin = null, kern = null, conts = null, hier = null;
+    const out = [];
+    try {
+      gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+      const ks = (Math.round(Math.min(src.cols, src.rows) * 0.045) | 1);
+      kern = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(ks, ks));
+      bh = new cv.Mat();
+      cv.morphologyEx(gray, bh, cv.MORPH_BLACKHAT, kern);
+      bin = new cv.Mat();
+      cv.threshold(bh, bin, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      conts = new cv.MatVector();
+      hier = new cv.Mat();
+      cv.findContours(bin, conts, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      const frameArea = src.cols * src.rows;
+      const minArea = frameArea * minAreaFrac, maxArea = frameArea * maxAreaFrac;
+      for (let i = 0; i < conts.size(); i++) {
+        const d = conts.get(i);
+        const r = cv.minAreaRect(d);
+        d.delete();
+        const W = r.size.width, H = r.size.height;
+        const L = Math.max(W, H), S = Math.min(W, H);
+        if (L / Math.max(1, S) < 3.5) continue;          // not a thin bar
+        const tileArea = 2 * L * L;                        // L (short) × 2L (long)
+        if (tileArea < minArea || tileArea > maxArea) continue;
+        const ang = (W >= H ? r.angle : r.angle + 90) * Math.PI / 180;
+        const ux = Math.cos(ang), uy = Math.sin(ang);     // along divider (short axis)
+        const px = -uy, py = ux;                           // perpendicular (long axis)
+        const cx = r.center.x, cy = r.center.y;
+        const hs = L / 2, hl = L;
+        const pts = [[-hs, -hl], [hs, -hl], [hs, hl], [-hs, hl]].map(([s, l]) =>
+          ({ x: cx + s * ux + l * px, y: cy + s * uy + l * py }));
+        const step = Math.max(3, L / 14);
+        let sum = 0, n = 0, inFrame = 0;
+        for (let s = -hs; s <= hs; s += step) {
+          for (let l = -hl; l <= hl; l += step) {
+            const xx = Math.round(cx + s * ux + l * px), yy = Math.round(cy + s * uy + l * py);
+            n++;
+            if (xx >= 0 && yy >= 0 && xx < src.cols && yy < src.rows) { inFrame++; sum += gray.ucharPtr(yy, xx)[0]; }
+          }
+        }
+        const meanB = inFrame ? sum / inFrame : 0;
+        if (meanB < 150 || inFrame / n < 0.9) continue;    // tile must be bright & in-frame
+        out.push({ pts, cx, cy, L, meanB });
+      }
+    } finally {
+      if (gray)  gray.delete();
+      if (bh)    bh.delete();
+      if (bin)   bin.delete();
+      if (kern)  kern.delete();
+      if (conts) conts.delete();
+      if (hier)  hier.delete();
+    }
+    if (!out.length) return [];
+    const sortedL = out.map(t => t.L).sort((a, b) => a - b);
+    const medL = sortedL[Math.floor(sortedL.length / 2)];
+    const sized = out.filter(t => t.L >= medL * 0.62 && t.L <= medL * 1.5);
+    const inQuad = (p, q) => {
+      let s = 0;
+      for (let i = 0; i < 4; i++) {
+        const a = q[i], b = q[(i + 1) % 4];
+        const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+        const sign = Math.sign(cross);
+        if (sign !== 0) { if (s === 0) s = sign; else if (sign !== s) return false; }
+      }
+      return true;
+    };
+    const kept = [];
+    for (const t of sized.sort((a, b) => b.meanB - a.meanB)) {
+      const c = { x: t.cx, y: t.cy };
+      const overlaps = kept.some(k =>
+        Math.hypot(k.cx - t.cx, k.cy - t.cy) < medL * 0.6 ||
+        inQuad(c, k.pts) || inQuad({ x: k.cx, y: k.cy }, t.pts));
+      if (!overlaps) kept.push({ pts: t.pts, cx: t.cx, cy: t.cy, fill: 0.9 });
+    }
+    return kept;
   }
 
   // Split a rotated rect (described by 4 corner pts) into two half-rects along
