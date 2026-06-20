@@ -11,6 +11,9 @@ const cv = require("@techstark/opencv-js");
 // committed multi-tile fixtures: file -> expected tile count
 const TRUTH = {
   "detect_4tiles.jpg": 4, // 4 dominoes, top two touching at an angle
+  "detect_towel3.jpg": 3, // 3 tiles on a white towel (tiles fuse with bright bg)
+  "detect_glare3.jpg": 3, // 3 tiles on glossy table with sun glare + grass
+  "detect_grass3.jpg": 3, // 3 tiles touching in a column, wood table + grass
 };
 
 cv.onRuntimeInitialized = () => {
