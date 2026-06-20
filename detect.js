@@ -237,12 +237,21 @@
   // dividerSplit), validated as bright tile interiors, then filtered by
   // consistent size (tiles in one photo match) and overlap. Returns [{pts,cx,cy,fill}].
   function dividerScan(src, minAreaFrac, maxAreaFrac) {
-    let gray = null, bh = null, bin = null, kern = null, conts = null, hier = null;
+    let work = null, gray = null, bh = null, bin = null, kern = null, conts = null, hier = null;
     const out = [];
+    // Run on a bounded-resolution copy: the black-hat morphology is the costly
+    // step and grows with image size (a full-res ~8MP upload took ~30s). Process
+    // at ≤1200px, then scale tile coordinates back to full resolution.
+    const scale = Math.min(1, 1200 / Math.max(src.cols, src.rows));
+    const up = scale < 1 ? 1 / scale : 1;
     try {
+      if (scale < 1) {
+        work = new cv.Mat();
+        cv.resize(src, work, new cv.Size(Math.round(src.cols * scale), Math.round(src.rows * scale)));
+      } else work = src;
       gray = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      const ks = (Math.round(Math.min(src.cols, src.rows) * 0.045) | 1);
+      cv.cvtColor(work, gray, cv.COLOR_RGBA2GRAY);
+      const ks = (Math.round(Math.min(work.cols, work.rows) * 0.045) | 1);
       kern = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(ks, ks));
       bh = new cv.Mat();
       cv.morphologyEx(gray, bh, cv.MORPH_BLACKHAT, kern);
@@ -251,7 +260,7 @@
       conts = new cv.MatVector();
       hier = new cv.Mat();
       cv.findContours(bin, conts, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-      const frameArea = src.cols * src.rows;
+      const frameArea = work.cols * work.rows;
       const minArea = frameArea * minAreaFrac, maxArea = frameArea * maxAreaFrac;
       for (let i = 0; i < conts.size(); i++) {
         const d = conts.get(i);
@@ -275,7 +284,7 @@
           for (let l = -hl; l <= hl; l += step) {
             const xx = Math.round(cx + s * ux + l * px), yy = Math.round(cy + s * uy + l * py);
             n++;
-            if (xx >= 0 && yy >= 0 && xx < src.cols && yy < src.rows) { inFrame++; sum += gray.ucharPtr(yy, xx)[0]; }
+            if (xx >= 0 && yy >= 0 && xx < work.cols && yy < work.rows) { inFrame++; sum += gray.ucharPtr(yy, xx)[0]; }
           }
         }
         const meanB = inFrame ? sum / inFrame : 0;
@@ -283,6 +292,7 @@
         out.push({ pts, cx, cy, L, meanB });
       }
     } finally {
+      if (work && work !== src) work.delete();
       if (gray)  gray.delete();
       if (bh)    bh.delete();
       if (bin)   bin.delete();
@@ -310,7 +320,10 @@
       const overlaps = kept.some(k =>
         Math.hypot(k.cx - t.cx, k.cy - t.cy) < medL * 0.6 ||
         inQuad(c, k.pts) || inQuad({ x: k.cx, y: k.cy }, t.pts));
-      if (!overlaps) kept.push({ pts: t.pts, cx: t.cx, cy: t.cy, fill: 0.9 });
+      if (!overlaps) kept.push({
+        pts: t.pts.map(p => ({ x: p.x * up, y: p.y * up })),
+        cx: t.cx * up, cy: t.cy * up, fill: 0.9
+      });
     }
     return kept;
   }
