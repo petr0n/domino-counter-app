@@ -270,6 +270,34 @@
     }
   }
 
+  // Rotate src around (cx,cy) by angle degrees and return a cropped Mat of
+  // size outW×outH centred on (cx,cy). Pads the source first so tiles near the
+  // frame edge are never clipped. Caller must delete the returned Mat.
+  function padAndRotateCrop(src, cx, cy, angle, outW, outH) {
+    const p = Math.ceil(Math.max(outW, outH) / 2) + 2;
+    let padded = null, M = null, rotated = null;
+    try {
+      padded = new cv.Mat();
+      cv.copyMakeBorder(src, padded, p, p, p, p, cv.BORDER_REPLICATE);
+      M = cv.getRotationMatrix2D(new cv.Point(cx + p, cy + p), angle, 1.0);
+      rotated = new cv.Mat();
+      cv.warpAffine(padded, rotated, M, new cv.Size(padded.cols, padded.rows),
+                    cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+      const x = Math.round(cx + p - outW / 2);
+      const y = Math.round(cy + p - outH / 2);
+      const x2 = Math.min(Math.max(x, 0), rotated.cols);
+      const y2 = Math.min(Math.max(y, 0), rotated.rows);
+      const w  = Math.min(rotated.cols - x2, outW);
+      const h  = Math.min(rotated.rows - y2, outH);
+      if (w < 20 || h < 20) return null;
+      return rotated.roi(new cv.Rect(x2, y2, w, h)).clone();
+    } finally {
+      if (padded)  padded.delete();
+      if (M)       M.delete();
+      if (rotated) rotated.delete();
+    }
+  }
+
   // Rotate src so the tile is axis-aligned, crop it with padding, then count.
   function cropRotate(src, pts, fill) {
     // Derive centre, long-axis angle, and tile dimensions from the 4 corners.
@@ -295,24 +323,9 @@
     const outW = Math.round(tileW * (1 + 2 * pad));
     const outH = Math.round(tileH * (1 + 2 * pad));
 
-    let M = null, rotated = null, cropped = null;
-    try {
-      M = cv.getRotationMatrix2D(new cv.Point(cx, cy), angle, 1.0);
-      rotated = new cv.Mat();
-      cv.warpAffine(src, rotated, M, new cv.Size(src.cols, src.rows),
-                    cv.INTER_LINEAR, cv.BORDER_REPLICATE);
-      const x = Math.max(0, Math.round(cx - outW / 2));
-      const y = Math.max(0, Math.round(cy - outH / 2));
-      const w = Math.min(src.cols - x, outW);
-      const h = Math.min(src.rows - y, outH);
-      if (w < 20 || h < 20) return splitAndCount(src);
-      cropped = rotated.roi(new cv.Rect(x, y, w, h));
-      return splitAndCount(cropped);
-    } finally {
-      if (M)       M.delete();
-      if (cropped) cropped.delete();
-      if (rotated) rotated.delete();
-    }
+    const cropped = padAndRotateCrop(src, cx, cy, angle, outW, outH);
+    if (!cropped) return splitAndCount(src);
+    try { return splitAndCount(cropped); } finally { cropped.delete(); }
   }
 
   // Find, crop, rotate, then count each tile.
@@ -409,26 +422,16 @@
       while (angle <= -90) angle += 180;
       const pad = (fill != null && fill < 0.72) ? 0.02 : 0.08;
       const outW = Math.round(tileW*(1+2*pad)), outH = Math.round(tileH*(1+2*pad));
-      let M = null, rotated = null;
+      const tile = padAndRotateCrop(src, cx, cy, angle, outW, outH);
+      if (!tile) continue;
       try {
-        M = cv.getRotationMatrix2D(new cv.Point(cx, cy), angle, 1.0);
-        rotated = new cv.Mat();
-        cv.warpAffine(src, rotated, M, new cv.Size(src.cols, src.rows), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
-        const x = Math.max(0, Math.round(cx - outW/2));
-        const y = Math.max(0, Math.round(cy - outH/2));
-        const w = Math.min(src.cols - x, outW), h = Math.min(src.rows - y, outH);
-        if (w < 20 || h < 20) continue;
-        const tile = rotated.roi(new cv.Rect(x, y, w, h));
         const landscape = tile.cols >= tile.rows;
         const mid = landscape ? Math.floor(tile.cols/2) : Math.floor(tile.rows/2);
         let hA, hB;
         if (landscape) { hA = tile.roi(new cv.Rect(0,0,mid,tile.rows)).clone(); hB = tile.roi(new cv.Rect(mid,0,tile.cols-mid,tile.rows)).clone(); }
         else           { hA = tile.roi(new cv.Rect(0,0,tile.cols,mid)).clone();  hB = tile.roi(new cv.Rect(0,mid,tile.cols,tile.rows-mid)).clone(); }
         halves.push({ left: hA, right: hB, fill });
-      } finally {
-        if (M)       M.delete();
-        if (rotated) rotated.delete();
-      }
+      } finally { tile.delete(); }
     }
     return halves;
   }
@@ -780,23 +783,14 @@
     while (angle <= -90) angle += 180;
     const pad = 0.08;
     const outW = Math.round(tileW*(1+2*pad)), outH = Math.round(tileH*(1+2*pad));
-    let M = null, rotated = null, cropped = null;
+    const cropped = padAndRotateCrop(src, cx, cy, angle, outW, outH);
+    if (!cropped) return "";
     try {
-      M = cv.getRotationMatrix2D(new cv.Point(cx,cy), angle, 1.0);
-      rotated = new cv.Mat();
-      cv.warpAffine(src, rotated, M, new cv.Size(src.cols, src.rows), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
-      const x = Math.max(0, Math.round(cx-outW/2));
-      const y = Math.max(0, Math.round(cy-outH/2));
-      const w = Math.min(src.cols-x, outW), h = Math.min(src.rows-y, outH);
-      if (w < 20 || h < 20) return "";
-      cropped = rotated.roi(new cv.Rect(x,y,w,h));
       const tmp = document.createElement("canvas");
       cv.imshow(tmp, cropped);
       return tmp.toDataURL("image/jpeg", 0.85);
     } finally {
-      if (M) M.delete();
-      if (cropped) cropped.delete();
-      if (rotated) rotated.delete();
+      cropped.delete();
     }
   }
 
