@@ -23,7 +23,9 @@ function serveStatic(req, res) {
   if (rel === '/') rel = '/index.html';
   const fp = path.join(ROOT, rel.slice(1));
 
-  if (!fp.startsWith(ROOT) || !fs.existsSync(fp) || fs.statSync(fp).isDirectory()) {
+  // Stay inside ROOT (trailing sep avoids sibling-prefix escape) and never serve
+  // dotfiles/dirs like .git or .claude over the public tunnel.
+  if (!fp.startsWith(ROOT + path.sep) || rel.includes('/.') || !fs.existsSync(fp) || fs.statSync(fp).isDirectory()) {
     res.writeHead(404); res.end('Not Found'); return;
   }
   let body = fs.readFileSync(fp);

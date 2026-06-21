@@ -26,8 +26,20 @@ function req(method, p, body) {
 
 (async () => {
   fs.mkdirSync(path.join(EVAL, 'sessions'), { recursive: true });
-  const srv = spawn('node', [path.join(ROOT, 'log-server.cjs')], { stdio: 'ignore' });
-  await sleep(900);
+  const srv = spawn('node', [path.join(ROOT, 'log-server.cjs')], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let serverErr = '';
+  srv.stderr.on('data', d => serverErr += d);
+  const ready = await new Promise(resolve => {
+    srv.stdout.on('data', d => { if (/Dev server/.test(d.toString())) resolve(true); });
+    srv.on('exit', () => resolve(false));
+    setTimeout(() => resolve(false), 3000);
+  });
+  if (!ready) {
+    const why = (serverErr.match(/Error:.*/) || [])[0] || 'failed to start; is :8766 already in use?';
+    check('server bound :8766 cleanly — ' + why, false);
+    srv.kill();
+    console.log('\n1 FAIL'); process.exit(1);
+  }
   try {
     const js = await req('GET', '/detect.js');
     check('serves detect.js (200 + DominoCV)', js.status === 200 && /DominoCV/.test(js.body));

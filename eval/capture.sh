@@ -5,7 +5,9 @@ set -e
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Free the port if a previous server/static server is holding it.
-lsof -nP -tiTCP:8766 -sTCP:LISTEN 2>/dev/null | xargs -r kill 2>/dev/null || true
+# (portable: BSD/macOS xargs has no -r, so guard the empty case ourselves)
+PIDS=$(lsof -nP -tiTCP:8766 -sTCP:LISTEN 2>/dev/null || true)
+[ -n "$PIDS" ] && kill $PIDS 2>/dev/null || true
 
 node "$DIR/log-server.cjs" &
 SRV=$!
