@@ -203,7 +203,7 @@ scanBtn.addEventListener("click", async () => {
   canvas.width  = video.videoWidth;
   canvas.height = video.videoHeight;
   canvas.getContext("2d").drawImage(video, 0, 0);
-  await doScan();
+  await doScan(Math.random().toString(36).slice(2, 7) + ".jpg");
 });
 
 // ── Load Photo button ────────────────────────────────────────────────────

@@ -198,6 +198,15 @@
         inQuad({ x: d.cx, y: d.cy }, r.pts) || inQuad({ x: r.cx, y: r.cy }, d.pts));
       if (!overlaps) rects.push(d);
     }
+    // Edge-first fallback: find tile outlines via Canny edges and confirm a dark
+    // divider inside. Handles mid-tone coloured backgrounds (e.g. teal) where Otsu
+    // fails and dividerScan's divider bars also go undetected.
+    const edged = edgeScan(src, minAreaFrac, maxAreaFrac);
+    for (const d of edged) {
+      const overlaps = rects.some(r =>
+        inQuad({ x: d.cx, y: d.cy }, r.pts) || inQuad({ x: r.cx, y: r.cy }, d.pts));
+      if (!overlaps) rects.push(d);
+    }
     // Final additive source: holistic pip-cluster recovery for bright-background
     // tiles (white-on-white) that the brightness-gated dividerScan above misses.
     const clustered = pipClusterScan(src, minAreaFrac, maxAreaFrac);
@@ -316,6 +325,7 @@
         const hs = L / 2, hl = L;
         const pts = [[-hs, -hl], [hs, -hl], [hs, hl], [-hs, hl]].map(([s, l]) =>
           ({ x: cx + s * ux + l * px, y: cy + s * uy + l * py }));
+        if (cx - L < 0 || cx + L > work.cols || cy - L < 0 || cy + L > work.rows) continue;
         const step = Math.max(3, L / 14);
         let sum = 0, n = 0, inFrame = 0;
         for (let s = -hs; s <= hs; s += step) {
@@ -522,6 +532,111 @@
       if (dhier)  dhier.delete();
     }
     return out;
+  }
+
+  // Edge-first tile detection: find tile rectangles via their perimeter edges
+  // (Canny → dilate), then verify a dark divider bar at the midpoint confirms
+  // the candidate is an actual domino. Works when Otsu fails because tile and
+  // background share similar global brightness (e.g. a teal or coloured surface).
+  // Additive — merged into findTiles, overlap-suppressed. Returns [{pts,cx,cy,fill}].
+  function edgeScan(src, minAreaFrac, maxAreaFrac) {
+    const scale = Math.min(1, 1200 / Math.max(src.cols, src.rows));
+    const up = scale < 1 ? 1 / scale : 1;
+    let work = null, gray = null, blur = null, edges = null, dil = null, kern = null;
+    let conts = null, hier = null;
+    const out = [];
+    try {
+      if (scale < 1) {
+        work = new cv.Mat();
+        cv.resize(src, work, new cv.Size(Math.round(src.cols * scale), Math.round(src.rows * scale)));
+      } else work = src;
+      gray = new cv.Mat();
+      cv.cvtColor(work, gray, cv.COLOR_RGBA2GRAY);
+      blur = new cv.Mat();
+      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
+      edges = new cv.Mat();
+      cv.Canny(blur, edges, 30, 90);
+      const dk = (Math.max(5, Math.round(Math.min(work.cols, work.rows) * 0.012)) | 1);
+      kern = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(dk, dk));
+      dil = new cv.Mat();
+      cv.dilate(edges, dil, kern);
+      conts = new cv.MatVector();
+      hier = new cv.Mat();
+      cv.findContours(dil, conts, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      const fa = work.cols * work.rows;
+      const minArea = fa * minAreaFrac, maxArea = fa * maxAreaFrac;
+      for (let i = 0; i < conts.size(); i++) {
+        const c = conts.get(i);
+        const area = cv.contourArea(c);
+        if (area < minArea || area > maxArea) { c.delete(); continue; }
+        const rect = cv.minAreaRect(c);
+        c.delete();
+        const rw = rect.size.width, rh = rect.size.height;
+        const L = Math.max(rw, rh), S = Math.min(rw, rh);
+        const ratio = L / Math.max(1, S);
+        if (ratio < 1.3 || ratio > 3.0) continue;
+        if (area / (rw * rh) < 0.5) continue;
+        const angLong = (rw >= rh ? rect.angle : rect.angle + 90) * Math.PI / 180;
+        const lx = Math.cos(angLong), ly = Math.sin(angLong);
+        const sx = -ly, sy = lx;
+        const cx = rect.center.x, cy = rect.center.y;
+        const hl = L / 2, hs = S / 2;
+        // Reject candidates whose reconstructed rect extends outside the frame
+        // (avoids edge fragments from background objects near the image border)
+        if (cx - L < 0 || cx + L > work.cols || cy - L < 0 || cy + L > work.rows) continue;
+        // Verify the candidate interior is a bright tile
+        const step = Math.max(3, L / 14);
+        let tSum = 0, tN = 0;
+        for (let a = -hl * 0.7; a <= hl * 0.7; a += step)
+          for (let b = -hs * 0.7; b <= hs * 0.7; b += step) {
+            const xx = Math.round(cx + a * lx + b * sx), yy = Math.round(cy + a * ly + b * sy);
+            if (xx < 0 || xx >= work.cols || yy < 0 || yy >= work.rows) continue;
+            tSum += gray.ucharPtr(yy, xx)[0]; tN++;
+          }
+        if (!tN || tSum / tN < 150) continue;
+        const pts = [
+          { x: cx - hl * lx - hs * sx, y: cy - hl * ly - hs * sy },
+          { x: cx + hl * lx - hs * sx, y: cy + hl * ly - hs * sy },
+          { x: cx + hl * lx + hs * sx, y: cy + hl * ly + hs * sy },
+          { x: cx - hl * lx + hs * sx, y: cy - hl * ly + hs * sy },
+        ];
+        out.push({ pts, cx, cy, L, mean: tSum / tN });
+      }
+    } finally {
+      if (work && work !== src) work.delete();
+      if (gray)  gray.delete();
+      if (blur)  blur.delete();
+      if (edges) edges.delete();
+      if (dil)   dil.delete();
+      if (kern)  kern.delete();
+      if (conts) conts.delete();
+      if (hier)  hier.delete();
+    }
+    if (!out.length) return [];
+    const sortedL = out.map(t => t.L).sort((a, b) => a - b);
+    const medL = sortedL[Math.floor(sortedL.length / 2)];
+    const sized = out.filter(t => t.L >= medL * 0.62 && t.L <= medL * 1.5);
+    const inQuad = (p, q) => {
+      let s = 0;
+      for (let i = 0; i < 4; i++) {
+        const a = q[i], b = q[(i + 1) % 4];
+        const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+        const sign = Math.sign(cross);
+        if (sign !== 0) { if (s === 0) s = sign; else if (sign !== s) return false; }
+      }
+      return true;
+    };
+    const kept = [];
+    for (const t of sized.sort((a, b) => b.mean - a.mean)) {
+      const overlaps = kept.some(k =>
+        Math.hypot(k.cx - t.cx, k.cy - t.cy) < medL * 0.6 ||
+        inQuad({ x: t.cx, y: t.cy }, k.pts) || inQuad({ x: k.cx, y: k.cy }, t.pts));
+      if (!overlaps) kept.push({
+        pts: t.pts.map(p => ({ x: p.x * up, y: p.y * up })),
+        cx: t.cx * up, cy: t.cy * up, fill: 0.9
+      });
+    }
+    return kept;
   }
 
   // Split a rotated rect (described by 4 corner pts) into two half-rects along
