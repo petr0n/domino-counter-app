@@ -163,6 +163,7 @@ async function doScan(filename) {
     canvas.width = w; canvas.height = h;
     canvas.getContext("2d").putImageData(d, 0, 0);
   })();
+  const rawCropUrl = window.__domCapture ? canvas.toDataURL("image/jpeg", 0.92) : null;
   DominoCV.preprocess(canvas);
 
   const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
@@ -182,9 +183,7 @@ async function doScan(filename) {
     showInfo("Detecting tiles…");
     await ensureCV();
     const found = DominoCV.scanCanvasDebug(canvas);
-    fetch("http://localhost:8766/log", { method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ file: filename||null, tileCount: (found||[]).length, tiles: (found||[]).map(t=>({left:t.left,right:t.right,dataUrl:t.dataUrl||null})) })
-    }).catch(()=>{});
+    if (window.__domCapture) window.__domCapture({ file: filename||null, frame: rawCropUrl, tiles: found||[] });
     if (!found || !found.length) throw new Error("No tiles found. Make sure tiles are fully in frame and well-lit.");
     pendingTiles = found;
     renderReview();

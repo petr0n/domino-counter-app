@@ -8,15 +8,12 @@ const path = require("path");
 const jpeg = require("jpeg-js");
 const cv = require("@techstark/opencv-js");
 
-// committed multi-tile fixtures: file -> expected tile count
-const TRUTH = {
-  "detect_4tiles.jpg": 4, // 4 dominoes, top two touching at an angle
-  "detect_towel3.jpg": 3, // 3 tiles on a white towel (tiles fuse with bright bg)
-  "detect_glare3.jpg": 3, // 3 tiles on glossy table with sun glare + grass
-  "detect_grass3.jpg": 3, // 3 tiles touching in a column, wood table + grass
-  "detect_stack4.jpg": 4, // 4 tiles, top 3 fused into one blob (3-stack split via dividers)
-  "detect_cloth4.jpg": 4, // 4 tiles on a white cloth (white-on-white, recovered via pipClusterScan)
-};
+// committed multi-tile fixtures: detect_<desc>_<N>.jpg where N = expected tile count
+const TRUTH = {};
+for (const f of fs.readdirSync(__dirname).sort()) {
+  const m = f.match(/^detect_.*_(\d+)\.jpg$/);
+  if (m) TRUTH[f] = parseInt(m[1], 10);
+}
 
 cv.onRuntimeInitialized = () => {
   global.cv = cv;

@@ -2,4 +2,5 @@ test-results/
 eval/node_modules/
 eval/photos/
 eval/crop_*.jpg
+eval/sessions/
 eval/scan-log.json
