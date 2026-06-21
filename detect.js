@@ -198,6 +198,14 @@
         inQuad({ x: d.cx, y: d.cy }, r.pts) || inQuad({ x: r.cx, y: r.cy }, d.pts));
       if (!overlaps) rects.push(d);
     }
+    // Final additive source: holistic pip-cluster recovery for bright-background
+    // tiles (white-on-white) that the brightness-gated dividerScan above misses.
+    const clustered = pipClusterScan(src, minAreaFrac, maxAreaFrac);
+    for (const d of clustered) {
+      const overlaps = rects.some(r =>
+        inQuad({ x: d.cx, y: d.cy }, r.pts) || inQuad({ x: r.cx, y: r.cy }, d.pts));
+      if (!overlaps) rects.push(d);
+    }
     return rects;
   }
 
@@ -356,6 +364,164 @@
       });
     }
     return kept;
+  }
+
+  // Holistic pip-cluster tile detection for bright backgrounds where dividerScan's
+  // brightness gate fails — white-on-white tiles whose dense pips pull the tile
+  // mean below the gate, indistinguishable PER-CANDIDATE from a bright gap-bar
+  // that borrows a neighbour's pips. The fix is holistic: assign every pip to
+  // exactly one bar (the containing bar whose centre is nearest), so a gap-bar
+  // cannot claim pips that sit closer to a real tile's centre. A bar is a tile
+  // only if it OWNS enough pips. Additive — merged into findTiles, overlap-
+  // suppressed, so it only recovers tiles the other paths miss. Returns
+  // [{pts,cx,cy,fill}] (same shape as dividerScan).
+  function pipClusterScan(src, minAreaFrac, maxAreaFrac) {
+    let work = null, gray = null;
+    let dk = null, dbh = null, dbin = null, dconts = null, dhier = null;
+    const out = [];
+    const scale = Math.min(1, 1200 / Math.max(src.cols, src.rows));
+    const up = scale < 1 ? 1 / scale : 1;
+    const inQuad = (p, q) => {
+      let s = 0;
+      for (let i = 0; i < 4; i++) {
+        const a = q[i], b = q[(i + 1) % 4];
+        const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+        const sign = Math.sign(cross);
+        if (sign !== 0) { if (s === 0) s = sign; else if (sign !== s) return false; }
+      }
+      return true;
+    };
+    try {
+      if (scale < 1) {
+        work = new cv.Mat();
+        cv.resize(src, work, new cv.Size(Math.round(src.cols * scale), Math.round(src.rows * scale)));
+      } else work = src;
+      gray = new cv.Mat();
+      cv.cvtColor(work, gray, cv.COLOR_RGBA2GRAY);
+      const minside = Math.min(work.cols, work.rows);
+      const frameArea = work.cols * work.rows;
+      const minArea = frameArea * minAreaFrac, maxArea = frameArea * maxAreaFrac;
+
+      // Bars first: large black-hat → thin divider bars, reconstructed into 2:1
+      // tiles. medL (median bar length = tile short side) then sets the pip scale.
+      const dks = (Math.round(minside * 0.045) | 1);
+      dk = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(dks, dks));
+      dbh = new cv.Mat();
+      cv.morphologyEx(gray, dbh, cv.MORPH_BLACKHAT, dk);
+      dbin = new cv.Mat();
+      cv.threshold(dbh, dbin, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      dconts = new cv.MatVector();
+      dhier = new cv.Mat();
+      cv.findContours(dbin, dconts, dhier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      const bars = [];
+      for (let i = 0; i < dconts.size(); i++) {
+        const d = dconts.get(i);
+        const r = cv.minAreaRect(d);
+        d.delete();
+        const W = r.size.width, H = r.size.height;
+        const L = Math.max(W, H), S = Math.min(W, H);
+        if (L / Math.max(1, S) < 3.5) continue;
+        const tileArea = 2 * L * L;
+        if (tileArea < minArea || tileArea > maxArea) continue;
+        const ang = (W >= H ? r.angle : r.angle + 90) * Math.PI / 180;
+        const ux = Math.cos(ang), uy = Math.sin(ang);
+        const px = -uy, py = ux;
+        const cx = r.center.x, cy = r.center.y;
+        const hs = L / 2, hl = L;
+        const pts = [[-hs, -hl], [hs, -hl], [hs, hl], [-hs, hl]].map(([s, l]) =>
+          ({ x: cx + s * ux + l * px, y: cy + s * uy + l * py }));
+        bars.push({ pts, cx, cy, L, owned: 0 });
+      }
+      if (!bars.length) return [];
+
+      // Drop size outliers (an oversized bar would swallow two tiles' pips).
+      const sortedL = bars.map(b => b.L).sort((a, b) => a - b);
+      const medL = sortedL[Math.floor(sortedL.length / 2)];
+      const sized = bars.filter(b => b.L >= medL * 0.62 && b.L <= medL * 1.5);
+      if (!sized.length) return [];
+
+      // Pips: black-hat sized from the tiles' own scale. The kernel must EXCEED
+      // the pip diameter to fill each pip solid (a smaller kernel catches only the
+      // rim → low circularity, dropped) but stay below the pip spacing (a larger
+      // kernel bridges neighbours into one over-size blob). Pip size relative to
+      // the tile varies between photos, so run TWO scales and union — small fills
+      // dense small pips, large fills sparse fat pips — deduped by proximity.
+      const pipMin = Math.PI * Math.pow(medL * 0.05, 2), pipMax = Math.PI * Math.pow(medL * 0.22, 2);
+      const pips = [];
+      for (const frac of [0.20, 0.32]) {
+        const ks = (Math.max(7, Math.round(medL * frac)) | 1);
+        let k = null, pbh = null, pbin = null, pconts = null, phier = null;
+        try {
+          k = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(ks, ks));
+          pbh = new cv.Mat();
+          cv.morphologyEx(gray, pbh, cv.MORPH_BLACKHAT, k);
+          pbin = new cv.Mat();
+          cv.threshold(pbh, pbin, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+          pconts = new cv.MatVector();
+          phier = new cv.Mat();
+          cv.findContours(pbin, pconts, phier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+          for (let i = 0; i < pconts.size(); i++) {
+            const c = pconts.get(i);
+            const a = cv.contourArea(c);
+            const per = cv.arcLength(c, true);
+            if (a >= pipMin && a <= pipMax && per > 0 && 4 * Math.PI * a / (per * per) >= 0.45) {
+              const m = cv.moments(c);
+              const x = m.m10 / m.m00, y = m.m01 / m.m00;
+              if (!pips.some(p => Math.hypot(p.x - x, p.y - y) < medL * 0.10)) pips.push({ x, y });
+            }
+            c.delete();
+          }
+        } finally {
+          if (k) k.delete();
+          if (pbh) pbh.delete();
+          if (pbin) pbin.delete();
+          if (pconts) pconts.delete();
+          if (phier) phier.delete();
+        }
+      }
+      if (pips.length < 3) return [];
+
+      // Assign each pip to the containing bar whose centre is nearest (owned),
+      // and tally every bar whose footprint merely contains it (inFoot). One pip
+      // belongs to one tile — this is what stops a gap-bar claiming a neighbour's
+      // pips: a real tile OWNS most pips in its footprint, a bright gap-bar owns
+      // only a small fraction (the rest sit closer to the real tiles it spans).
+      for (const p of pips) {
+        let best = null, bestD = Infinity;
+        for (const b of sized) {
+          if (!inQuad(p, b.pts)) continue;
+          b.inFoot = (b.inFoot || 0) + 1;
+          const dd = Math.hypot(b.cx - p.x, b.cy - p.y);
+          if (dd < bestD) { bestD = dd; best = b; }
+        }
+        if (best) best.owned++;
+      }
+
+      // A bar is a tile if it owns ≥4 pips AND owns most (≥60%) of the pips in
+      // its footprint; take richest first, suppress overlaps in work space, then
+      // scale surviving tiles back to full res.
+      const kept = [];
+      for (const b of sized.sort((a, b) => b.owned - a.owned)) {
+        if (b.owned < 4 || b.owned / (b.inFoot || 1) < 0.6) continue;
+        const overlaps = kept.some(k =>
+          Math.hypot(k.cx - b.cx, k.cy - b.cy) < medL * 0.6 ||
+          inQuad({ x: b.cx, y: b.cy }, k.pts) || inQuad({ x: k.cx, y: k.cy }, b.pts));
+        if (!overlaps) kept.push(b);
+      }
+      for (const b of kept) out.push({
+        pts: b.pts.map(p => ({ x: p.x * up, y: p.y * up })),
+        cx: b.cx * up, cy: b.cy * up, fill: 0.9
+      });
+    } finally {
+      if (work && work !== src) work.delete();
+      if (gray)   gray.delete();
+      if (dk)     dk.delete();
+      if (dbh)    dbh.delete();
+      if (dbin)   dbin.delete();
+      if (dconts) dconts.delete();
+      if (dhier)  dhier.delete();
+    }
+    return out;
   }
 
   // Split a rotated rect (described by 4 corner pts) into two half-rects along

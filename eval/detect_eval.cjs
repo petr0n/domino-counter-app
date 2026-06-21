@@ -15,6 +15,7 @@ const TRUTH = {
   "detect_glare3.jpg": 3, // 3 tiles on glossy table with sun glare + grass
   "detect_grass3.jpg": 3, // 3 tiles touching in a column, wood table + grass
   "detect_stack4.jpg": 4, // 4 tiles, top 3 fused into one blob (3-stack split via dividers)
+  "detect_cloth4.jpg": 4, // 4 tiles on a white cloth (white-on-white, recovered via pipClusterScan)
 };
 
 cv.onRuntimeInitialized = () => {
