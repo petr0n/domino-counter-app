@@ -273,7 +273,9 @@
         setGuidance("", "");
 
         showInfo("Counting pips…");
-        const { left, right } = DominoCV.scanCanvasSingle(canvas);
+        const result = DominoCV.scanCanvasSingle(canvas);
+        if (!result) throw new Error("No tile found.");
+        const { left, right } = result;
         leftInput.value  = left;
         rightInput.value = right;
         const k = tileKey(left, right);
