@@ -552,12 +552,41 @@
     }
   }
 
-  // Split a tile Mat at the midpoint of its longer axis and count each half.
+  // Find the darkest column in the centre 40% of a landscape tile (the divider bar).
+  // The divider is the only dark vertical stripe spanning the full tile height.
+  function findDividerCol(mat) {
+    const W = mat.cols, H = mat.rows, c = mat.channels(), data = mat.data;
+    const start = Math.floor(W * 0.3), end = Math.ceil(W * 0.7);
+    let best = Math.floor((start + end) / 2), bestMean = 256;
+    for (let x = start; x < end; x++) {
+      let sum = 0;
+      for (let y = 0; y < H; y++) sum += data[(y * W + x) * c];
+      const mean = sum / H;
+      if (mean < bestMean) { bestMean = mean; best = x; }
+    }
+    return best;
+  }
+
+  function findDividerRow(mat) {
+    const W = mat.cols, H = mat.rows, c = mat.channels(), data = mat.data;
+    const start = Math.floor(H * 0.3), end = Math.ceil(H * 0.7);
+    let best = Math.floor((start + end) / 2), bestMean = 256;
+    for (let y = start; y < end; y++) {
+      let sum = 0;
+      const off = y * W * c;
+      for (let x = 0; x < W; x++) sum += data[off + x * c];
+      const mean = sum / W;
+      if (mean < bestMean) { bestMean = mean; best = y; }
+    }
+    return best;
+  }
+
+  // Split a tile Mat at the divider bar (detected) and count each half.
   function splitAndCount(mat) {
     let halfA = null, halfB = null;
     try {
       const landscape = mat.cols >= mat.rows;
-      const mid = landscape ? Math.floor(mat.cols / 2) : Math.floor(mat.rows / 2);
+      const mid = landscape ? findDividerCol(mat) : findDividerRow(mat);
       if (landscape) {
         halfA = mat.roi(new cv.Rect(0, 0, mid, mat.rows));
         halfB = mat.roi(new cv.Rect(mid, 0, mat.cols - mid, mat.rows));
@@ -592,7 +621,10 @@
       const w  = Math.min(rotated.cols - x2, outW);
       const h  = Math.min(rotated.rows - y2, outH);
       if (w < 20 || h < 20) return null;
-      return rotated.roi(new cv.Rect(x2, y2, w, h)).clone();
+      const _r = rotated.roi(new cv.Rect(x2, y2, w, h));
+      const _c = _r.clone();
+      _r.delete();
+      return _c;
     } finally {
       if (padded)  padded.delete();
       if (M)       M.delete();
@@ -726,14 +758,14 @@
       const outW = Math.round(tileW*(1+2*pad)), outH = Math.round(tileH*(1+2*pad));
       const tile = padAndRotateCrop(src, cx, cy, angle, outW, outH);
       if (!tile) continue;
+      let rA = null, rB = null;
       try {
         const landscape = tile.cols >= tile.rows;
-        const mid = landscape ? Math.floor(tile.cols/2) : Math.floor(tile.rows/2);
-        let hA, hB;
-        if (landscape) { hA = tile.roi(new cv.Rect(0,0,mid,tile.rows)).clone(); hB = tile.roi(new cv.Rect(mid,0,tile.cols-mid,tile.rows)).clone(); }
-        else           { hA = tile.roi(new cv.Rect(0,0,tile.cols,mid)).clone();  hB = tile.roi(new cv.Rect(0,mid,tile.cols,tile.rows-mid)).clone(); }
-        halves.push({ left: hA, right: hB, fill });
-      } finally { tile.delete(); }
+        const mid = landscape ? findDividerCol(tile) : findDividerRow(tile);
+        if (landscape) { rA = tile.roi(new cv.Rect(0,0,mid,tile.rows)); rB = tile.roi(new cv.Rect(mid,0,tile.cols-mid,tile.rows)); }
+        else           { rA = tile.roi(new cv.Rect(0,0,tile.cols,mid)); rB = tile.roi(new cv.Rect(0,mid,tile.cols,tile.rows-mid)); }
+        halves.push({ left: rA.clone(), right: rB.clone(), fill });
+      } finally { tile.delete(); if (rA) rA.delete(); if (rB) rB.delete(); }
     }
     return halves;
   }
