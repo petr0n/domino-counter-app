@@ -658,7 +658,7 @@
     const outH = Math.round(tileH * (1 + 2 * pad));
 
     const cropped = padAndRotateCrop(src, cx, cy, angle, outW, outH);
-    if (!cropped) return splitAndCount(src);
+    if (!cropped) return null;
     try { return splitAndCount(cropped); } finally { cropped.delete(); }
   }
 
@@ -680,7 +680,10 @@
   function scanMat(src) {
     const found = findTiles(src, 0.015, 0.70, 0.01);
     found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
-    return found.map(t => Object.assign(countQuad(src, t.pts, t.fill), { fill: t.fill }));
+    return found.map(t => {
+      const r = countQuad(src, t.pts, t.fill);
+      return r ? Object.assign(r, { fill: t.fill }) : null;
+    }).filter(Boolean);
   }
 
   // Single-tile core: the one largest tile in src, with whole-frame fallback.
@@ -698,7 +701,7 @@
       });
       return countQuad(src, found[0].pts);
     }
-    return splitAndCount(src);
+    return null;
   }
 
   // Multi-tile: every tile laid out in frame → [{left,right}, …].
@@ -1168,9 +1171,10 @@
       found.sort((a, b) => Math.abs(a.cy - b.cy) > 60 ? a.cy - b.cy : a.cx - b.cx);
       return found.map(t => {
         const result = countQuad(src, t.pts);
+        if (!result) return null;
         const dataUrl = cropToDataUrl(src, t.pts);
         return { left: result.left, right: result.right, dataUrl };
-      });
+      }).filter(Boolean);
     } finally {
       if (src) src.delete();
     }
