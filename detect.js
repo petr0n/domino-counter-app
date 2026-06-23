@@ -193,18 +193,32 @@
       return true;
     };
     for (const d of div) {
-      const overlaps = rects.some(r =>
-        inQuad({ x: d.cx, y: d.cy }, r.pts) || inQuad({ x: r.cx, y: r.cy }, d.pts));
-      if (!overlaps) rects.push(d);
+      const toReplace = [];
+      const overlaps = rects.some((r, ri) => {
+        if (!inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
+        if (r.fill < 0.6) { toReplace.push(ri); return false; }
+        return true;
+      });
+      if (!overlaps) {
+        for (const ri of toReplace.slice().reverse()) rects.splice(ri, 1);
+        rects.push(d);
+      }
     }
     // Edge-first fallback: find tile outlines via Canny edges and confirm a dark
     // divider inside. Handles mid-tone coloured backgrounds (e.g. teal) where Otsu
     // fails and dividerScan's divider bars also go undetected.
     const edged = edgeScan(src, minAreaFrac, maxAreaFrac);
     for (const d of edged) {
-      const overlaps = rects.some(r =>
-        inQuad({ x: d.cx, y: d.cy }, r.pts) || inQuad({ x: r.cx, y: r.cy }, d.pts));
-      if (!overlaps) rects.push(d);
+      const toReplace = [];
+      const overlaps = rects.some((r, ri) => {
+        if (!inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
+        if (r.fill < 0.6) { toReplace.push(ri); return false; }
+        return true;
+      });
+      if (!overlaps) {
+        for (const ri of toReplace.slice().reverse()) rects.splice(ri, 1);
+        rects.push(d);
+      }
     }
     // Final additive source: holistic pip-cluster recovery for bright-background
     // tiles (white-on-white) that the brightness-gated dividerScan above misses.
@@ -321,22 +335,53 @@
         const ux = Math.cos(ang), uy = Math.sin(ang);     // along divider (short axis)
         const px = -uy, py = ux;                           // perpendicular (long axis)
         const cx = r.center.x, cy = r.center.y;
-        const hs = L / 2, hl = L;
-        const pts = [[-hs, -hl], [hs, -hl], [hs, hl], [-hs, hl]].map(([s, l]) =>
+        const hs = L / 2;
+        // "2 edges + divider": scan perpendicular to bar for the tile's long edges.
+        // Scan outward from bar centre; brightness drop after a bright interior marks
+        // the tile boundary. Used only for precise corner position — brightness gate
+        // below still applies regardless so existing filter behaviour is unchanged.
+        const eSt = Math.max(2, Math.round(L / 18));
+        const eSamples = Math.max(3, Math.round(L * 0.3 / eSt));
+        const scanEdge = (sign) => {
+          let sawBright = false;
+          for (let ed = Math.round(L * 0.45); ed <= Math.round(L * 1.38); ed += eSt) {
+            let sm = 0, tot = 0;
+            for (let k = -eSamples; k <= eSamples; k++) {
+              const xx = Math.round(cx + k * eSt * ux + sign * ed * px);
+              const yy = Math.round(cy + k * eSt * uy + sign * ed * py);
+              if (xx < 0 || xx >= work.cols || yy < 0 || yy >= work.rows) continue;
+              tot++; sm += gray.ucharPtr(yy, xx)[0];
+            }
+            if (!tot) continue;
+            const mv = sm / tot;
+            if (mv >= 145) sawBright = true;
+            else if (sawBright && mv < 115) return ed;
+          }
+          return -1;
+        };
+        const e1 = scanEdge(1), e2 = scanEdge(-1);
+        const hlEdge = (e1 > 0 && e2 > 0) ? (e1 + e2) / 2 : e1 > 0 ? e1 : e2 > 0 ? e2 : L;
+        if (hlEdge < L * 0.62 || hlEdge > L * 1.35) continue;
+        // Always use the 2:1 model area for the brightness/in-frame check so the
+        // edge scan can't shift meanB by sampling a smaller region.
+        const pts = [[-hs, -L], [hs, -L], [hs, L], [-hs, L]].map(([s, l]) =>
           ({ x: cx + s * ux + l * px, y: cy + s * uy + l * py }));
         if (cx - L < 0 || cx + L > work.cols || cy - L < 0 || cy + L > work.rows) continue;
         const step = Math.max(3, L / 14);
         let sum = 0, n = 0, inFrame = 0;
         for (let s = -hs; s <= hs; s += step) {
-          for (let l = -hl; l <= hl; l += step) {
+          for (let l = -L; l <= L; l += step) {
             const xx = Math.round(cx + s * ux + l * px), yy = Math.round(cy + s * uy + l * py);
             n++;
             if (xx >= 0 && yy >= 0 && xx < work.cols && yy < work.rows) { inFrame++; sum += gray.ucharPtr(yy, xx)[0]; }
           }
         }
         const meanB = inFrame ? sum / inFrame : 0;
-        if (meanB < 150 || inFrame / n < 0.9) continue;    // tile must be bright & in-frame
-        out.push({ pts, cx, cy, L, meanB });
+        if (meanB < 150 || inFrame / n < 0.9) continue;
+        // Use edge-refined corners if found, otherwise fall back to 2:1 model.
+        const ptsOut = (hlEdge !== L) ? [[-hs, -hlEdge], [hs, -hlEdge], [hs, hlEdge], [-hs, hlEdge]].map(([s, l]) =>
+          ({ x: cx + s * ux + l * px, y: cy + s * uy + l * py })) : pts;
+        out.push({ pts: ptsOut, cx, cy, L, meanB });
       }
     } finally {
       if (work && work !== src) work.delete();
