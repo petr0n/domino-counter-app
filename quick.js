@@ -9,6 +9,7 @@ let vcap = null;
 const video         = document.getElementById("video");
 const canvas        = document.getElementById("canvas");
 const preview       = document.getElementById("preview");
+const loadedPhoto   = document.getElementById("loadedPhoto");
 const scanBtn       = document.getElementById("scanBtn");
 const loadBtn       = document.getElementById("loadBtn");
 const fileInput     = document.getElementById("fileInput");
@@ -21,6 +22,46 @@ const reviewTotal   = document.getElementById("reviewTotal");
 const cameraWrapper = document.getElementById("cameraWrapper");
 const guidanceEl    = document.getElementById("guidance");
 const camGuide      = document.getElementById("camGuide");
+
+let photoMode = false;
+let photoState = null;
+let _touchRef = null;
+
+function applyPhotoTransform() {
+  const { tx, ty, scale } = photoState;
+  loadedPhoto.style.transform =
+    `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(${scale})`;
+}
+
+loadedPhoto.addEventListener("touchstart", e => {
+  e.preventDefault();
+  const t = e.touches;
+  if (t.length === 1) {
+    _touchRef = { type: "pan", sx: t[0].clientX, sy: t[0].clientY,
+                  tx: photoState.tx, ty: photoState.ty };
+  } else if (t.length === 2) {
+    const dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+    _touchRef = { type: "pinch", dist: Math.hypot(dx, dy), scale: photoState.scale,
+                  tx: photoState.tx, ty: photoState.ty };
+  }
+}, { passive: false });
+
+loadedPhoto.addEventListener("touchmove", e => {
+  e.preventDefault();
+  if (!_touchRef) return;
+  const t = e.touches;
+  if (t.length === 1 && _touchRef.type === "pan") {
+    photoState.tx = _touchRef.tx + (t[0].clientX - _touchRef.sx);
+    photoState.ty = _touchRef.ty + (t[0].clientY - _touchRef.sy);
+    applyPhotoTransform();
+  } else if (t.length === 2 && _touchRef.type === "pinch") {
+    const dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+    photoState.scale = Math.max(0.1, Math.min(10, _touchRef.scale * Math.hypot(dx, dy) / _touchRef.dist));
+    applyPhotoTransform();
+  }
+}, { passive: false });
+
+loadedPhoto.addEventListener("touchend", () => { _touchRef = null; }, { passive: true });
 
 // Load catalog in background for cross-reference
 fetch(`${PROXY}/github/repos/${OWNER}/${REPO}/contents/catalog.json`, {
@@ -197,13 +238,35 @@ async function doScan(filename) {
   }
 }
 
-// ── Scan button (camera) ─────────────────────────────────────────────────
+// ── Scan button (camera or loaded photo) ─────────────────────────────────
 scanBtn.addEventListener("click", async () => {
-  if (!video.videoWidth) { showError("Camera not ready."); return; }
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d").drawImage(video, 0, 0);
-  await doScan(Math.random().toString(36).slice(2, 7) + ".jpg");
+  if (photoMode) {
+    // Render the loaded photo at its current pan/zoom position onto canvas,
+    // then run the normal scan pipeline (which crops the guide-box 8% margin).
+    const wr = cameraWrapper.getBoundingClientRect();
+    const W = wr.width, H = wr.height;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width  = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const { tx, ty, scale, iw, ih } = photoState;
+    const cs = scale * dpr;
+    ctx.setTransform(cs, 0, 0, cs, (W / 2 + tx) * dpr - iw * cs / 2, (H / 2 + ty) * dpr - ih * cs / 2);
+    ctx.drawImage(loadedPhoto, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    photoMode = false;
+    loadedPhoto.style.display = "none";
+    await ensureCV();
+    await doScan(photoState.filename);
+  } else {
+    if (!video.videoWidth) { showError("Camera not ready."); return; }
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    await doScan(Math.random().toString(36).slice(2, 7) + ".jpg");
+  }
 });
 
 // ── Load Photo button ────────────────────────────────────────────────────
@@ -212,28 +275,40 @@ fileInput.addEventListener("change", () => {
   const file = fileInput.files[0];
   if (!file) return;
   fileInput.value = "";
-  const img = new Image();
   const url = URL.createObjectURL(file);
-  img.onload = async () => {
-    canvas.width  = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    canvas.getContext("2d").drawImage(img, 0, 0);
+  loadedPhoto.onload = () => {
     URL.revokeObjectURL(url);
-    await ensureCV();
-    await doScan(file.name);
+    const wr = cameraWrapper.getBoundingClientRect();
+    const iw = loadedPhoto.naturalWidth, ih = loadedPhoto.naturalHeight;
+    const initScale = Math.min(wr.width / iw, wr.height / ih);
+    loadedPhoto.style.width  = iw + "px";
+    loadedPhoto.style.height = ih + "px";
+    photoState = { tx: 0, ty: 0, scale: initScale, iw, ih, filename: file.name };
+    applyPhotoTransform();
+    photoMode = true;
+    loadedPhoto.style.display = "block";
+    video.style.display       = "none";
+    camGuide.style.display    = "block";
+    scanBtn.style.display     = "block";
+    loadBtn.style.display     = "none";
+    retakeBtn.style.display   = "block";
+    stopAnalysis();
+    setGuidance("Drag to reposition · pinch to zoom · tap Scan when ready", "");
   };
-  img.onerror = () => { URL.revokeObjectURL(url); showError("Could not load image."); };
-  img.src = url;
+  loadedPhoto.onerror = () => { URL.revokeObjectURL(url); showError("Could not load image."); };
+  loadedPhoto.src = url;
 });
 
 // ── Retake ───────────────────────────────────────────────────────────────
 retakeBtn.addEventListener("click", () => {
-  preview.style.display   = "none";
-  video.style.display     = "block";
-  camGuide.style.display  = "block";
-  scanBtn.style.display   = "block";
-  loadBtn.style.display   = "block";
-  retakeBtn.style.display = "none";
+  photoMode = false;
+  loadedPhoto.style.display = "none";
+  preview.style.display     = "none";
+  video.style.display       = "block";
+  camGuide.style.display    = "block";
+  scanBtn.style.display     = "block";
+  loadBtn.style.display     = "block";
+  retakeBtn.style.display   = "none";
   reviewPanel.classList.remove("visible");
   hideMsg();
   startAnalysis();
@@ -280,11 +355,14 @@ function confirmAll() {
   pendingTiles = [];
   renderHistory();
   reviewPanel.classList.remove("visible");
-  preview.style.display   = "none";
-  video.style.display     = "block";
-  camGuide.style.display  = "block";
-  scanBtn.style.display   = "block";
-  retakeBtn.style.display = "none";
+  photoMode = false;
+  loadedPhoto.style.display = "none";
+  preview.style.display     = "none";
+  video.style.display       = "block";
+  camGuide.style.display    = "block";
+  scanBtn.style.display     = "block";
+  loadBtn.style.display     = "block";
+  retakeBtn.style.display   = "none";
   hideMsg();
   startAnalysis();
 }

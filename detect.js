@@ -141,14 +141,13 @@
           // Two tiles merged: either touching long-side-to-long-side (~1:1 blob)
           // or touching end-to-end (~4:1 blob). Split at midpoint along long axis.
           const pts = cv.RotatedRect.points(rect);
-          // Corner-based check for merged blobs — a clipped half gives garbage pip counts.
-          const splitMargin = Math.min(src.cols, src.rows) * 0.01;
-          const atEdge = pts.some(p =>
-            p.x < splitMargin || p.x > src.cols - splitMargin ||
-            p.y < splitMargin || p.y > src.rows - splitMargin);
-          if (atEdge) { c.delete(); continue; }
           const halves = splitRect({ pts });
+          const sm = Math.min(src.cols, src.rows) * 0.01;
           for (const h of halves) {
+            const hEdge = h.pts.some(p =>
+              p.x < sm || p.x > src.cols - sm ||
+              p.y < sm || p.y > src.rows - sm);
+            if (hEdge) continue;
             const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw,rh) * 0.4);
             if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: 0.5 });
           }
@@ -351,7 +350,7 @@
     if (!out.length) return [];
     const sortedL = out.map(t => t.L).sort((a, b) => a - b);
     const medL = sortedL[Math.floor(sortedL.length / 2)];
-    const sized = out.filter(t => t.L >= medL * 0.62 && t.L <= medL * 1.5);
+    const sized = out.filter(t => t.L >= medL * 0.45 && t.L <= medL * 1.5);
     const inQuad = (p, q) => {
       let s = 0;
       for (let i = 0; i < 4; i++) {
@@ -447,7 +446,7 @@
       // Drop size outliers (an oversized bar would swallow two tiles' pips).
       const sortedL = bars.map(b => b.L).sort((a, b) => a - b);
       const medL = sortedL[Math.floor(sortedL.length / 2)];
-      const sized = bars.filter(b => b.L >= medL * 0.62 && b.L <= medL * 1.5);
+      const sized = bars.filter(b => b.L >= medL * 0.45 && b.L <= medL * 1.5);
       if (!sized.length) return [];
 
       // Pips: black-hat sized from the tiles' own scale. The kernel must EXCEED
@@ -615,7 +614,7 @@
     if (!out.length) return [];
     const sortedL = out.map(t => t.L).sort((a, b) => a - b);
     const medL = sortedL[Math.floor(sortedL.length / 2)];
-    const sized = out.filter(t => t.L >= medL * 0.62 && t.L <= medL * 1.5);
+    const sized = out.filter(t => t.L >= medL * 0.45 && t.L <= medL * 1.5);
     const inQuad = (p, q) => {
       let s = 0;
       for (let i = 0; i < 4; i++) {
