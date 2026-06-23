@@ -360,13 +360,16 @@
           return -1;
         };
         const e1 = scanEdge(1), e2 = scanEdge(-1);
-        const hlEdge = (e1 > 0 && e2 > 0) ? (e1 + e2) / 2 : e1 > 0 ? e1 : e2 > 0 ? e2 : L;
+        const bothEdges = e1 > 0 && e2 > 0;
+        const hlEdge = bothEdges ? (e1 + e2) / 2 : e1 > 0 ? e1 : e2 > 0 ? e2 : L;
         if (hlEdge < L * 0.62 || hlEdge > L * 1.35) continue;
         // Always use the 2:1 model area for the brightness/in-frame check so the
         // edge scan can't shift meanB by sampling a smaller region.
         const pts = [[-hs, -L], [hs, -L], [hs, L], [-hs, L]].map(([s, l]) =>
           ({ x: cx + s * ux + l * px, y: cy + s * uy + l * py }));
-        if (cx - L < 0 || cx + L > work.cols || cy - L < 0 || cy + L > work.rows) continue;
+        // When both edges are confirmed the tile is geometrically verified — allow
+        // it even near the frame edge (e.g. partial blank tile at top of frame).
+        if (!bothEdges && (cx - L < 0 || cx + L > work.cols || cy - L < 0 || cy + L > work.rows)) continue;
         const step = Math.max(3, L / 14);
         let sum = 0, n = 0, inFrame = 0;
         for (let s = -hs; s <= hs; s += step) {
