@@ -107,15 +107,20 @@
         // Accept single-tile shapes (~2:1, fill ≥ 0.72). Erosion normally
         // separates touching tiles, but when two tiles touch side-by-side they
         // can survive as one near-square (~1:1) blob — detect and split those.
-        if (ratio >= 1.3 && ratio <= 3.0 && fill >= 0.72) {
+        // fill < 0.93: rejects near-perfect rectangles (notebooks, cards) whose Otsu
+        // blob has no rounded corners or internal dark features. Real tile blobs have
+        // lower fill due to rounded corners, the divider bar, and pip shadows.
+        if (ratio >= 1.5 && ratio <= 2.6 && fill >= 0.72 && fill < 0.93) {
           // A single-tile aspect ratio can hide several tiles stacked with small
           // gaps that erosion didn't separate (3 landscape tiles ≈ 3:2, 4 ≈ 2:1 —
           // shape alone can't tell them from one tile). Each domino has exactly one
           // centre divider bar, so count them: if the blob holds ≥2 dividers it is
           // ≥2 tiles, recovered individually via dividerSplit.
-          const multi = dividerSplit(src, binary, contours, i, minArea, maxArea);
+          // Use minArea/4 so individual tiles inside a cluster aren't rejected by
+          // the standalone-tile minimum (cluster area >> single tile area).
+          const multi = dividerSplit(src, binary, contours, i, minArea / 4, maxArea);
+          const sm = Math.min(src.cols, src.rows) * 0.01;
           if (multi.length >= 2) {
-            const sm = Math.min(src.cols, src.rows) * 0.01;
             for (const h of multi) {
               if (h.cx < sm || h.cx > src.cols - sm || h.cy < sm || h.cy > src.rows - sm) continue;
               const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw, rh) * 0.4);
@@ -156,7 +161,12 @@
           const found = dividerSplit(src, binary, contours, i, minArea, maxArea);
           for (const h of found) {
             if (h.cx < sm || h.cx > src.cols - sm || h.cy < sm || h.cy > src.rows - sm) continue;
-            const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < Math.min(rw, rh) * 0.4);
+            // Use the reconstructed tile's short side as dup radius, not the blob's short side
+            // (the blob can be much larger, producing a falsely huge suppression radius).
+            const tileShort = Math.min(
+              Math.hypot(h.pts[1].x - h.pts[0].x, h.pts[1].y - h.pts[0].y),
+              Math.hypot(h.pts[2].x - h.pts[1].x, h.pts[2].y - h.pts[1].y));
+            const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < tileShort * 0.4);
             if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: h.fill });
           }
         }
@@ -219,9 +229,16 @@
     // tiles (white-on-white) that the brightness-gated dividerScan above misses.
     const clustered = pipClusterScan(src, minAreaFrac, maxAreaFrac);
     for (const d of clustered) {
-      const overlaps = rects.some(r =>
-        inQuad({ x: d.cx, y: d.cy }, r.pts) || inQuad({ x: r.cx, y: r.cy }, d.pts));
-      if (!overlaps) rects.push(d);
+      const toReplace = [];
+      const overlaps = rects.some((r, ri) => {
+        if (!inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
+        if (r.fill < 0.6) { toReplace.push(ri); return false; }
+        return true;
+      });
+      if (!overlaps) {
+        for (const ri of toReplace.slice().reverse()) rects.splice(ri, 1);
+        rects.push(d);
+      }
     }
     return rects;
   }
@@ -713,29 +730,33 @@
   // The divider is the only dark vertical stripe spanning the full tile height.
   function findDividerCol(mat) {
     const W = mat.cols, H = mat.rows, c = mat.channels(), data = mat.data;
-    const start = Math.floor(W * 0.3), end = Math.ceil(W * 0.7);
-    let best = Math.floor((start + end) / 2), bestMean = 256;
+    const start = Math.floor(W * 0.4), end = Math.ceil(W * 0.6);
+    const mid = Math.floor(W / 2);
+    let best = mid, bestMean = 256, worstMean = 0;
     for (let x = start; x < end; x++) {
       let sum = 0;
       for (let y = 0; y < H; y++) sum += data[(y * W + x) * c];
       const mean = sum / H;
       if (mean < bestMean) { bestMean = mean; best = x; }
+      if (mean > worstMean) worstMean = mean;
     }
-    return best;
+    return (worstMean - bestMean < 10) ? mid : best;
   }
 
   function findDividerRow(mat) {
     const W = mat.cols, H = mat.rows, c = mat.channels(), data = mat.data;
-    const start = Math.floor(H * 0.3), end = Math.ceil(H * 0.7);
-    let best = Math.floor((start + end) / 2), bestMean = 256;
+    const start = Math.floor(H * 0.4), end = Math.ceil(H * 0.6);
+    const mid = Math.floor(H / 2);
+    let best = mid, bestMean = 256, worstMean = 0;
     for (let y = start; y < end; y++) {
       let sum = 0;
       const off = y * W * c;
       for (let x = 0; x < W; x++) sum += data[off + x * c];
       const mean = sum / W;
       if (mean < bestMean) { bestMean = mean; best = y; }
+      if (mean > worstMean) worstMean = mean;
     }
-    return best;
+    return (worstMean - bestMean < 10) ? mid : best;
   }
 
   // Split a tile Mat at the divider bar (detected) and count each half.
