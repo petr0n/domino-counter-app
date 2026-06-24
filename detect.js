@@ -699,28 +699,15 @@
   // the long axis. Returns [{pts,cx,cy,n}, {pts,cx,cy,n}].
   function splitRect(tile) {
     const p = tile.pts;
-    // Find the two pairs of adjacent corners that form the long sides.
-    // Midpoints of the short sides become the shared edge of the two halves.
-    const d01 = Math.hypot(p[1].x-p[0].x, p[1].y-p[0].y);
-    const d12 = Math.hypot(p[2].x-p[1].x, p[2].y-p[1].y);
-    let m0, m1; // midpoints of the two short sides
-    if (d01 >= d12) {
-      // long sides are 01 and 23; short sides are 12 and 30
-      m0 = { x: (p[1].x+p[2].x)/2, y: (p[1].y+p[2].y)/2 };
-      m1 = { x: (p[3].x+p[0].x)/2, y: (p[3].y+p[0].y)/2 };
-      return [
-        { pts: [p[0], p[1], m0, m1], cx: (p[0].x+p[1].x+m0.x+m1.x)/4, cy: (p[0].y+p[1].y+m0.y+m1.y)/4, n: 1 },
-        { pts: [m1, m0, p[2], p[3]], cx: (m1.x+m0.x+p[2].x+p[3].x)/4, cy: (m1.y+m0.y+p[2].y+p[3].y)/4, n: 1 },
-      ];
-    } else {
-      // long sides are 12 and 30; short sides are 01 and 23
-      m0 = { x: (p[0].x+p[1].x)/2, y: (p[0].y+p[1].y)/2 };
-      m1 = { x: (p[2].x+p[3].x)/2, y: (p[2].y+p[3].y)/2 };
-      return [
-        { pts: [p[0], m0, m1, p[3]], cx: (p[0].x+m0.x+m1.x+p[3].x)/4, cy: (p[0].y+m0.y+m1.y+p[3].y)/4, n: 1 },
-        { pts: [m0, p[1], p[2], m1], cx: (m0.x+p[1].x+p[2].x+m1.x)/4, cy: (m0.y+p[1].y+p[2].y+m1.y)/4, n: 1 },
-      ];
-    }
+    // Split the merged-tile rect into two halves perpendicular to the long axis.
+    // midpoints of the two long sides (12 and 30) form the dividing line —
+    // both branches of the d01/d12 comparison collapse to the same formula.
+    const m0 = { x: (p[1].x+p[2].x)/2, y: (p[1].y+p[2].y)/2 };
+    const m1 = { x: (p[3].x+p[0].x)/2, y: (p[3].y+p[0].y)/2 };
+    return [
+      { pts: [p[0], p[1], m0, m1], cx: (p[0].x+p[1].x+m0.x+m1.x)/4, cy: (p[0].y+p[1].y+m0.y+m1.y)/4, n: 1 },
+      { pts: [m1, m0, p[2], p[3]], cx: (m1.x+m0.x+p[2].x+p[3].x)/4, cy: (m1.y+m0.y+p[2].y+p[3].y)/4, n: 1 },
+    ];
   }
 
   // Find the darkest column in the centre 40% of a landscape tile (the divider bar).
