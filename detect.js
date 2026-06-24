@@ -107,10 +107,7 @@
         // Accept single-tile shapes (~2:1, fill ≥ 0.72). Erosion normally
         // separates touching tiles, but when two tiles touch side-by-side they
         // can survive as one near-square (~1:1) blob — detect and split those.
-        // fill < 0.93: rejects near-perfect rectangles (notebooks, cards) whose Otsu
-        // blob has no rounded corners or internal dark features. Real tile blobs have
-        // lower fill due to rounded corners, the divider bar, and pip shadows.
-        if (ratio >= 1.5 && ratio <= 2.6 && fill >= 0.72 && fill < 0.93) {
+        if (ratio >= 1.3 && ratio <= 2.6 && fill >= 0.72) {
           // A single-tile aspect ratio can hide several tiles stacked with small
           // gaps that erosion didn't separate (3 landscape tiles ≈ 3:2, 4 ≈ 2:1 —
           // shape alone can't tell them from one tile). Each domino has exactly one
