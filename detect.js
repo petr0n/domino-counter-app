@@ -1271,6 +1271,23 @@
     }
   }
 
+  // Returns true if pip content is present near the centre of a binarised half.
+  // 5/7/9-pip (3×3 grid) layouts have a centre pip; 4/6/8 do not.
+  function hasCenterPip(bin, pipR) {
+    const cx = bin.cols >> 1, cy = bin.rows >> 1;
+    const r = Math.max(2, Math.round(pipR * 0.6));
+    let lit = 0, total = 0;
+    for (let y = cy - r; y <= cy + r; y++) {
+      for (let x = cx - r; x <= cx + r; x++) {
+        if (y < 0 || y >= bin.rows || x < 0 || x >= bin.cols) continue;
+        if ((x-cx)*(x-cx)+(y-cy)*(y-cy) > r*r) continue;
+        total++;
+        if (bin.data[y * bin.cols + x] > 0) lit++;
+      }
+    }
+    return total > 0 && lit / total > 0.25;
+  }
+
   function countPipsContour(halfMat) {
     const pad = Math.max(2, Math.floor(Math.min(halfMat.rows, halfMat.cols) * 0.05));
     const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
@@ -1311,7 +1328,14 @@
       cv.morphologyEx(gray, bh, cv.MORPH_BLACKHAT, kern);
       tb = new cv.Mat();
       cv.threshold(bh, tb, 12, 255, cv.THRESH_BINARY);
-      return Math.max(countBlobs(ta, regionArea, true), countBlobs(tb, regionArea, true));
+      const cA = countBlobs(ta, regionArea, true), cB = countBlobs(tb, regionArea, true);
+      const count = Math.max(cA, cB);
+      // Even counts 4/6/8 have no centre pip in the 3×3 grid. If the centre IS
+      // occupied the contour counter overcounted by 1 — correct it here.
+      if (count >= 4 && count <= 8 && count % 2 === 0) {
+        if (hasCenterPip(cA >= cB ? ta : tb, pipR)) return count - 1;
+      }
+      return count;
     } finally {
       inner.delete();
       if (innerW) innerW.delete();
