@@ -194,7 +194,10 @@
       }
       return true;
     };
+    const fallbackEdgeSm = Math.min(src.cols, src.rows) * edgeMarginFrac;
     for (const d of div) {
+      if (d.cx < fallbackEdgeSm || d.cx > src.cols - fallbackEdgeSm ||
+          d.cy < fallbackEdgeSm || d.cy > src.rows - fallbackEdgeSm) continue;
       const toReplace = [];
       const overlaps = rects.some((r, ri) => {
         if (!inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
@@ -211,6 +214,8 @@
     // fails and dividerScan's divider bars also go undetected.
     const edged = edgeScan(src, minAreaFrac, maxAreaFrac);
     for (const d of edged) {
+      if (d.cx < fallbackEdgeSm || d.cx > src.cols - fallbackEdgeSm ||
+          d.cy < fallbackEdgeSm || d.cy > src.rows - fallbackEdgeSm) continue;
       const toReplace = [];
       const overlaps = rects.some((r, ri) => {
         if (!inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
@@ -226,6 +231,8 @@
     // tiles (white-on-white) that the brightness-gated dividerScan above misses.
     const clustered = pipClusterScan(src, minAreaFrac, maxAreaFrac);
     for (const d of clustered) {
+      if (d.cx < fallbackEdgeSm || d.cx > src.cols - fallbackEdgeSm ||
+          d.cy < fallbackEdgeSm || d.cy > src.rows - fallbackEdgeSm) continue;
       const toReplace = [];
       const overlaps = rects.some((r, ri) => {
         if (!inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
