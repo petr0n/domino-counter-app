@@ -163,6 +163,10 @@
             const tileShort = Math.min(
               Math.hypot(h.pts[1].x - h.pts[0].x, h.pts[1].y - h.pts[0].y),
               Math.hypot(h.pts[2].x - h.pts[1].x, h.pts[2].y - h.pts[1].y));
+            // Reject bars whose reconstructed tile centre is far from the blob centroid.
+            // A real tile recovered from an irregular blob is near the blob's minAreaRect
+            // centre; a binary-artifact bar produces a tile centre that is far away.
+            if (Math.hypot(h.cx - rect.center.x, h.cy - rect.center.y) > tileShort * 1.5) continue;
             const dup = rects.some(r => Math.hypot(r.cx - h.cx, r.cy - h.cy) < tileShort * 0.4);
             if (!dup) rects.push({ pts: h.pts, cx: h.cx, cy: h.cy, fill: h.fill });
           }
@@ -178,11 +182,6 @@
       if (contours) contours.delete();
       if (hier)     hier.delete();
     }
-    // Bright/cluttered-background fallback: when tiles fuse into a bright surface
-    // the Otsu segmentation above under-detects (often 0). Recover tiles from
-    // their dark divider bars and prefer that only when it finds strictly more —
-    // dividerScan is validated to reject non-tile bars, so a correct bright-blob
-    // result (which ties or wins) is never overridden.
     const div = dividerScan(src, minAreaFrac, maxAreaFrac);
     const inQuad = (p, q) => {
       let s = 0;
@@ -209,13 +208,13 @@
     // Center-proximity guard: if d's center is within 0.7× the shorter tile's
     // short side of an existing tile's center, they're the same physical tile
     // even when shadow-shift prevents either center from falling inside the other's quad.
-    const mergeNew = d => {
+    const mergeNew = (d, shortSideF = 0.7) => {
       if (!ptsInFrame(d)) return;
       const dS = shortSide(d.pts);
       const toReplace = [];
       const overlaps = rects.some((r, ri) => {
         const rS = shortSide(r.pts);
-        if (Math.hypot(d.cx-r.cx, d.cy-r.cy) >= Math.min(dS,rS)*0.7 &&
+        if (Math.hypot(d.cx-r.cx, d.cy-r.cy) >= Math.min(dS,rS)*shortSideF &&
             !inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
         if (r.fill < 0.6) { toReplace.push(ri); return false; }
         return true;
@@ -234,7 +233,10 @@
     // Final additive source: holistic pip-cluster recovery for bright-background
     // tiles (white-on-white) that the brightness-gated dividerScan above misses.
     const clustered = pipClusterScan(src, minAreaFrac, maxAreaFrac);
-    for (const d of clustered) mergeNew(d);
+    for (const d of clustered) {
+      if (rects.length >= 4 && rects.some(r => r.fill >= 0.9 && d.pts.some(p => inQuad(p, r.pts)))) continue;
+      mergeNew(d);
+    }
     return rects;
   }
 
