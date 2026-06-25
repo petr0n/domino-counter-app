@@ -1272,10 +1272,19 @@
     const rw = halfMat.cols - 2 * pad, rh = halfMat.rows - 2 * pad;
     if (rw < 10 || rh < 10) return 0;
     const inner = halfMat.roi(new cv.Rect(pad, pad, rw, rh));
-    let gray = null, ta = null, tb = null, bh = null, kern = null;
+    let gray = null, ta = null, tb = null, bh = null, kern = null, innerW = null;
     try {
+      // Darken yellow/orange pips (high R+G, low B) so they contrast against white
+      // tiles. warmth=0 for white/gray/red/purple/blue → those pixels unchanged.
+      innerW = inner.clone();
+      const pd = innerW.data;
+      for (let j = 0; j < pd.length; j += 4) {
+        const r = pd[j], g = pd[j+1], b = pd[j+2];
+        const warmth = Math.max(0, Math.min(r, g) - b);
+        if (warmth > 0) { const f = 1 - 0.4 * (warmth / 255); pd[j] = r * f; pd[j+1] = g * f; }
+      }
       gray = new cv.Mat();
-      cv.cvtColor(inner, gray, cv.COLOR_RGBA2GRAY);
+      cv.cvtColor(innerW, gray, cv.COLOR_RGBA2GRAY);
       const regionArea = rw * rh;
       const pipR = Math.max(6, Math.round(Math.sqrt(regionArea * 0.025 / Math.PI)));
       // Binarise two ways and take whichever finds MORE pips. Both only ever
@@ -1301,6 +1310,7 @@
       return Math.max(countBlobs(ta, regionArea, true), countBlobs(tb, regionArea, true));
     } finally {
       inner.delete();
+      if (innerW) innerW.delete();
       if (gray) gray.delete();
       if (ta)   ta.delete();
       if (tb)   tb.delete();
