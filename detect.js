@@ -202,11 +202,21 @@
       return d.cx >= margin && d.cx <= src.cols - margin &&
              d.cy >= margin && d.cy <= src.rows - margin;
     };
-    for (const d of div) {
-      if (!ptsInFrame(d)) continue;
+    const shortSide = p => Math.min(
+      Math.hypot(p[1].x-p[0].x, p[1].y-p[0].y),
+      Math.hypot(p[2].x-p[1].x, p[2].y-p[1].y));
+    // Merge a fallback-found tile into rects if it's not already covered.
+    // Center-proximity guard: if d's center is within 0.7× the shorter tile's
+    // short side of an existing tile's center, they're the same physical tile
+    // even when shadow-shift prevents either center from falling inside the other's quad.
+    const mergeNew = d => {
+      if (!ptsInFrame(d)) return;
+      const dS = shortSide(d.pts);
       const toReplace = [];
       const overlaps = rects.some((r, ri) => {
-        if (!inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
+        const rS = shortSide(r.pts);
+        if (Math.hypot(d.cx-r.cx, d.cy-r.cy) >= Math.min(dS,rS)*0.7 &&
+            !inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
         if (r.fill < 0.6) { toReplace.push(ri); return false; }
         return true;
       });
@@ -214,40 +224,17 @@
         for (const ri of toReplace.slice().reverse()) rects.splice(ri, 1);
         rects.push(d);
       }
-    }
+    };
+    for (const d of div) mergeNew(d);
     // Edge-first fallback: find tile outlines via Canny edges and confirm a dark
     // divider inside. Handles mid-tone coloured backgrounds (e.g. teal) where Otsu
     // fails and dividerScan's divider bars also go undetected.
     const edged = edgeScan(src, minAreaFrac, maxAreaFrac);
-    for (const d of edged) {
-      if (!ptsInFrame(d)) continue;
-      const toReplace = [];
-      const overlaps = rects.some((r, ri) => {
-        if (!inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
-        if (r.fill < 0.6) { toReplace.push(ri); return false; }
-        return true;
-      });
-      if (!overlaps) {
-        for (const ri of toReplace.slice().reverse()) rects.splice(ri, 1);
-        rects.push(d);
-      }
-    }
+    for (const d of edged) mergeNew(d);
     // Final additive source: holistic pip-cluster recovery for bright-background
     // tiles (white-on-white) that the brightness-gated dividerScan above misses.
     const clustered = pipClusterScan(src, minAreaFrac, maxAreaFrac);
-    for (const d of clustered) {
-      if (!ptsInFrame(d)) continue;
-      const toReplace = [];
-      const overlaps = rects.some((r, ri) => {
-        if (!inQuad({ x: d.cx, y: d.cy }, r.pts) && !inQuad({ x: r.cx, y: r.cy }, d.pts)) return false;
-        if (r.fill < 0.6) { toReplace.push(ri); return false; }
-        return true;
-      });
-      if (!overlaps) {
-        for (const ri of toReplace.slice().reverse()) rects.splice(ri, 1);
-        rects.push(d);
-      }
-    }
+    for (const d of clustered) mergeNew(d);
     return rects;
   }
 
