@@ -1204,14 +1204,15 @@
       hierP = new cv.Mat();
       cv.findContours(thresh, conts, hierP, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
       const minPip = regionArea * 0.002, maxPip = regionArea * 0.10;
-      const pipAreas = [], bigBlobs = [];
+      const pipData = [], bigBlobs = [];
       for (let i = 0; i < conts.size(); i++) {
         const c = conts.get(i);
         const area = cv.contourArea(c);
         const peri = cv.arcLength(c, true);
         const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
         if (area >= minPip && area <= maxPip && circ >= 0.45) {
-          pipAreas.push(area);
+          const br = cv.boundingRect(c);
+          pipData.push({ area, cx: br.x + br.width * 0.5, cy: br.y + br.height * 0.5 });
           c.delete();
         } else if (area >= minPip && area <= maxPip * 8 && circ >= 0.15 && circ < 0.45) {
           const r = cv.minAreaRect(c);
@@ -1220,6 +1221,22 @@
           c.delete();
         } else c.delete();
       }
+      // Proximity dedup: spherical pips cast shadows that appear as adjacent round
+      // blobs right next to the real pip. Sort by area desc so the larger (real pip)
+      // is kept first; suppress any smaller blob within 1.5×pipR — shadow distance
+      // is < pipR, while pip-to-pip spacing is ≥ 2.5×pipR even on a dense 4×3 grid.
+      const dedupDist = Math.max(6, Math.sqrt(regionArea * 0.025 / Math.PI)) * 1.5;
+      pipData.sort((a, b) => b.area - a.area);
+      const pipOk = new Array(pipData.length).fill(true);
+      for (let i = 0; i < pipData.length; i++) {
+        if (!pipOk[i]) continue;
+        for (let j = i + 1; j < pipData.length; j++) {
+          if (!pipOk[j]) continue;
+          if (Math.hypot(pipData[i].cx - pipData[j].cx, pipData[i].cy - pipData[j].cy) < dedupDist)
+            pipOk[j] = false;
+        }
+      }
+      const pipAreas = pipData.filter((_, i) => pipOk[i]).map(p => p.area);
       const pipArea = pipAreas.length
         ? pipAreas.reduce((a, b) => a + b, 0) / pipAreas.length
         : maxPip * 0.25;
