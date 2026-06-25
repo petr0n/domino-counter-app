@@ -1246,7 +1246,7 @@
       // black-hat (which fattens the sliver) miscounts it as a unit pip (9 → 10).
       const unitBig = [], fusedBig = [];
       for (const b of bigBlobs) {
-        if (unitRecovery && b.area >= pipArea * 0.55 && b.area <= pipArea * 1.6 && b.aspect < 2.2) unitBig.push(b.area);
+        if (unitRecovery && b.area >= pipArea * 0.45 && b.area <= pipArea * 1.6 && b.aspect < 2.2) unitBig.push(b.area);
         else if (b.area > pipArea * 1.6) fusedBig.push(b.area);
       }
       let count = pipAreas.length + unitBig.length;
@@ -1314,7 +1314,7 @@
       bh = new cv.Mat();
       cv.morphologyEx(gray, bh, cv.MORPH_BLACKHAT, kern);
       tb = new cv.Mat();
-      cv.threshold(bh, tb, 15, 255, cv.THRESH_BINARY);
+      cv.threshold(bh, tb, 12, 255, cv.THRESH_BINARY);
       return Math.max(countBlobs(ta, regionArea, true), countBlobs(tb, regionArea, true));
     } finally {
       inner.delete();
