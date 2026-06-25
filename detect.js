@@ -1332,7 +1332,7 @@
       const count = Math.max(cA, cB);
       // Even counts 4/6/8 have no centre pip in the 3×3 grid. If the centre IS
       // occupied the contour counter overcounted by 1 — correct it here.
-      if (count >= 4 && count <= 8 && count % 2 === 0) {
+      if (count >= 4 && count <= 10 && count % 2 === 0) {
         if (hasCenterPip(cA >= cB ? ta : tb, pipR)) return count - 1;
       }
       return count;
