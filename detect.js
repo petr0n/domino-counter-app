@@ -236,8 +236,8 @@
     for (const d of clustered) {
       if (rects.length >= 4 && rects.some(r => r.fill >= 0.9 && d.pts.some(p => inQuad(p, r.pts)))) continue;
       // Reject false tiles over dark backgrounds (rug, binding): sample a 3×3 grid
-      // inside each half; require ≥40% bright (R>150). Real tile bodies (white tiles,
-      // cloth tiles) pass even with ~30% pip coverage; dark-background false tiles fail.
+      // inside each half; require ≥40% bright (R>120). Grey notebook bg ≈R133+,
+      // wicker ≈R55-89; threshold 120 cleanly separates them.
       const mT = {x:(d.pts[0].x+d.pts[1].x)/2, y:(d.pts[0].y+d.pts[1].y)/2};
       const mB = {x:(d.pts[2].x+d.pts[3].x)/2, y:(d.pts[2].y+d.pts[3].y)/2};
       const ldx=mB.x-mT.x, ldy=mB.y-mT.y, ll=Math.hypot(ldx,ldy)||1;
@@ -249,7 +249,7 @@
           const xx=Math.round(hcx+li*step*lxN+si*step*sxN);
           const yy=Math.round(hcy+li*step*lyN+si*step*syN);
           if (xx>=0 && xx<src.cols && yy>=0 && yy<src.rows) {
-            tot++; if (src.data[(yy*src.cols+xx)*4]>150) bright++;
+            tot++; if (src.data[(yy*src.cols+xx)*4]>120) bright++;
           }
         }
       }
