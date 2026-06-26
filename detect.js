@@ -235,6 +235,25 @@
     const clustered = pipClusterScan(src, minAreaFrac, maxAreaFrac);
     for (const d of clustered) {
       if (rects.length >= 4 && rects.some(r => r.fill >= 0.9 && d.pts.some(p => inQuad(p, r.pts)))) continue;
+      // Reject false tiles over dark backgrounds (rug, binding): sample a 3×3 grid
+      // inside each half; require ≥40% bright (R>150). Real tile bodies (white tiles,
+      // cloth tiles) pass even with ~30% pip coverage; dark-background false tiles fail.
+      const mT = {x:(d.pts[0].x+d.pts[1].x)/2, y:(d.pts[0].y+d.pts[1].y)/2};
+      const mB = {x:(d.pts[2].x+d.pts[3].x)/2, y:(d.pts[2].y+d.pts[3].y)/2};
+      const ldx=mB.x-mT.x, ldy=mB.y-mT.y, ll=Math.hypot(ldx,ldy)||1;
+      const lxN=ldx/ll, lyN=ldy/ll, sxN=-lyN, syN=lxN;
+      const step=shortSide(d.pts)*0.2;
+      let bright=0, tot=0;
+      for (const [hcx,hcy] of [[(mT.x+d.cx)/2,(mT.y+d.cy)/2],[(mB.x+d.cx)/2,(mB.y+d.cy)/2]]) {
+        for (let li=-1; li<=1; li++) for (let si=-1; si<=1; si++) {
+          const xx=Math.round(hcx+li*step*lxN+si*step*sxN);
+          const yy=Math.round(hcy+li*step*lyN+si*step*syN);
+          if (xx>=0 && xx<src.cols && yy>=0 && yy<src.rows) {
+            tot++; if (src.data[(yy*src.cols+xx)*4]>150) bright++;
+          }
+        }
+      }
+      if (tot && bright/tot < 0.4) continue;
       mergeNew(d);
     }
     return rects;
