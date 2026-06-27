@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<!-- Headless harness for browser_eval.cjs. Loads the REAL detect.js and runs
+     the exact camera-capture path (native canvas → cropToGuide 84% →
+     preprocess → scanCanvas) so Node measures the same pixels the phone does. -->
+<html>
+<head><meta charset="utf-8"><title>browser eval harness</title></head>
+<body>
+<script src="../detect.js"></script>
+<script>
+  // Replicates quick.js doScan(): optional guide-box crop, preprocess, scan.
+  // crop=true only for full-frame camera originals (the app's camera path
+  // applies cropToGuide). Legacy pre-cropped fixtures pass crop=false.
+  window.runDetect = async function (dataUrl, crop) {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext("2d").drawImage(img, 0, 0);
+    if (crop) {
+      // cropToGuide — central 84% (8% margin each side), same as quick.js
+      const cw = canvas.width, ch = canvas.height;
+      const x1 = Math.round(cw * 0.08), y1 = Math.round(ch * 0.08);
+      const w = Math.round(cw * 0.84), h = Math.round(ch * 0.84);
+      const d = canvas.getContext("2d").getImageData(x1, y1, w, h);
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").putImageData(d, 0, 0);
+    }
+    DominoCV.preprocess(canvas);
+    await DominoCV.loadCV();
+    return DominoCV.scanCanvas(canvas);
+  };
+  window.cvReady = () => DominoCV.loadCV().then(() => true);
+</script>
+</body>
+</html>
