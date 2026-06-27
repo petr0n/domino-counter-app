@@ -587,7 +587,7 @@
       // scale surviving tiles back to full res.
       const kept = [];
       for (const b of sized.sort((a, b) => b.owned - a.owned)) {
-        if (b.owned < 4 || b.owned / (b.inFoot || 1) < 0.6) continue;
+        if (b.owned < 3 || b.owned / (b.inFoot || 1) < 0.6) continue;
         const overlaps = kept.some(k =>
           Math.hypot(k.cx - b.cx, k.cy - b.cy) < medL * 0.6 ||
           inQuad({ x: b.cx, y: b.cy }, k.pts) || inQuad({ x: k.cx, y: k.cy }, b.pts));
