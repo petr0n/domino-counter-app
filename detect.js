@@ -399,16 +399,26 @@
         // it even near the frame edge (e.g. partial blank tile at top of frame).
         if (!bothEdges && (cx - L < 0 || cx + L > work.cols || cy - L < 0 || cy + L > work.rows)) continue;
         const step = Math.max(3, L / 14);
-        let sum = 0, n = 0, inFrame = 0;
+        let sum = 0, n = 0, inFrame = 0, sH1 = 0, nH1 = 0, sH2 = 0, nH2 = 0;
+        const hw = L / 3;
         for (let s = -hs; s <= hs; s += step) {
           for (let l = -L; l <= L; l += step) {
             const xx = Math.round(cx + s * ux + l * px), yy = Math.round(cy + s * uy + l * py);
             n++;
-            if (xx >= 0 && yy >= 0 && xx < work.cols && yy < work.rows) { inFrame++; sum += gray.ucharPtr(yy, xx)[0]; }
+            if (xx >= 0 && yy >= 0 && xx < work.cols && yy < work.rows) {
+              const v = gray.ucharPtr(yy, xx)[0];
+              inFrame++; sum += v;
+              // Narrow window (|l|≤L/3) excludes pip rows — use it to check
+              // half-brightness symmetry. A real bar has both halves equally
+              // bright; a bar at a tile's short edge has one dark (background) half.
+              if (Math.abs(l) <= hw) { if (l <= 0) { sH1 += v; nH1++; } else { sH2 += v; nH2++; } }
+            }
           }
         }
         const meanB = inFrame ? sum / inFrame : 0;
         if (meanB < 150 || inFrame / n < 0.9) continue;
+        const mH1 = nH1 ? sH1/nH1 : 0, mH2 = nH2 ? sH2/nH2 : 0;
+        if (mH1 > 0 && mH2 > 0 && Math.max(mH1,mH2)/Math.min(mH1,mH2) > 1.5) continue;
         // Use edge-refined corners if found, otherwise fall back to 2:1 model.
         const ptsOut = (hlEdge !== L) ? [[-hs, -hlEdge], [hs, -hlEdge], [hs, hlEdge], [-hs, hlEdge]].map(([s, l]) =>
           ({ x: cx + s * ux + l * px, y: cy + s * uy + l * py })) : pts;
