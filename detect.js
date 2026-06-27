@@ -1360,6 +1360,10 @@
       // A 7-pip half always has its centre cell filled. If centre is empty the
       // extra pip is a false positive on what is really a 6-pip half.
       if (count === 7 && !hasCenterPip(winBin, pipR)) return 6;
+      // A 2-pip half has pips at diagonal corners — centre is always empty.
+      // If centre IS occupied the single real pip was split or a noise blob
+      // was added; correct to 1.
+      if (count === 2 && hasCenterPip(winBin, pipR)) return 1;
       return count;
     } finally {
       inner.delete();
