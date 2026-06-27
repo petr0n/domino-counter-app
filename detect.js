@@ -1364,12 +1364,16 @@
       const winBin = cA >= cB ? ta : tb;
       // Even counts 4/6/8 have no centre pip in the 3×3 grid. If the centre IS
       // occupied the contour counter overcounted by 1 — correct it here.
-      if (count >= 4 && count <= 10 && count % 2 === 0) {
+      // 10 is 4×3 grid (different layout) — excluded from this check.
+      if (count >= 4 && count <= 8 && count % 2 === 0) {
         if (hasCenterPip(winBin, pipR)) return count - 1;
       }
       // A 7-pip half always has its centre cell filled. If centre is empty the
       // extra pip is a false positive on what is really a 6-pip half.
       if (count === 7 && !hasCenterPip(winBin, pipR)) return 6;
+      // An 11-pip half (4×3 grid) always has a centre pip in its middle row.
+      // If centre is empty the count is overcounting a 10-pip half.
+      if (count === 11 && !hasCenterPip(winBin, pipR)) return 10;
       // A 2-pip half has pips at diagonal corners — centre is always empty.
       // If centre IS occupied the single real pip was split or a noise blob
       // was added; correct to 1.
