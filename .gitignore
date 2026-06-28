@@ -5,3 +5,4 @@ eval/crop_*.jpg
 eval/sessions/
 eval/scan-log.json
 docs/
+eval/corpus_photos/
