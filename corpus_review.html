@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<!-- Corpus labeling UI (dev only). Served by log-server.cjs over the tunnel.
+     Shows each corpus photo + my browser-faithful scan in editable boxes; Save
+     writes ground truth to eval/corpus_truth.json. NOT shipped. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Corpus Labeling</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0f0f0f; color:#f0f0f0; font-family:system-ui,sans-serif; padding:14px; }
+  h1 { font-size:1.1rem; margin:0 0 4px; }
+  .bar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }
+  .prog { font-size:0.85rem; color:#9cf; }
+  img { width:100%; border-radius:10px; display:block; background:#222; }
+  .status { font-size:0.8rem; color:#888; margin:8px 0; min-height:1em; }
+  .tiles { margin:8px 0; }
+  .tile { display:flex; align-items:center; gap:8px; margin:6px 0; background:#1c1c1c; border-radius:8px; padding:8px 10px; }
+  .tile .thumb { width:84px; height:auto; border-radius:6px; background:#000; flex:0 0 auto; }
+  .tile .thumb.none { width:84px; height:42px; display:flex; align-items:center; justify-content:center;
+                      color:#555; font-size:0.7rem; border:1px dashed #333; }
+  .tile .lbl { color:#777; font-size:0.8rem; width:40px; }
+  .tile input { width:56px; font-size:1.3rem; text-align:center; background:#000; color:#fff;
+                border:1px solid #333; border-radius:6px; padding:6px 0; }
+  .tile .sep { color:#555; font-size:1.3rem; }
+  .tile .rm { margin-left:auto; background:#3a1414; color:#f88; border:none; border-radius:6px;
+              font-size:1.1rem; width:34px; height:34px; }
+  .add { width:100%; background:#14241c; color:#7f7; border:1px dashed #2a5; border-radius:8px; padding:10px; font-size:0.95rem; }
+  .nav { display:flex; gap:8px; margin-top:12px; }
+  button.act { flex:1; border:none; border-radius:10px; padding:14px; font-size:1rem; font-weight:600; }
+  .save { background:#6d28d9; color:#fff; }
+  .skip { background:#222; color:#bbb; flex:0 0 90px; }
+  .jump { background:#222; color:#bbb; border:1px solid #333; border-radius:8px; padding:6px; font-size:0.85rem; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Corpus Labeling</h1>
+  <span class="prog" id="prog">…</span>
+</div>
+<img id="photo" alt="">
+<div class="status" id="status"></div>
+<div class="tiles" id="tiles"></div>
+<button class="add" id="addBtn">＋ add missed tile</button>
+<div class="nav">
+  <button class="act skip" id="prevBtn">‹ prev</button>
+  <button class="act save" id="saveBtn">Save &amp; next ›</button>
+</div>
+<div style="margin-top:10px;text-align:center">
+  <select class="jump" id="jump"></select>
+</div>
+
+<script src="/detect.js?v=corpus"></script>
+<script>
+const $ = id => document.getElementById(id);
+let photos = [], idx = 0, myScan = [];
+
+async function load() {
+  photos = await (await fetch('/corpus/list')).json();
+  if (!photos.length) { $('status').textContent = 'No photos in eval/corpus_photos/ yet.'; return; }
+  $('jump').innerHTML = photos.map((p,i)=>`<option value="${i}">${i+1}. ${p.name}${p.truth?' ✓':''}</option>`).join('');
+  // Resume at first unlabeled.
+  const firstUnlabeled = photos.findIndex(p => !p.truth);
+  idx = firstUnlabeled < 0 ? 0 : firstUnlabeled;
+  await show();
+}
+
+// Build rows from my scan (each tile keeps its crop thumbnail); if truth already
+// exists, override the pip values per row. Extra truth rows (manually added
+// tiles) get a placeholder thumb.
+function rowsFrom(scanTiles, truth) {
+  $('tiles').innerHTML = '';
+  const n = Math.max(scanTiles.length, truth ? truth.length : 0);
+  for (let i = 0; i < n; i++) {
+    const st = scanTiles[i], tv = truth ? truth[i] : null;
+    const l = tv ? tv[0] : (st ? st.left : 0);
+    const r = tv ? tv[1] : (st ? st.right : 0);
+    addRow(l, r, st ? st.dataUrl : null);
+  }
+  if (!n) addRow(0, 0, null);
+}
+function addRow(l, r, thumb) {
+  const div = document.createElement('div');
+  div.className = 'tile';
+  const thumbHtml = thumb ? `<img class="thumb" src="${thumb}">` : `<span class="thumb none">added</span>`;
+  div.innerHTML = `${thumbHtml}
+    <span class="lbl"></span>
+    <input type="number" min="0" max="12" value="${l}">
+    <span class="sep">|</span>
+    <input type="number" min="0" max="12" value="${r}">
+    <button class="rm">✕</button>`;
+  div.querySelector('.rm').onclick = () => { div.remove(); renumber(); };
+  $('tiles').appendChild(div);
+  renumber();
+}
+function renumber() {
+  [...$('tiles').children].forEach((d,i)=> d.querySelector('.lbl').textContent = 'Tile '+(i+1));
+}
+function gatherTiles() {
+  return [...$('tiles').children].map(d => {
+    const [a,b] = d.querySelectorAll('input');
+    return [Math.max(0,Math.min(12,+a.value||0)), Math.max(0,Math.min(12,+b.value||0))];
+  });
+}
+
+// Browser-faithful scan — identical path to the app / browser_eval.
+async function scan(img) {
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+  canvas.getContext('2d').drawImage(img, 0, 0);
+  if (Math.max(canvas.width, canvas.height) > 1500) {
+    const cw=canvas.width, ch=canvas.height;
+    const x1=Math.round(cw*0.08), y1=Math.round(ch*0.08), w=Math.round(cw*0.84), h=Math.round(ch*0.84);
+    const d=canvas.getContext('2d').getImageData(x1,y1,w,h);
+    canvas.width=w; canvas.height=h; canvas.getContext('2d').putImageData(d,0,0);
+  }
+  DominoCV.preprocess(canvas);
+  await DominoCV.loadCV();
+  return DominoCV.scanCanvasDebug(canvas); // [{left,right,dataUrl}] — crop per tile
+}
+
+async function show() {
+  const p = photos[idx];
+  $('jump').value = idx;
+  $('prog').textContent = `${idx+1}/${photos.length} · ${photos.filter(x=>x.truth).length} labeled`;
+  $('status').textContent = 'loading…';
+  $('tiles').innerHTML = '';
+  const img = $('photo');
+  await new Promise(res => { img.onload = res; img.src = '/eval/corpus_photos/' + encodeURIComponent(p.name) + '?t=' + Date.now(); });
+  $('status').textContent = 'scanning…';
+  // Always scan to get per-tile crops; if already labeled, prefill values from truth.
+  try {
+    myScan = await scan(img);
+    rowsFrom(myScan, p.truth);
+    $('status').textContent = p.truth
+      ? `labeled — ${p.truth.length} tiles, edit if needed`
+      : `my scan: ${myScan.length} tiles — fix anything wrong`;
+  } catch (e) { myScan = []; rowsFrom([], p.truth); $('status').textContent = 'scan failed: ' + e.message; }
+}
+
+async function save() {
+  const p = photos[idx];
+  const truth = gatherTiles();
+  await fetch('/corpus/truth', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name: p.name, mine: myScan.map(t=>[t.left,t.right]), truth }) });
+  p.truth = truth; p.mine = myScan.map(t=>[t.left,t.right]);
+  $('jump').options[idx].text = `${idx+1}. ${p.name} ✓`;
+  if (idx < photos.length-1) { idx++; await show(); }
+  else { $('status').textContent = 'All photos labeled. 🎉'; $('prog').textContent = `${photos.filter(x=>x.truth).length}/${photos.length} labeled`; }
+}
+
+$('addBtn').onclick = () => addRow(0,0);
+$('saveBtn').onclick = save;
+$('prevBtn').onclick = async () => { if (idx>0){ idx--; await show(); } };
+$('jump').onchange = async e => { idx = +e.target.value; await show(); };
+load();
+</script>
+</body>
+</html>

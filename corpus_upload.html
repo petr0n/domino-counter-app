@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<!-- Bulk photo upload for the corpus (dev only). Pick all photos from the phone;
+     each is sent to log-server → eval/corpus_photos/. NOT shipped. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corpus Upload</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0f0f0f; color:#f0f0f0; font-family:system-ui,sans-serif; padding:20px; }
+  h1 { font-size:1.2rem; }
+  p { color:#aaa; line-height:1.5; }
+  label.pick { display:block; background:#6d28d9; color:#fff; text-align:center; padding:18px;
+               border-radius:12px; font-size:1.05rem; font-weight:600; margin:16px 0; }
+  input[type=file] { display:none; }
+  .prog { font-size:1.4rem; margin:12px 0; }
+  .bar { height:14px; background:#222; border-radius:8px; overflow:hidden; }
+  .fill { height:100%; width:0; background:#6d28d9; transition:width .15s; }
+  .done { margin-top:18px; }
+  .done a { display:block; background:#14241c; color:#7f7; text-align:center; padding:16px;
+            border-radius:12px; text-decoration:none; font-weight:600; }
+  .err { color:#f88; font-size:0.85rem; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Upload corpus photos</h1>
+<p>Tap below, then select <b>all</b> your domino photos from the folder. They upload straight into the corpus — you can pick all 49 at once.</p>
+<label class="pick">📷 Choose photos
+  <input type="file" id="files" accept="image/*" multiple>
+</label>
+<div class="prog" id="prog"></div>
+<div class="bar"><div class="fill" id="fill"></div></div>
+<div class="err" id="err"></div>
+<div class="done" id="done"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const readAsDataUrl = f => new Promise((res, rej) => {
+  const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f);
+});
+
+$('files').addEventListener('change', async e => {
+  const files = [...e.target.files];
+  if (!files.length) return;
+  let ok = 0, total = files.length, errs = [];
+  $('done').innerHTML = '';
+  for (let i = 0; i < total; i++) {
+    const f = files[i];
+    $('prog').textContent = `Uploading ${i+1} / ${total}…`;
+    try {
+      const dataUrl = await readAsDataUrl(f);
+      const r = await fetch('/corpus/upload', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name: f.name || ('photo_'+i+'.jpg'), dataUrl }) });
+      if (!r.ok) throw new Error(await r.text());
+      ok++;
+    } catch (err) { errs.push(`${f.name}: ${err.message}`); }
+    $('fill').style.width = Math.round((i+1)/total*100) + '%';
+  }
+  $('prog').textContent = `Uploaded ${ok} / ${total}.`;
+  if (errs.length) $('err').textContent = errs.join('\n');
+  $('done').innerHTML = '<a href="/corpus_review.html">Start labeling →</a>';
+});
+</script>
+</body>
+</html>

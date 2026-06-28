@@ -13,6 +13,8 @@ const SESSION_ID = Date.now().toString(36) + Math.random().toString(36).slice(2,
 const PHOTOS = path.join(EVAL, 'sessions', SESSION_ID, 'photos');
 const CROPS  = path.join(EVAL, 'sessions', SESSION_ID, 'crops');
 const LOG    = path.join(EVAL, 'scan-log.json');
+const CORPUS_DIR   = path.join(EVAL, 'corpus_photos');
+const CORPUS_TRUTH = path.join(EVAL, 'corpus_truth.json');
 const PORT   = 8766;
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
   '.json':'application/json', '.jpg':'image/jpeg', '.jpeg':'image/jpeg',
@@ -42,6 +44,55 @@ http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
+
+  // Corpus labeling: list photos + existing truth, and persist corrections.
+  if (req.method === 'GET' && req.url === '/corpus/list') {
+    const truth = fs.existsSync(CORPUS_TRUTH) ? JSON.parse(fs.readFileSync(CORPUS_TRUTH, 'utf8') || '{}') : {};
+    const photos = fs.existsSync(CORPUS_DIR)
+      ? fs.readdirSync(CORPUS_DIR).filter(f => /\.(jpe?g|png)$/i.test(f)).sort()
+          .map(name => ({ name, mine: (truth[name] || {}).mine || null, truth: (truth[name] || {}).truth || null }))
+      : [];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(photos));
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/corpus/upload') {
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', () => {
+      try {
+        const { name, dataUrl } = JSON.parse(body);
+        if (!name || !dataUrl) { res.writeHead(400); res.end('name+dataUrl required'); return; }
+        if (!fs.existsSync(CORPUS_DIR)) fs.mkdirSync(CORPUS_DIR, { recursive: true });
+        const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '');
+        const b64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+        fs.writeFileSync(path.join(CORPUS_DIR, safe), Buffer.from(b64, 'base64'));
+        const n = fs.readdirSync(CORPUS_DIR).filter(f => /\.(jpe?g|png)$/i.test(f)).length;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, saved: safe, total: n }));
+      } catch (e) { res.writeHead(400); res.end(e.message); }
+    });
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/corpus/truth') {
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', () => {
+      try {
+        const { name, mine, truth } = JSON.parse(body);
+        if (!name) { res.writeHead(400); res.end('name required'); return; }
+        const all = fs.existsSync(CORPUS_TRUTH) ? JSON.parse(fs.readFileSync(CORPUS_TRUTH, 'utf8') || '{}') : {};
+        // Freeze 'mine' (my baseline scan) on first save; only update 'truth' after.
+        all[name] = { mine: (all[name] && all[name].mine) || mine || [], truth: truth || [] };
+        fs.writeFileSync(CORPUS_TRUTH, JSON.stringify(all, null, 2));
+        const labeled = Object.values(all).filter(e => e.truth).length;
+        console.log('[corpus]', name, '->', JSON.stringify(truth), `(${labeled} labeled)`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, labeled }));
+      } catch (e) { res.writeHead(400); res.end(e.message); }
+    });
+    return;
+  }
 
   if (req.method === 'POST' && req.url === '/log') {
     let body = '';
