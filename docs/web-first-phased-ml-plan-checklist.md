@@ -1,226 +1,173 @@
 # Web-First Domino ML Plan — Operator Checklist (Execution Runbook)
 
-**Date:** 2026-06-29  
+**Date:** 2026-06-30  
 **Companion doc:** `docs/web-first-phased-ml-plan.md`  
-**Scope:** Execute Phase 1 (web-only) with strict focus on tile detection + pip reading.  
-**Rule:** No native mobile app work until Phase 1 acceptance gates pass.
+**Scope:** Execute Phase 1 with strict focus on tile detection + pip reading first, while preserving a lightweight path for later round/game UX.  
+**Rule:** No architecture or multiplayer expansion that distracts from scan accuracy until the scanner acceptance gates are met.
 
 ---
 
 ## 0) Operating Rules (Must Hold)
 
-- [ ] Web app only (mobile-first in browser)
-- [ ] No paid AI API usage
-- [ ] Keep stack minimal and low-cost
-- [ ] Prioritize model/data quality over framework expansion
-- [ ] Do not start native app tasks before lock criteria pass twice consecutively
+- [ ] Tile detection accuracy is the top priority
+- [ ] Pip-reading accuracy is the top priority
+- [ ] Nothing ships that reduces scanner reliability
+- [ ] Keep implementation simple; avoid unnecessary complexity
+- [ ] Use low-cost, local-first development paths where possible
+- [ ] Do not spend major effort on multiplayer/backend architecture until scanner quality is proven
+- [ ] Quick Scan remains available as a testing/validation surface during Phase 1
 
 ---
 
-## 1) Repo Setup Checklist
+## 1) Phase 1 Product Direction
 
-## 1.1 Directory structure
-- [ ] Create top-level app directories:
-  - [ ] `web/` (React + TS + Vite)
-  - [ ] `api/` (FastAPI inference service)
-  - [ ] `ml/` (training + exports + datasets metadata)
-  - [ ] `docs/` (plans, reports)
-- [ ] Add root `README.md` with setup steps
-- [ ] Add `.gitignore` covering Python envs, node_modules, model artifacts, temp images
-
-## 1.2 Environment files
-- [ ] Add `.env.example` for `web/`
-- [ ] Add `.env.example` for `api/`
-- [ ] Define required variables clearly (host URLs, optional auth key, model path)
+- [ ] Ground-up rewrite
+- [ ] Archived-app features are not carried forward unless explicitly reintroduced
+- [ ] Catalog is out of scope
+- [ ] Auth/accounts are out of scope
+- [ ] localStorage now; Postgres later
+- [ ] Multiplayer syncing is deferred until after scanner quality is proven
 
 ---
 
-## 2) Web App Execution Checklist (React + TS + Vite)
+## 2) Core Scanner Requirements
 
-## 2.1 Bootstrap
-- [ ] Initialize React + TS + Vite app in `web/`
-- [ ] Confirm local run command works
-- [ ] Add basic mobile-first layout shell
+### 2.1 Success definition
+- [ ] Detect all tiles present in an image as reliably as possible
+- [ ] Correctly read the pip values for each detected tile as reliably as possible
+- [ ] Reach as close to 100% combined tile detection + pip reading accuracy as practical
 
-## 2.2 MVP UI (must-have only)
-- [ ] File upload input
-- [ ] Camera capture path (if available in browser)
-- [ ] Preview selected image
-- [ ] “Analyze” action button
-- [ ] Results panel for detected tiles
-- [ ] Error and retry states
+### 2.2 Behavior under uncertainty
+- [ ] Show best guesses when uncertain
+- [ ] Mark uncertain results for user review
+- [ ] Use confidence labels: `high`, `medium`, `low`
+- [ ] Avoid numeric confidence UI unless it becomes necessary later
 
-## 2.3 Overlay rendering
-- [ ] Render image in canvas or container with known dimensions
-- [ ] Draw returned bounding boxes
-- [ ] Draw value labels (`left|right`) near each bbox
-- [ ] Handle empty detections gracefully
-
-## 2.4 UX quality bar
-- [ ] Touch-friendly controls
-- [ ] Clear loading indicator while inferencing
-- [ ] Confidence warning message for low-confidence scans
-- [ ] Retake/try-again flow is obvious
+### 2.3 Correction workflow
+- [ ] Scanner results must be editable before final confirmation
+- [ ] User can fix incorrect tile values
+- [ ] User can remove incorrect detections
+- [ ] Correction UX must stay simple and fast
 
 ---
 
-## 3) API Service Checklist (FastAPI)
+## 3) Quick Scan (Required in Phase 1)
 
-## 3.1 Bootstrap
-- [ ] Create FastAPI app in `api/`
-- [ ] Add health endpoint `GET /health`
-- [ ] Add inference endpoint `POST /infer` (stub first)
-- [ ] Add CORS settings for web app origin(s)
+### 3.1 Purpose
+- [ ] Provide a direct way to test scanner progress
+- [ ] Confirm the scan model works end-to-end
+- [ ] Serve as a playground for UX/UI decisions
+- [ ] Support repeatable validation during implementation
 
-## 3.2 Inference contract
-- [ ] `POST /infer` accepts image file upload
-- [ ] Returns JSON with:
-  - [ ] `tiles[].bbox`
-  - [ ] `tiles[].value`
-  - [ ] `tiles[].confidence`
-  - [ ] `latency_ms`
-- [ ] Validate malformed inputs with clean error responses
+### 3.2 Position in product
+- [ ] Quick Scan is accessible in the app for now
+- [ ] It is primarily a testing/validation surface during Phase 1
+- [ ] It may be hidden or deprioritized later
 
-## 3.3 Runtime concerns
-- [ ] Add request size limit (protect from huge uploads)
-- [ ] Add basic timeout handling
-- [ ] Add minimal structured logs (request id, latency, tile count)
-
----
-
-## 4) Model Pipeline Checklist (YOLOv8n Baseline First)
-
-## 4.1 Dataset prep
-- [ ] Define annotation schema for baseline
-- [ ] Collect initial diverse sample set (lighting, angle, surfaces)
-- [ ] Split into train/val/test with fixed seed
-- [ ] Document dataset version in `ml/`
-
-## 4.2 Baseline training
-- [ ] Train YOLOv8n baseline detector
-- [ ] Save model artifact with version tag
-- [ ] Record training config/hyperparameters
-- [ ] Record validation metrics
-
-## 4.3 Baseline inference integration
-- [ ] Load baseline model in API
-- [ ] Run detector on uploaded images
-- [ ] Return tile bboxes and confidence
-- [ ] Verify with manual samples from phone photos
+### 3.3 Starting feature baseline
+Carry forward the current `quick.html` feature set as the planning baseline:
+- [ ] Camera-based scan flow
+- [ ] Photo upload / load photo
+- [ ] Multi-tile detection from a single image
+- [ ] Review detected tiles before confirming
+- [ ] Edit left/right values per detected tile
+- [ ] Remove incorrect detected tiles
+- [ ] Show per-tile totals
+- [ ] Show aggregate total
+- [ ] Keep a visible scanned-tile history/results area
+- [ ] Reset / clear all
+- [ ] Provide scan guidance/status messaging
 
 ---
 
-## 5) Pip/Value Reading Checklist
+## 4) Scanner Evaluation (Explicit Feature)
 
-## 5.1 Reader implementation
-- [ ] Implement initial value-reading stage
-- [ ] Integrate with detector outputs
-- [ ] Return predicted tile values in API response
+### 4.1 Available evaluation set
+- [ ] Use the 49-photo evaluation set provided by the user
+- [ ] Treat it as covering the full 91-tile double-12 set
+- [ ] Use it to guide scanner iteration and regression testing
 
-## 5.2 Orientation and confidence handling
-- [ ] Add orientation-safe handling where needed
-- [ ] Ensure confidence surfaced to frontend
-- [ ] Flag uncertain reads for retry guidance
+### 4.2 Expected results source of truth
+- [ ] Store expected results in code/JSON
+- [ ] Keep the dataset easy to revise as learning improves
+- [ ] Make validation repeatable and comparable across revisions
 
-## 5.3 Validation
-- [ ] Build test subset specifically for reading accuracy
-- [ ] Measure exact tile read accuracy
-- [ ] Log frequent error patterns (e.g., glare, blur, overlap)
-
----
-
-## 6) Evaluation & Metrics Checklist
-
-## 6.1 Required metrics
-- [ ] Tile detection recall
-- [ ] Tile detection precision
-- [ ] Exact tile-read accuracy
-- [ ] Latency (p50, optionally p95)
-
-## 6.2 Scenario slices
-- [ ] Low light
-- [ ] Glare/reflections
-- [ ] Angle/perspective distortion
-- [ ] Partial overlap/clutter
-
-## 6.3 Reporting format
-- [ ] Maintain a versioned evaluation report per model revision
-- [ ] Include:
-  - [ ] model version
-  - [ ] dataset version
-  - [ ] metric table
-  - [ ] pass/fail vs gate thresholds
-  - [ ] observed failure modes
+### 4.3 Evaluation needs
+- [ ] Compare detected vs expected tiles for known test images
+- [ ] Highlight missed tiles
+- [ ] Highlight incorrect tile reads
+- [ ] Highlight false-positive/extra detections
+- [ ] Make Quick Scan useful for regression testing, not just manual play
 
 ---
 
-## 7) Acceptance Gate Checklist (Must Pass Twice Consecutively)
+## 5) Lightweight Round/Game Flow (Secondary to Scanner)
 
-- [ ] Detection recall >= 95%
-- [ ] Exact tile-read accuracy >= agreed threshold (target 90–95%)
-- [ ] Median end-to-end latency <= 500 ms/photo (deployed environment)
-- [ ] Stable behavior across required scenario slices
-- [ ] Run #1 passes all gates
-- [ ] Run #2 passes all gates (consecutive)
+### 5.1 Scope guardrail
+- [ ] Implement only the minimum round/game flow needed while scanner work is active
+- [ ] Do not let game architecture distract from scan accuracy work
 
-**If any fail:** remain in Phase 1 and continue iteration loop.
+### 5.2 Player identity
+- [ ] Players use typed display names
+- [ ] Player names are remembered locally on that device
 
----
+### 5.3 Round model
+- [ ] Support numbered rounds
+- [ ] Each player must submit something each round
+- [ ] Exactly one winner per round
+- [ ] Winner submits `I won`
+- [ ] Non-winners submit via `Scan my tiles`
+- [ ] Show winner and all player scores after round completion
 
-## 8) Iteration Loop Checklist (When Gates Fail)
+### 5.4 Round-end scan UX
+- [ ] Non-winner taps `Scan my tiles`
+- [ ] One full-hand scan attempt is the intended flow
+- [ ] User reviews detected result
+- [ ] User edits/fixes scanned values if needed
+- [ ] User submits corrected final hand
+- [ ] No partial multi-scan merge workflow in Phase 1
 
-- [ ] Collect new hard-case examples from real usage
-- [ ] Label and add to training set
-- [ ] Retrain and version model
-- [ ] Re-run full evaluation suite
-- [ ] Compare with previous version (no blind promotion)
-- [ ] Promote only if net improvement and no major regressions
+### 5.5 Editing and locking
+- [ ] A player can edit their own submission until the round is finalized
+- [ ] A round auto-finalizes when exactly one winner exists and all non-winners have submitted
+- [ ] No manual finalize step is required
 
----
-
-## 9) Deployment Checklist (Low-Cost First)
-
-## 9.1 Web
-- [ ] Deploy `web/` to free/static host
-- [ ] Confirm mobile browser functionality in production URL
-
-## 9.2 API
-- [ ] Deploy `api/` to low-cost container host
-- [ ] Configure environment variables
-- [ ] Confirm `/health` and `/infer` in deployed environment
-
-## 9.3 Cost controls
-- [ ] Enforce input resize/compression policy
-- [ ] Use CPU inference initially
-- [ ] Monitor request volume and latency before upgrading infra
+### 5.6 After finalization
+- [ ] Show completed round results
+- [ ] Require explicit tap on `Start Next Round`
+- [ ] Any player can start the next round
 
 ---
 
-## 10) Operational Readiness Checklist
+## 6) Storage and Architecture Direction
 
-- [ ] Add simple runbook: start, deploy, rollback
-- [ ] Add known-issues section for common failure cases
-- [ ] Add troubleshooting steps for camera permissions and upload errors
-- [ ] Define who approves model promotion to production
+### 6.1 Near-term
+- [ ] Use localStorage in Phase 1
+- [ ] Treat create/join game as local-first prototype behavior for now
 
----
-
-## 11) Stop/No-Go Conditions
-
-If any of these occur, pause new feature work and stabilize:
-- [ ] Repeated production inference failures
-- [ ] Significant regression in detection or reading accuracy
-- [ ] Latency exceeds acceptable threshold for majority of users
-- [ ] Scope creep into native app before gate pass
+### 6.2 Later
+- [ ] Plan for Postgres-backed persistence later
+- [ ] Plan true multi-device synchronization later
+- [ ] Do not over-design backend decisions before scanner quality is proven
 
 ---
 
-## 12) Native App Deferral Check (Explicit)
+## 7) Acceptance Gates (Scanner First)
 
-Before creating any native-app issue/task, confirm all are true:
-- [ ] Two consecutive acceptance runs passed
-- [ ] Web app is stable for target usage
-- [ ] Model performance is consistent in real-world samples
-- [ ] Team agrees ROI justifies native phase start
+- [ ] Tile detection recall reaches agreed target
+- [ ] Exact tile-read accuracy reaches agreed target
+- [ ] Combined scanner behavior is stable across the provided test-photo set
+- [ ] Uncertain results are clearly surfaced and easy to correct
+- [ ] No regression is accepted without measurement
 
-If any unchecked: **native app remains out of scope**.
+**If any fail:** remain focused on scanner iteration and do not expand scope.
+
+---
+
+## 8) Iteration Rules
+
+- [ ] Use evaluation data to drive changes
+- [ ] Prefer fewer, better-informed iteration loops over trial-and-error churn
+- [ ] Keep files and changes small where practical
+- [ ] Preserve or improve scanner accuracy with every accepted change
+- [ ] Avoid spending effort on features that do not improve detection reliability, pip-reading reliability, or scanner validation
