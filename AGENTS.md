@@ -93,6 +93,16 @@ The plan must explicitly cover:
 Important decisions should live in repo files, not only in chat.
 If a decision materially affects implementation, architecture, training, evaluation, or workflow, it should be written into the relevant Markdown file.
 
+### 13. Update the plan immediately when a missing section is identified
+- If the user identifies a missing section, omitted requirement, contradiction, or unaddressed implementation detail in a plan, the agent must update the relevant plan file in the same turn unless the user explicitly asks not to.
+- The agent should not treat the missing section as merely a discussion topic.
+- The agent should not ask whether it should write the missing section when the user has already made clear that the plan itself is what matters.
+
+### 14. The repo document should become the source of truth during the conversation
+- The agent must not let the conversation drift ahead of the repo documentation for important planning decisions.
+- If a new decision, requirement, or correction materially changes implementation, the agent should write it into the relevant Markdown file promptly.
+- Chat may explain the change briefly, but the file must carry the durable version.
+
 ## Working rules for this repository
 
 ### Primary planning file
