@@ -1,9 +1,9 @@
-# Domino Scanner Plan and Decision Log
+# Domino Scanner Phase 1 Plan, Spec, and Decision Log
 
 ## Purpose
 Phase 1 should prioritize a reliable, improvable domino-scanning workflow before deeply wiring scanner behavior into the rest of the app.
 
-This document records the agreed scanner/product decisions so they are not lost between sessions and can be reviewed by other agents.
+This document records the agreed scanner, product, evaluation, storage, and review decisions so they are not lost between sessions and can be reviewed by other agents.
 
 ## Product strategy
 
@@ -172,6 +172,425 @@ This format is:
 - easy to diff
 - easy to validate
 - reusable in future evaluation scripts
+
+## Formal requirements/spec draft
+
+### Project focus
+Phase 1 should prioritize a reliable, improvable domino-scanning workflow before deeply wiring scanner behavior into the rest of the app.
+
+### Scanner product strategy
+- **Quick Scan** is the primary experimentation and validation surface.
+- **Round-end Scan** may lag behind initially and does not need to stay tightly synced with Quick Scan at first.
+- Once Quick Scan is stable and accurate, the rest of the app should be wired to use the proven scanner pipeline.
+- Long term, Quick Scan and Round-end Scan should converge on the same underlying scanner logic/model.
+
+### Evaluation dataset requirements
+Phase 1 should include a **49-photo evaluation set**.
+
+Each evaluation image should support:
+- tile identity annotations
+- tile bounding-box annotations
+- tile orientation annotations
+
+Bounding boxes should be **accurate annotation-grade boxes**.
+
+Orientation annotations should support:
+- horizontal vs vertical classification
+- approximate/full rotation angle
+- enough information to determine which half is first vs second
+
+### Tile value representation requirements
+- Primary notation should be **slash-separated strings**, e.g. `2/12`, `9/2`.
+- Tile order is orientation-aware:
+  - **left/right** when horizontal
+  - **top/bottom** when vertical
+- Observed order should be preserved in scan review and annotation contexts.
+
+### Evaluation semantics requirements
+- A reversed tile such as `12/2` should count as the same tile identity as `2/12`.
+- Orientation/order should be scored separately from identity.
+- Phase 1 evaluation should report both:
+  - tile identity accuracy
+  - orientation/order accuracy
+
+### Review-mode display requirements
+- Review UI should preserve the observed order exactly as seen in the image.
+- Review UI should not normalize the tile to a canonical sorted order for display.
+
+### Quick Scan history requirements
+Quick Scan history should persist across app reloads and support:
+- reviewing earlier scans
+- comparing scan outcomes over time
+- identifying recurring failure cases
+- supporting future model-improvement workflows
+
+Each saved Quick Scan history record should include:
+- image reference
+- full original image
+- detections
+- user corrections
+- confidence data
+- timestamp
+
+### Local storage requirements
+Phase 1 should use split local persistence.
+
+Use IndexedDB for:
+- full original images
+- scan history entries
+- detections
+- user corrections
+- confidence data
+- timestamps
+- richer JSON records
+
+Use localStorage for:
+- lightweight settings
+- preferences
+- app flags
+- optional recent scan pointers
+
+### Labeling requirements
+Each saved scan may optionally be marked as:
+- useful for training/improvement
+- bad/noisy example
+- favorite/important
+
+### Post-scan correction requirements
+After a scan, the app should:
+- show each detected tile as its own thumbnail
+- show detected values in editable inputs
+- let the user correct values directly
+- provide a **Not Tile** action/button for detections that are not actually a valid tile
+- allow the user to add missing tiles manually
+
+Invalid detections may also tolerate placeholder values such as `.` and should ideally normalize internally to `status: "not_tile"`.
+
+### Manual add requirements
+When the user adds a missing tile manually, the preferred Phase 1 flow is:
+- a single text entry in slash notation, e.g. `2/12`
+
+### Detected-tile edit requirements
+When the user edits an existing detected tile:
+- use **two separate numeric inputs**
+- map these to left/right or top/bottom depending on orientation
+
+### Annotation storage requirements
+For the 49-photo evaluation set, source-of-truth annotations should live as:
+- **JSON files in the repo**
+
+## Data model draft
+
+This is a planning schema draft, not final production code.
+
+### Tile concepts
+```json
+{
+  "displayNotation": "slash",
+  "examples": ["2/12", "9/2"],
+  "orderMeaning": {
+    "horizontal": ["left", "right"],
+    "vertical": ["top", "bottom"]
+  },
+  "identityComparison": "unordered-pair",
+  "reviewDisplay": "preserve-observed-order",
+  "evaluation": {
+    "identityAccuracy": true,
+    "orientationOrderAccuracy": true
+  }
+}
+```
+
+### Detected tile record
+```json
+{
+  "id": "det_001",
+  "status": "detected",
+  "source": "model",
+  "thumbnailImageId": "img_crop_001",
+  "bbox": {
+    "x": 120,
+    "y": 240,
+    "width": 88,
+    "height": 176
+  },
+  "orientation": {
+    "layout": "vertical",
+    "rotationDegrees": 91,
+    "orderedSidesMeaning": ["top", "bottom"]
+  },
+  "predicted": {
+    "first": 2,
+    "second": 12,
+    "display": "2/12",
+    "confidence": 0.93
+  },
+  "userCorrection": {
+    "first": 2,
+    "second": 12,
+    "display": "2/12",
+    "status": "confirmed"
+  },
+  "reviewFlags": {
+    "notTile": false,
+    "manuallyAdded": false
+  }
+}
+```
+
+### Not-tile / invalid detection example
+```json
+{
+  "id": "det_014",
+  "status": "not_tile",
+  "source": "model",
+  "thumbnailImageId": "img_crop_014",
+  "bbox": {
+    "x": 510,
+    "y": 190,
+    "width": 94,
+    "height": 180
+  },
+  "orientation": {
+    "layout": "vertical",
+    "rotationDegrees": 270,
+    "orderedSidesMeaning": ["top", "bottom"]
+  },
+  "predicted": {
+    "first": 8,
+    "second": 11,
+    "display": "8/11",
+    "confidence": 0.41
+  },
+  "userCorrection": {
+    "status": "not_tile",
+    "display": "."
+  },
+  "reviewFlags": {
+    "notTile": true,
+    "manuallyAdded": false
+  }
+}
+```
+
+### Manually added missing tile example
+```json
+{
+  "id": "manual_003",
+  "status": "confirmed",
+  "source": "manual",
+  "thumbnailImageId": null,
+  "bbox": null,
+  "orientation": null,
+  "predicted": null,
+  "userCorrection": {
+    "first": 9,
+    "second": 2,
+    "display": "9/2",
+    "status": "added"
+  },
+  "reviewFlags": {
+    "notTile": false,
+    "manuallyAdded": true
+  }
+}
+```
+
+### Quick Scan history record
+```json
+{
+  "scanId": "scan_2026_06_30_001",
+  "createdAt": "2026-06-30T18:42:11Z",
+  "sourceImage": {
+    "imageId": "img_full_001",
+    "storage": "indexeddb",
+    "mimeType": "image/jpeg",
+    "width": 3024,
+    "height": 4032
+  },
+  "scannerVersion": {
+    "pipeline": "quick-scan-v1",
+    "modelVersion": "model-0.1.0"
+  },
+  "detections": [
+    {
+      "id": "det_001",
+      "status": "detected"
+    },
+    {
+      "id": "det_014",
+      "status": "not_tile"
+    }
+  ],
+  "finalReviewedTiles": [
+    "2/12",
+    "9/2",
+    "0/0"
+  ],
+  "metrics": {
+    "detectionCount": 14,
+    "confirmedTileCount": 11,
+    "notTileCount": 3
+  },
+  "tags": {
+    "usefulForTraining": true,
+    "badExample": false,
+    "starred": true
+  },
+  "notes": "False positives on upside-down partial crops."
+}
+```
+
+### Local settings example
+```json
+{
+  "storageStrategy": {
+    "history": "indexeddb",
+    "settings": "localstorage"
+  },
+  "recentScanIds": [
+    "scan_2026_06_30_001",
+    "scan_2026_06_30_000"
+  ],
+  "preferences": {
+    "showConfidenceScores": true,
+    "defaultReviewSort": "scan-order"
+  }
+}
+```
+
+### Evaluation-image annotation file draft
+```json
+{
+  "imageId": "eval_017",
+  "imagePath": "evaluation/images/eval_017.jpg",
+  "imageWidth": 3024,
+  "imageHeight": 4032,
+  "tiles": [
+    {
+      "tileId": "tile_01",
+      "identity": {
+        "first": 2,
+        "second": 12,
+        "display": "2/12",
+        "unorderedKey": "2-12"
+      },
+      "observedOrder": {
+        "firstMeaning": "top",
+        "secondMeaning": "bottom"
+      },
+      "bbox": {
+        "x": 210,
+        "y": 388,
+        "width": 120,
+        "height": 232
+      },
+      "orientation": {
+        "layout": "vertical",
+        "rotationDegrees": 89
+      }
+    },
+    {
+      "tileId": "tile_02",
+      "identity": {
+        "first": 9,
+        "second": 2,
+        "display": "9/2",
+        "unorderedKey": "2-9"
+      },
+      "observedOrder": {
+        "firstMeaning": "left",
+        "secondMeaning": "right"
+      },
+      "bbox": {
+        "x": 470,
+        "y": 420,
+        "width": 210,
+        "height": 104
+      },
+      "orientation": {
+        "layout": "horizontal",
+        "rotationDegrees": 2
+      }
+    }
+  ]
+}
+```
+
+## Review checklist
+Use this checklist to pressure-test the plan rather than just approving it.
+
+### Product coherence
+- Does the Quick Scan-first strategy make sense?
+- Is it clear enough that Round-end Scan can lag behind until Quick Scan stabilizes?
+- Are we avoiding premature wiring of unreliable scanner behavior into the rest of the app?
+- Is the correction workflow realistic for phone use?
+
+### Tile semantics
+- Is the distinction between **tile identity** and **observed orientation/order** clear enough?
+- Is it correct to treat `2/12` and `12/2` as identity-equal but orientation-order-different?
+- Is slash notation the right user-facing standard?
+- Is the left/right vs top/bottom interpretation defined clearly enough?
+
+### Evaluation design
+- Is the 49-photo evaluation set enough for early benchmarking?
+- Are annotation-grade bounding boxes required, or is that too costly for Phase 1?
+- Is the orientation annotation detail appropriate?
+- Are the proposed metrics sufficient:
+  - tile identity accuracy
+  - orientation/order accuracy
+
+### Correction UX
+- Is thumbnail-per-detection review the right default?
+- Are two separate numeric inputs for editing existing detections the right choice?
+- Is single text slash input the right choice for manually adding missing tiles?
+- Should `.` be supported explicitly, or should the UI push all invalid cases into **Not Tile** only?
+- Does the plan need a separate delete/remove action distinct from **Not Tile**?
+
+### Data model sanity
+- Are the proposed detection objects too detailed, too sparse, or about right?
+- Should `status`, `reviewFlags`, and `userCorrection` be simplified?
+- Do we need both `display` and structured `first`/`second`, or is that redundant?
+- Should manual entries and detected entries share the exact same schema?
+- Is `unorderedKey` the right canonical identity helper?
+
+### Storage strategy
+- Is the IndexedDB/localStorage split the right Phase 1 design?
+- Is full-image retention necessary for model improvement, or too heavy?
+- Should thumbnails/crops be persisted separately, or generated on demand?
+- Are there privacy/storage-size concerns with keeping full original images locally?
+- Do we need export/import JSON early, or can it wait?
+
+### Model-improvement usefulness
+- Does the saved history include enough information to diagnose model failures?
+- Are confidence values enough, or do we also want raw detection metadata later?
+- Should scans support freeform notes?
+- Are the three tags enough:
+  - usefulForTraining
+  - badExample
+  - starred
+- Should we add a way to surface hard cases automatically later?
+
+### Repo annotation format
+- Are JSON files in the repo clearly the best format for evaluation annotations?
+- Should there be one JSON per image, or one larger manifest plus per-image files?
+- Do we need a formal schema/validation script early?
+- Do the JSON files need normalized keys/naming conventions now to avoid churn later?
+
+### Risks / unresolved concerns
+- Are there hidden contradictions between preserving observed order and counting reversed tiles as correct?
+- Could users be confused by identity-correct but orientation-wrong scoring?
+- Is the correction workflow too manual for the expected scan volume?
+- Are we overspecifying before learning from a few real scan sessions?
+- What is still missing that would block implementation?
+
+## Suggested review package for another agent
+Ask the reviewing agent to specifically evaluate:
+1. product logic
+2. data model coherence
+3. evaluation design
+4. correction UX
+5. risks of overengineering or missing architecture decisions
 
 ## Notes for later review
 These decisions were chosen to support scanner improvement first, especially through Quick Scan history, image retention, correction review, and an evaluation dataset that separates tile identity from orientation/order accuracy.
