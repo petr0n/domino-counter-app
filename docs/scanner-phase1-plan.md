@@ -14,19 +14,33 @@ What went wrong:
 - It failed to define the scanner as a concrete subsystem with a clear input/output contract.
 - It did not sharply separate scanner responsibilities from review-layer responsibilities.
 - It focused on preserving decisions from prior discussion more than on expressing the core architecture plainly.
+- It drifted into describing existing implementation thinking instead of staying anchored to the intended Phase 1 design.
 
 What this means:
 - The document was useful as a decision log, but incomplete as a scanner plan.
 - A scanner plan must first explain the scanner itself, then explain the systems around it.
+- The plan must stand on its own as a design document and not rely on any pre-existing codebase assumptions.
 
 Corrective principle for this document:
 - Define the scanner first.
 - Then define how review, evaluation, persistence, and correction support that scanner.
+- Keep the plan implementation-agnostic except where the agreed stack has been explicitly chosen.
 
 ## Core planning stance
 - The goal of this plan is to capture the **gist of every meaningful product and implementation decision made so far**, not a verbatim transcript of all prior questions.
 - The emphasis is on preventing gaps in scanner behavior, review behavior, evaluation design, storage design, and future improvement workflow.
 - When a later implementation choice is ambiguous, this document should be treated as the current source of intent unless explicitly superseded.
+- This document describes the intended Phase 1 scanner system itself, not the current state of any existing implementation.
+
+## Scanner purpose
+The scanner exists to convert domino photos into structured, reviewable tile data.
+
+That means the scanner is for:
+- helping a user get tile values from a photo quickly
+- producing results that are easy to review and correct
+- preserving enough evidence and structure to improve scanner quality over time
+
+The scanner is not just a detector and not just a pip counter. It is the full image-to-reviewable-results subsystem.
 
 ## Scanner definition
 The Phase 1 scanner is the image-to-tile-detections subsystem used first in Quick Scan.
@@ -40,12 +54,57 @@ Its job is to:
 6. attach confidence/score information
 7. return results in a form that can be reviewed, corrected, persisted, and evaluated
 
-The scanner is not just “pip counting.” It is the full process from image input to structured tile detections that a human can verify.
+## Agreed Phase 1 scanner stack
+The planned Phase 1 scanner stack is:
+- **YOLO for tile detection/localization**
+- a downstream **tile-value inference / pip-counting stage** for each detected tile
+- review/correction UI on top of scanner output
+- local scan-history persistence for future improvement
+- repo-stored JSON evaluation annotations for benchmarking
+
+This plan is not based on any existing code path. It defines the intended Phase 1 architecture.
+
+## Scanner architecture overview
+The scanner should be understood as two core technical stages plus supporting systems:
+
+### Stage 1: tile detection/localization
+This stage identifies where domino tiles are in the source image.
+
+Planned approach:
+- use **YOLO** to detect and localize candidate domino tiles
+- return one detection per likely tile
+- provide bounding boxes suitable for crop extraction and downstream review
+
+Responsibilities of tile detection:
+- find likely tile instances in the image
+- localize each tile with a bounding box
+- preserve enough positional information for review, crop generation, and evaluation
+
+### Stage 2: tile value inference / pip counting
+This stage determines the values of the two halves of each detected tile.
+
+Planned approach:
+- take each localized tile crop
+- infer the observed orientation/order
+- determine the two side values for that tile
+- attach confidence information to the predicted result
+
+Responsibilities of tile value inference:
+- determine first-half and second-half values
+- preserve observed order rather than immediately canonicalizing for display
+- return a result that can be reviewed and corrected easily
+
+### Supporting systems
+These are not the scanner core, but they are required for the scanner workflow to be useful:
+- review/correction UI
+- evaluation dataset and annotations
+- local scan history
+- saved corrections and labels for future improvement
 
 ## Scanner responsibilities
 In Phase 1, the scanner is responsible for:
 - image ingestion from the scan surface
-- tile candidate detection
+- tile candidate detection via YOLO-based localization
 - per-tile crop/thumbnail generation
 - per-tile value prediction
 - per-tile orientation/order prediction
@@ -82,13 +141,37 @@ The scanner as a whole should return:
 - enough metadata for review and history
 - enough structure for future evaluation against ground truth
 
+## How tile detection is done in the Phase 1 plan
+Tile detection is the process of locating all likely domino tiles in an image and returning isolated, reviewable tile candidates with position metadata.
+
+Agreed Phase 1 approach:
+- use **YOLO** for tile detection/localization
+- treat tile detection as candidate generation plus localization
+- optimize for producing useful reviewable candidates, not pretending to achieve perfect autonomous finality from day one
+
+Tile detection output should support:
+- cropping each tile cleanly enough for downstream inference
+- human review of what was detected
+- evaluation against annotation-grade boxes
+
+## How pip counting / tile value inference is done in the Phase 1 plan
+Pip counting is the process of determining the two side values for each isolated tile candidate.
+
+Agreed Phase 1 approach:
+- run a downstream tile-level inference stage on each detected tile crop
+- infer orientation and observed order
+- infer first-side and second-side values
+- return value predictions with confidence for review and correction
+
+At the plan level, this stage is best understood as **tile-value inference**, even if “pip counting” remains the user-facing phrase.
+
 ## Scanner pipeline shape
-The exact implementation may evolve, but the Phase 1 scanner conceptually has these stages:
+The Phase 1 scanner conceptually has these stages:
 1. input image capture
-2. candidate tile detection/localization
+2. YOLO tile detection/localization
 3. tile crop extraction
 4. orientation/order inference
-5. pip-value prediction per tile
+5. tile-value inference / pip counting per tile
 6. confidence attachment
 7. handoff to review/correction flow
 
@@ -104,7 +187,8 @@ The Phase 1 scanner is successful if it:
 
 ### In scope for Phase 1
 - image-to-detection pipeline
-- candidate tile extraction
+- YOLO-based tile localization
+- tile crop extraction
 - tile value prediction
 - orientation/order prediction
 - reviewable outputs
@@ -355,7 +439,7 @@ Phase 1 should prioritize a reliable, improvable domino-scanning workflow before
 ### Scanner definition requirements
 The scanner should:
 - accept an image
-- detect candidate tiles
+- detect candidate tiles using YOLO-based localization
 - extract reviewable tile crops
 - infer orientation and observed order
 - predict two values per tile
@@ -587,8 +671,8 @@ This is a planning schema draft, not final production code.
     "height": 4032
   },
   "scannerVersion": {
-    "pipeline": "quick-scan-v1",
-    "modelVersion": "model-0.1.0"
+    "detector": "yolo",
+    "tileValueInference": "phase1-tbd"
   },
   "detections": [
     {
@@ -699,10 +783,13 @@ This is a planning schema draft, not final production code.
 Use this checklist to pressure-test the plan rather than just approving it.
 
 ### Scanner clarity
-- Does the document now clearly define what the scanner is?
+- Does the document now clearly define what the scanner is for?
+- Does the document clearly define what the scanner is?
 - Is the scanner input/output contract explicit enough?
 - Are scanner responsibilities distinguished from review UX and storage responsibilities?
 - Is the scanner scope for Phase 1 clear enough?
+- Is the YOLO detection stage clearly identified?
+- Is the downstream tile-value inference stage clear enough?
 
 ### Product coherence
 - Does the Quick Scan-first strategy make sense?
@@ -737,6 +824,7 @@ Use this checklist to pressure-test the plan rather than just approving it.
 - Do we need both `display` and structured `first`/`second`, or is that redundant?
 - Should manual entries and detected entries share the exact same schema?
 - Is `unorderedKey` the right canonical identity helper?
+- Is the `scannerVersion` block describing the planned stack clearly enough?
 
 ### Storage strategy
 - Is the IndexedDB/localStorage split the right Phase 1 design?
@@ -770,12 +858,14 @@ Use this checklist to pressure-test the plan rather than just approving it.
 
 ## Suggested review package for another agent
 Ask the reviewing agent to specifically evaluate:
-1. scanner definition clarity
-2. product logic
-3. data model coherence
-4. evaluation design
-5. correction UX
-6. risks of overengineering or missing architecture decisions
+1. scanner purpose clarity
+2. scanner definition clarity
+3. architecture clarity
+4. product logic
+5. data model coherence
+6. evaluation design
+7. correction UX
+8. risks of overengineering or missing architecture decisions
 
 ## Notes for later review
-These decisions were chosen to support scanner improvement first, especially through Quick Scan history, image retention, correction review, and an evaluation dataset that separates tile identity from orientation/order accuracy.
+These decisions were chosen to support scanner improvement first, especially through Quick Scan history, image retention, correction review, a YOLO-based detection stage, a downstream tile-value inference stage, and an evaluation dataset that separates tile identity from orientation/order accuracy.
