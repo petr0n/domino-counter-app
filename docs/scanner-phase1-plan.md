@@ -15,6 +15,7 @@ What was missing:
 - the output contract of each stage
 - what should be optimized first in Phase 1
 - a separate training-data plan distinct from the evaluation set
+- an explicit tech-stack section instead of leaving core technology choices implied
 
 This build plan corrects that by defining the core detection and inference flow explicitly.
 
@@ -27,6 +28,42 @@ The scanner is for:
 - preserving enough evidence to improve scanner quality over time
 
 The scanner is not just a detector and not just a pip counter. It is the full image-to-reviewable-results subsystem.
+
+## Tech stack spec
+This section defines the technology choices for Phase 1 so implementation does not depend on implied assumptions.
+
+### Core scanner tech
+- **YOLO** for full-image domino tile detection/localization
+- a separate downstream **tile-value inference / pip-counting model/stage** on each detected tile crop
+- crop extraction between detection and tile-value inference
+
+### Product/runtime tech
+- **Quick Scan** as the primary scanner surface in the app
+- app review/correction UI for scan output validation and editing
+
+### Storage tech
+- **IndexedDB** for full images, scan history, detections, corrections, confidence, timestamps, and rich local records
+- **localStorage** for lightweight settings, flags, preferences, and optional recent scan pointers
+
+### Dataset/annotation tech
+- **JSON files in the repo** for held-out evaluation annotations
+- curated training datasets derived from seed annotations and promoted Quick Scan history
+
+### Explicitly chosen vs still TBD
+Chosen now:
+- detector family: **YOLO**
+- detection scope: full-image domino-tile localization
+- one initial detector class: `domino_tile`
+- prediction representation: ordered observed pair for tile-value inference
+- local persistence: IndexedDB + localStorage split
+- evaluation annotation format: repo-stored JSON
+
+Still TBD:
+- exact YOLO version
+- exact tile-value inference model architecture
+- exact detector/inference training framework
+- exact runtime placement of inference if later deployment decisions require it
+- exact annotation tool used to create labels
 
 ## Core scanner architecture
 The planned Phase 1 scanner has two core model stages and several supporting systems.
@@ -533,6 +570,17 @@ This format is:
 ### Project focus
 Phase 1 should prioritize a reliable, improvable domino-scanning workflow before deeply wiring scanner behavior into the rest of the app.
 
+### Tech-stack requirements
+Phase 1 should use:
+- **YOLO** for full-image tile detection/localization
+- a separate downstream tile-value inference stage for ordered tile-value prediction
+- **Quick Scan** as the main scanner surface for iteration and validation
+- **IndexedDB** for images and rich scan-history persistence
+- **localStorage** for lightweight local settings and flags
+- **JSON files in the repo** for held-out evaluation annotations
+
+The plan intentionally leaves the exact YOLO version and exact tile-value inference model architecture as TBD, but the above technology choices are fixed enough for Phase 1 planning.
+
 ### Scanner definition requirements
 The scanner should:
 - accept an image
@@ -939,6 +987,13 @@ This is a planning schema draft, not final production code.
 ## Review checklist
 Use this checklist to pressure-test the build plan rather than just approving it.
 
+### Tech-stack clarity
+- Are the chosen Phase 1 technologies explicit enough?
+- Is it clear which technologies are fixed vs still TBD?
+- Is the YOLO choice stated clearly enough?
+- Is the local storage split stated clearly enough?
+- Is the evaluation annotation format stated clearly enough?
+
 ### Scanner architecture clarity
 - Does the document clearly define what the scanner is for?
 - Does the document clearly define what the scanner is?
@@ -1020,13 +1075,14 @@ Use this checklist to pressure-test the build plan rather than just approving it
 
 ## Suggested review package for another agent
 Ask the reviewing agent to specifically evaluate:
-1. scanner purpose clarity
-2. scanner architecture clarity
-3. YOLO detection formulation
-4. tile-value inference formulation
-5. training-data plan quality
-6. product logic
-7. data model coherence
-8. evaluation design
-9. correction UX
-10. risks of overengineering or missing architecture decisions
+1. tech-stack clarity
+2. scanner purpose clarity
+3. scanner architecture clarity
+4. YOLO detection formulation
+5. tile-value inference formulation
+6. training-data plan quality
+7. product logic
+8. data model coherence
+9. evaluation design
+10. correction UX
+11. risks of overengineering or missing architecture decisions
