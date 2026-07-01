@@ -1,208 +1,205 @@
-# Domino Scanner Phase 1 Plan, Spec, and Decision Log
+# Domino Scanner Phase 1 Build Plan
 
 ## Purpose
 Phase 1 should prioritize a reliable, improvable domino-scanning workflow before deeply wiring scanner behavior into the rest of the app.
 
-This document records the agreed scanner, product, evaluation, storage, and review decisions so they are not lost between sessions and can be reviewed by other agents.
+This document is a build plan for the planned scanner system itself. It is intended to be concrete enough to implement, review, and revise. It should describe the scanner architecture, the technical approach for its core stages, the review workflow around it, and the evaluation/storage systems that support iterative improvement.
 
-## Why the first draft missed the mark
-The first versions of this plan over-documented everything around the scanner while under-defining the scanner itself.
+## Why earlier drafts were not workable enough
+Earlier drafts captured many surrounding decisions but stopped short of specifying the core scanner mechanics deeply enough.
 
-What went wrong:
-- The plan captured review UX, history, storage, evaluation, and correction behavior before clearly defining what the scanner is.
-- It treated scanner-adjacent decisions as if they were enough to explain the scanner.
-- It failed to define the scanner as a concrete subsystem with a clear input/output contract.
-- It did not sharply separate scanner responsibilities from review-layer responsibilities.
-- It focused on preserving decisions from prior discussion more than on expressing the core architecture plainly.
-- It drifted into describing existing implementation thinking instead of staying anchored to the intended Phase 1 design.
+What was missing:
+- the scanner’s concrete technical architecture
+- how YOLO is used for tile detection
+- how tile-value inference / pip counting is performed after detection
+- the output contract of each stage
+- what should be optimized first in Phase 1
 
-What this means:
-- The document was useful as a decision log, but incomplete as a scanner plan.
-- A scanner plan must first explain the scanner itself, then explain the systems around it.
-- The plan must stand on its own as a design document and not rely on any pre-existing codebase assumptions.
-
-Corrective principle for this document:
-- Define the scanner first.
-- Then define how review, evaluation, persistence, and correction support that scanner.
-- Keep the plan implementation-agnostic except where the agreed stack has been explicitly chosen.
-
-## Core planning stance
-- The goal of this plan is to capture the **gist of every meaningful product and implementation decision made so far**, not a verbatim transcript of all prior questions.
-- The emphasis is on preventing gaps in scanner behavior, review behavior, evaluation design, storage design, and future improvement workflow.
-- When a later implementation choice is ambiguous, this document should be treated as the current source of intent unless explicitly superseded.
-- This document describes the intended Phase 1 scanner system itself, not the current state of any existing implementation.
+This build plan corrects that by defining the core detection and inference flow explicitly.
 
 ## Scanner purpose
 The scanner exists to convert domino photos into structured, reviewable tile data.
 
-That means the scanner is for:
-- helping a user get tile values from a photo quickly
-- producing results that are easy to review and correct
-- preserving enough evidence and structure to improve scanner quality over time
+The scanner is for:
+- helping the user get tile values from a photo quickly
+- producing outputs that are easy to review and correct
+- preserving enough evidence to improve scanner quality over time
 
 The scanner is not just a detector and not just a pip counter. It is the full image-to-reviewable-results subsystem.
 
-## Scanner definition
-The Phase 1 scanner is the image-to-tile-detections subsystem used first in Quick Scan.
+## Core scanner architecture
+The planned Phase 1 scanner has two core model stages and several supporting systems.
 
-Its job is to:
-1. accept an input image
-2. find candidate domino tiles in that image
-3. isolate each candidate as its own reviewable tile crop/thumbnail
-4. determine tile orientation and observed side order
-5. predict the two pip values for each candidate tile
-6. attach confidence/score information
-7. return results in a form that can be reviewed, corrected, persisted, and evaluated
+### Stage 1: YOLO tile detection/localization
+Use **YOLO** on the full source image to detect full domino tiles.
 
-## Agreed Phase 1 scanner stack
-The planned Phase 1 scanner stack is:
-- **YOLO for tile detection/localization**
-- a downstream **tile-value inference / pip-counting stage** for each detected tile
-- review/correction UI on top of scanner output
-- local scan-history persistence for future improvement
-- repo-stored JSON evaluation annotations for benchmarking
+Planned formulation:
+- run **single-pass full-image object detection**
+- detect **full domino tiles** as objects
+- start with **one detector class**: `domino_tile`
+- output one detection per likely tile with:
+  - bounding box
+  - confidence score
 
-This plan is not based on any existing code path. It defines the intended Phase 1 architecture.
+Phase 1 optimization priority for detection:
+- prioritize **recall over precision**
+- allow some false positives if they are easy to remove in review
+- avoid missing tiles when possible, because missed tiles are harder on the user than removable extras
 
-## Scanner architecture overview
-The scanner should be understood as two core technical stages plus supporting systems:
-
-### Stage 1: tile detection/localization
-This stage identifies where domino tiles are in the source image.
-
-Planned approach:
-- use **YOLO** to detect and localize candidate domino tiles
-- return one detection per likely tile
-- provide bounding boxes suitable for crop extraction and downstream review
-
-Responsibilities of tile detection:
-- find likely tile instances in the image
+Detection-stage responsibilities:
+- identify all likely tiles in the image
 - localize each tile with a bounding box
-- preserve enough positional information for review, crop generation, and evaluation
+- produce enough information for crop extraction, review, and evaluation
 
-### Stage 2: tile value inference / pip counting
-This stage determines the values of the two halves of each detected tile.
+Detection-stage output contract per tile:
+- `detectionId`
+- `bbox`
+- `detectionConfidence`
+- `sourceImageId`
 
-Planned approach:
-- take each localized tile crop
-- infer the observed orientation/order
-- determine the two side values for that tile
-- attach confidence information to the predicted result
+### Stage 2: crop extraction
+After YOLO detection, extract one crop per detected tile.
 
-Responsibilities of tile value inference:
-- determine first-half and second-half values
-- preserve observed order rather than immediately canonicalizing for display
-- return a result that can be reviewed and corrected easily
+Crop-stage responsibilities:
+- cut out each detected tile region from the source image
+- generate a reviewable thumbnail/crop
+- preserve linkage back to the source image and bounding box
 
-### Supporting systems
-These are not the scanner core, but they are required for the scanner workflow to be useful:
-- review/correction UI
-- evaluation dataset and annotations
-- local scan history
-- saved corrections and labels for future improvement
+Crop-stage output contract per tile:
+- `detectionId`
+- `thumbnailImageId`
+- `cropImageId`
+- `bbox`
+- `sourceImageId`
 
-## Scanner responsibilities
-In Phase 1, the scanner is responsible for:
-- image ingestion from the scan surface
-- tile candidate detection via YOLO-based localization
-- per-tile crop/thumbnail generation
-- per-tile value prediction
-- per-tile orientation/order prediction
-- per-tile confidence reporting
-- returning structured detections for review
+### Stage 3: orientation and tile-value inference
+After crop extraction, run a downstream tile-level inference stage.
 
-The scanner is not responsible for:
-- being perfectly final without review
-- full app-wide synchronization from day one
-- replacing correction UX
-- hiding uncertainty
+Phase 1 recommended formulation:
+- treat this as **two-side ordered prediction** on the tile crop
+- infer:
+  - tile orientation metadata
+  - observed order meaning
+  - first-side value
+  - second-side value
+  - confidence
 
-## Scanner input/output contract
+Recommended output strategy:
+- predict the **ordered pair directly** as observed
+- do **not** reduce to a canonical unordered identity in the prediction output
+- preserve observed order for review and annotation alignment
+- canonical identity can be derived later for evaluation matching if needed
 
-### Input
-The scanner takes:
-- a captured image from Quick Scan
-- later, the same scanner contract should be reusable by other scanning surfaces
+Why this formulation is preferred for Phase 1:
+- it maps directly to review UX
+- it preserves what the user sees
+- it aligns with the requirement that review display preserve observed order
+- it avoids a second normalization step before review
 
-### Output
-At minimum, each scanner detection should provide:
-- a unique detection id
-- a tile crop/thumbnail
-- a bounding box in the source image
-- predicted first-side value
-- predicted second-side value
-- orientation metadata
-- observed-order meaning (left/right or top/bottom)
-- confidence/score
-- status suitable for later review normalization
+Inference-stage responsibilities:
+- determine whether the crop should be interpreted as horizontal or vertical
+- determine left/right or top/bottom order meaning
+- predict first-side value
+- predict second-side value
+- return confidence for the ordered prediction
 
-The scanner as a whole should return:
-- all detections for the image
-- enough metadata for review and history
-- enough structure for future evaluation against ground truth
+Inference-stage output contract per tile:
+- `detectionId`
+- `orientation.layout` (`horizontal` or `vertical`)
+- `orientation.rotationDegrees` (approximate is acceptable)
+- `orderedSidesMeaning` (`[left,right]` or `[top,bottom]`)
+- `predicted.first`
+- `predicted.second`
+- `predicted.display`
+- `predicted.confidence`
 
-## How tile detection is done in the Phase 1 plan
-Tile detection is the process of locating all likely domino tiles in an image and returning isolated, reviewable tile candidates with position metadata.
+### Stage 4: review/correction handoff
+After inference, send all detections to the review layer.
 
-Agreed Phase 1 approach:
-- use **YOLO** for tile detection/localization
-- treat tile detection as candidate generation plus localization
-- optimize for producing useful reviewable candidates, not pretending to achieve perfect autonomous finality from day one
+Review-stage responsibilities:
+- present each detection as a tile thumbnail
+- show ordered predicted values
+- show confidence
+- allow edit, invalidation, and manual addition
 
-Tile detection output should support:
-- cropping each tile cleanly enough for downstream inference
-- human review of what was detected
-- evaluation against annotation-grade boxes
+## Why two-side ordered prediction is the chosen pip-counting approach
+The key unresolved technical choice was how to represent tile-value inference.
 
-## How pip counting / tile value inference is done in the Phase 1 plan
-Pip counting is the process of determining the two side values for each isolated tile candidate.
+Options included:
+- direct full-tile identity classification
+- unordered identity + separate order prediction
+- two-side independent value prediction
+- direct ordered-pair prediction
 
-Agreed Phase 1 approach:
-- run a downstream tile-level inference stage on each detected tile crop
-- infer orientation and observed order
-- infer first-side and second-side values
-- return value predictions with confidence for review and correction
+Chosen Phase 1 approach:
+- **predict the ordered pair directly from the crop**
+- represent that as `first/second` in observed order
 
-At the plan level, this stage is best understood as **tile-value inference**, even if “pip counting” remains the user-facing phrase.
+Why:
+- review UI needs ordered values anyway
+- annotation format preserves observed order
+- evaluation separately handles identity vs order, so ordered outputs are acceptable and useful
+- user correction is simpler when the prediction already matches review semantics
 
-## Scanner pipeline shape
-The Phase 1 scanner conceptually has these stages:
-1. input image capture
-2. YOLO tile detection/localization
-3. tile crop extraction
-4. orientation/order inference
-5. tile-value inference / pip counting per tile
-6. confidence attachment
-7. handoff to review/correction flow
+## How tile detection is done in this plan
+Tile detection is done by running **YOLO on the full input image**.
 
-## Scanner success criteria
-The Phase 1 scanner is successful if it:
-- produces reviewable candidate tiles reliably enough to be useful
-- makes correction fast rather than painful
-- preserves enough evidence to diagnose why it failed
-- can be benchmarked against a fixed evaluation set
-- can improve over time through saved scans and corrections
+Detailed plan:
+1. user captures or provides one image
+2. YOLO runs on the full image
+3. YOLO predicts bounding boxes for full domino tiles using a single `domino_tile` class
+4. each box becomes a candidate tile detection
+5. each candidate is cropped for downstream inference and review
 
-## Scanner scope vs non-scope
+Detection assumptions for Phase 1:
+- boxes are axis-aligned unless later rotation-aware detection is explicitly added
+- orientation can be inferred downstream from the crop
+- some overlapping or imperfect boxes are acceptable if review remains usable
 
-### In scope for Phase 1
-- image-to-detection pipeline
-- YOLO-based tile localization
-- tile crop extraction
-- tile value prediction
-- orientation/order prediction
-- reviewable outputs
-- correction-loop support
-- evaluation support
-- history support for improvement
+Detection success criteria:
+- high enough recall to catch most tiles in a realistic photo
+- boxes accurate enough to support tile-value inference and human review
+- confidence useful for triaging low-quality detections
 
-### Not required in scope for Phase 1
-- full scanner automation with no human correction
-- tightly synchronized behavior across every app surface immediately
-- prematurely finalizing architecture before Quick Scan proves the workflow
+## How pip counting / tile-value inference is done in this plan
+Pip counting is done as a **tile-level ordered value inference stage** on each crop.
 
-## Product strategy
+Detailed plan:
+1. take the tile crop produced from YOLO detection
+2. infer whether the tile is horizontal or vertical
+3. infer observed order semantics:
+   - horizontal -> left then right
+   - vertical -> top then bottom
+4. infer the value of the first half
+5. infer the value of the second half
+6. output the ordered pair plus confidence
 
+Important framing:
+- even if users say “pip counting,” the plan treats this stage as **tile-value inference**
+- the output is the observed ordered tile value, e.g. `2/12`
+- canonicalization for identity comparison happens only later when needed for evaluation or analytics
+
+Phase 1 prediction target:
+- ordered observed pair, not just unordered identity
+
+Phase 1 confidence target:
+- one confidence score per predicted ordered tile
+- optional future extension: per-side confidence
+
+## False positives, misses, and review strategy
+Phase 1 does not require perfect autonomous output.
+
+Planned behavior:
+- favor catching likely tiles even if some false positives slip through
+- let review handle explicit invalidation through **Not Tile**
+- let review handle missed detections through manual add
+- preserve both mistakes in history so the scanner can improve later
+
+This means the product strategy and model strategy are aligned:
+- detector recall is more important than detector purity early on
+- review is part of the system, not an admission of failure
+
+## Quick Scan as the primary scanner surface
 ### Quick Scan vs Round-end Scan
 - **Quick Scan** is the primary experimentation and validation surface.
 - **Round-end Scan** may lag behind initially and does not need to stay tightly synced with Quick Scan at first.
@@ -221,10 +218,10 @@ The Phase 1 scanner is successful if it:
 Phase 1 should include a **49-photo evaluation set**.
 
 ### Purpose of the evaluation set
-- Benchmark scanner quality consistently.
-- Compare scanner improvements over time.
-- Diagnose whether changes improve tile identity detection, orientation correctness, and review usability.
-- Support a disciplined improvement loop instead of guessing.
+- benchmark scanner quality consistently
+- compare scanner improvements over time
+- diagnose whether changes improve tile identity detection, orientation correctness, and review usability
+- support a disciplined improvement loop instead of guessing
 
 ### Source-of-truth requirements
 Each evaluation image should support:
@@ -242,7 +239,6 @@ Orientation annotations should support:
 - enough information to determine which half is first vs second
 
 ## Tile value representation
-
 ### User-facing notation
 - Primary notation should be **slash-separated strings**, e.g. `2/12`, `9/2`.
 - Slash notation should be used consistently in plan language, manual-add UX, and evaluation examples.
@@ -263,7 +259,6 @@ Tile order is orientation-aware:
 - Matching logic may later use canonicalization internally, but that should not overwrite review presentation.
 
 ## Evaluation semantics
-
 ### Tile identity scoring
 - A reversed tile such as `12/2` should count as the same tile identity as `2/12`.
 - If the tile is a correct match, reversed order still counts as **correct** for identity.
@@ -286,6 +281,52 @@ If expected is `2/12` and detected is `12/2`, then:
 - Review UI should preserve the observed order exactly as seen in the image.
 - Review UI should not normalize the tile to a canonical sorted order for display.
 - Canonicalization can still exist later for matching or analytics, but review UI should preserve observed order.
+
+## Post-scan correction UX
+After a scan, the app should:
+- show each detected tile as its own thumbnail
+- show detected values in editable inputs
+- let the user correct values directly
+- provide a **Not Tile** action/button for detections that are not actually a valid tile
+- allow the user to add missing tiles manually
+
+### Detailed correction behavior
+- The correction screen should show each detected tile thumbnail with its values and score/confidence.
+- Existing detections should be editable directly.
+- Missing tiles should be addable manually.
+- Some false detections may effectively be marked by entering `.` as a placeholder value.
+- The UX should support both explicit **Not Tile** and invalid placeholder entry if needed.
+- Internally, invalid detections should ideally normalize to a structured state such as `status: "not_tile"`.
+
+### False positive handling
+- Some false detections may come from upside-down or otherwise invalid tile-like crops.
+- The review workflow should make it easy to invalidate them without losing visibility into the fact that they were detected.
+- False positives are important learning cases and should remain useful in history.
+
+## Manual add UX
+When the user adds a missing tile manually, the preferred Phase 1 flow is:
+- a single text entry in slash notation, e.g. `2/12`
+
+This is preferred because it is fastest, especially on phone.
+
+## Detected-tile edit UX
+When the user edits an existing detected tile:
+- use **two separate numeric inputs**
+- these map to left/right or top/bottom depending on orientation
+
+This creates a deliberate split:
+- add missing tile: single slash-string input
+- edit existing detected tile: two separate numeric inputs
+
+### Edit UX rationale
+- Editing existing detections should be explicit and low-ambiguity.
+- Adding missing tiles should be optimized for speed.
+- These are different tasks and do not need identical inputs.
+
+## Confidence visibility
+- Confidence/scores should be shown during review for detected tiles.
+- Confidence values help explain why a bad prediction happened.
+- Confidence values are useful both for user review and future scanner diagnosis.
 
 ## Quick Scan history persistence
 Quick Scan history should persist across app reloads.
@@ -362,52 +403,6 @@ Recommended simple flags:
 - Some are just noisy or bad examples.
 - Some are worth pinning even if they are not explicit training examples.
 
-## Post-scan correction UX
-After a scan, the app should:
-- show each detected tile as its own thumbnail
-- show detected values in editable inputs
-- let the user correct values directly
-- provide a **Not Tile** action/button for detections that are not actually a valid tile
-- allow the user to add missing tiles manually
-
-### Detailed correction behavior
-- The correction screen should show each detected tile thumbnail with its values and score/confidence.
-- Existing detections should be editable directly.
-- Missing tiles should be addable manually.
-- Some false detections may effectively be marked by entering `.` as a placeholder value.
-- The UX should support both explicit **Not Tile** and invalid placeholder entry if needed.
-- Internally, invalid detections should ideally normalize to a structured state such as `status: "not_tile"`.
-
-### False positive handling
-- Some false detections may come from upside-down or otherwise invalid tile-like crops.
-- The review workflow should make it easy to invalidate them without losing visibility into the fact that they were detected.
-- False positives are important learning cases and should remain useful in history.
-
-## Manual add UX
-When the user adds a missing tile manually, the preferred Phase 1 flow is:
-- a single text entry in slash notation, e.g. `2/12`
-
-This is preferred because it is fastest, especially on phone.
-
-## Detected-tile edit UX
-When the user edits an existing detected tile:
-- use **two separate numeric inputs**
-- these map to left/right or top/bottom depending on orientation
-
-This creates a deliberate split:
-- add missing tile: single slash-string input
-- edit existing detected tile: two separate numeric inputs
-
-### Edit UX rationale
-- Editing existing detections should be explicit and low-ambiguity.
-- Adding missing tiles should be optimized for speed.
-- These are different tasks and do not need identical inputs.
-
-## Confidence visibility
-- Confidence/scores should be shown during review for detected tiles.
-- Confidence values help explain why a bad prediction happened.
-- Confidence values are useful both for user review and future scanner diagnosis.
-
 ## Evaluation annotation storage
 For the 49-photo evaluation set, source-of-truth annotations should live as:
 - **JSON files in the repo**
@@ -426,25 +421,34 @@ This format is:
 - Repo-stored JSON is preferable to browser-only state or hard-to-parse markdown tables.
 
 ## Formal requirements/spec draft
-
 ### Project focus
 Phase 1 should prioritize a reliable, improvable domino-scanning workflow before deeply wiring scanner behavior into the rest of the app.
-
-### Scanner product strategy
-- **Quick Scan** is the primary experimentation and validation surface.
-- **Round-end Scan** may lag behind initially and does not need to stay tightly synced with Quick Scan at first.
-- Once Quick Scan is stable and accurate, the rest of the app should be wired to use the proven scanner pipeline.
-- Long term, Quick Scan and Round-end Scan should converge on the same underlying scanner logic/model.
 
 ### Scanner definition requirements
 The scanner should:
 - accept an image
-- detect candidate tiles using YOLO-based localization
+- run YOLO-based tile localization on the full image
 - extract reviewable tile crops
+- run tile-level ordered value inference on each crop
 - infer orientation and observed order
 - predict two values per tile
 - attach confidence
 - return structured detections suitable for review, persistence, and evaluation
+
+### Detection requirements
+The detector should:
+- use one `domino_tile` object class initially
+- operate on the full source image
+- output bounding boxes and detection confidence
+- prioritize recall over precision in early Phase 1
+
+### Tile-value inference requirements
+The tile-value inference stage should:
+- operate on each detected tile crop
+- predict the ordered observed pair directly
+- return first-side and second-side values
+- return orientation/order metadata
+- return confidence for the ordered prediction
 
 ### Evaluation dataset requirements
 Phase 1 should include a **49-photo evaluation set**.
@@ -542,7 +546,6 @@ For the 49-photo evaluation set, source-of-truth annotations should live as:
 - **JSON files in the repo**
 
 ## Data model draft
-
 This is a planning schema draft, not final production code.
 
 ### Tile concepts
@@ -563,13 +566,64 @@ This is a planning schema draft, not final production code.
 }
 ```
 
-### Detected tile record
+### Detector output example
+```json
+{
+  "detectionId": "det_001",
+  "sourceImageId": "img_full_001",
+  "bbox": {
+    "x": 120,
+    "y": 240,
+    "width": 88,
+    "height": 176
+  },
+  "detectionConfidence": 0.95
+}
+```
+
+### Crop-stage output example
+```json
+{
+  "detectionId": "det_001",
+  "sourceImageId": "img_full_001",
+  "thumbnailImageId": "img_crop_thumb_001",
+  "cropImageId": "img_crop_full_001",
+  "bbox": {
+    "x": 120,
+    "y": 240,
+    "width": 88,
+    "height": 176
+  }
+}
+```
+
+### Inference-stage output example
+```json
+{
+  "detectionId": "det_001",
+  "orientation": {
+    "layout": "vertical",
+    "rotationDegrees": 91,
+    "orderedSidesMeaning": ["top", "bottom"]
+  },
+  "predicted": {
+    "first": 2,
+    "second": 12,
+    "display": "2/12",
+    "confidence": 0.93
+  }
+}
+```
+
+### Reviewed detection record
 ```json
 {
   "id": "det_001",
   "status": "detected",
   "source": "model",
-  "thumbnailImageId": "img_crop_001",
+  "sourceImageId": "img_full_001",
+  "thumbnailImageId": "img_crop_thumb_001",
+  "cropImageId": "img_crop_full_001",
   "bbox": {
     "x": 120,
     "y": 240,
@@ -606,7 +660,9 @@ This is a planning schema draft, not final production code.
   "id": "det_014",
   "status": "not_tile",
   "source": "model",
-  "thumbnailImageId": "img_crop_014",
+  "sourceImageId": "img_full_001",
+  "thumbnailImageId": "img_crop_thumb_014",
+  "cropImageId": "img_crop_full_014",
   "bbox": {
     "x": 510,
     "y": 190,
@@ -642,6 +698,7 @@ This is a planning schema draft, not final production code.
   "status": "confirmed",
   "source": "manual",
   "thumbnailImageId": null,
+  "cropImageId": null,
   "bbox": null,
   "orientation": null,
   "predicted": null,
@@ -672,7 +729,7 @@ This is a planning schema draft, not final production code.
   },
   "scannerVersion": {
     "detector": "yolo",
-    "tileValueInference": "phase1-tbd"
+    "tileValueInference": "ordered-pair-phase1"
   },
   "detections": [
     {
@@ -700,24 +757,6 @@ This is a planning schema draft, not final production code.
     "starred": true
   },
   "notes": "False positives on upside-down partial crops."
-}
-```
-
-### Local settings example
-```json
-{
-  "storageStrategy": {
-    "history": "indexeddb",
-    "settings": "localstorage"
-  },
-  "recentScanIds": [
-    "scan_2026_06_30_001",
-    "scan_2026_06_30_000"
-  ],
-  "preferences": {
-    "showConfidenceScores": true,
-    "defaultReviewSort": "scan-order"
-  }
 }
 ```
 
@@ -780,16 +819,15 @@ This is a planning schema draft, not final production code.
 ```
 
 ## Review checklist
-Use this checklist to pressure-test the plan rather than just approving it.
+Use this checklist to pressure-test the build plan rather than just approving it.
 
-### Scanner clarity
-- Does the document now clearly define what the scanner is for?
+### Scanner architecture clarity
+- Does the document clearly define what the scanner is for?
 - Does the document clearly define what the scanner is?
-- Is the scanner input/output contract explicit enough?
-- Are scanner responsibilities distinguished from review UX and storage responsibilities?
-- Is the scanner scope for Phase 1 clear enough?
-- Is the YOLO detection stage clearly identified?
-- Is the downstream tile-value inference stage clear enough?
+- Is the YOLO detection stage concrete enough to implement?
+- Is the tile-value inference stage concrete enough to implement?
+- Is the ordered-pair prediction strategy the right Phase 1 choice?
+- Are stage boundaries and outputs explicit enough?
 
 ### Product coherence
 - Does the Quick Scan-first strategy make sense?
@@ -819,8 +857,7 @@ Use this checklist to pressure-test the plan rather than just approving it.
 - Does the plan need a separate delete/remove action distinct from **Not Tile**?
 
 ### Data model sanity
-- Are the proposed detection objects too detailed, too sparse, or about right?
-- Should `status`, `reviewFlags`, and `userCorrection` be simplified?
+- Are the detector, crop, inference, and reviewed-detection records separated clearly enough?
 - Do we need both `display` and structured `first`/`second`, or is that redundant?
 - Should manual entries and detected entries share the exact same schema?
 - Is `unorderedKey` the right canonical identity helper?
@@ -859,13 +896,11 @@ Use this checklist to pressure-test the plan rather than just approving it.
 ## Suggested review package for another agent
 Ask the reviewing agent to specifically evaluate:
 1. scanner purpose clarity
-2. scanner definition clarity
-3. architecture clarity
-4. product logic
-5. data model coherence
-6. evaluation design
-7. correction UX
-8. risks of overengineering or missing architecture decisions
-
-## Notes for later review
-These decisions were chosen to support scanner improvement first, especially through Quick Scan history, image retention, correction review, a YOLO-based detection stage, a downstream tile-value inference stage, and an evaluation dataset that separates tile identity from orientation/order accuracy.
+2. scanner architecture clarity
+3. YOLO detection formulation
+4. tile-value inference formulation
+5. product logic
+6. data model coherence
+7. evaluation design
+8. correction UX
+9. risks of overengineering or missing architecture decisions
