@@ -14,6 +14,7 @@ What was missing:
 - how tile-value inference / pip counting is performed after detection
 - the output contract of each stage
 - what should be optimized first in Phase 1
+- a separate training-data plan distinct from the evaluation set
 
 This build plan corrects that by defining the core detection and inference flow explicitly.
 
@@ -213,6 +214,114 @@ This means the product strategy and model strategy are aligned:
 - First stabilize Quick Scan.
 - Then reuse the proven scanner behavior across the rest of the app.
 - The scanner should be designed for iterative improvement rather than one-shot perfection.
+
+## Training-data plan
+The training-data plan is separate from the evaluation set. The 49-photo evaluation set is for benchmarking and regression checking only. It should not be treated as the main training dataset.
+
+### Training-data goals
+Phase 1 training data should support both core model stages:
+- YOLO tile detection/localization
+- tile-value inference / pip counting on cropped tiles
+
+### Training-data sources
+Training data should come from three sources:
+1. a manually annotated seed dataset created specifically for model training
+2. corrected Quick Scan history promoted into training candidates
+3. curated hard cases, including false positives, missed tiles, partial tiles, visually difficult scenes, and noisy images
+
+### Detection training data
+YOLO detection training data should include:
+- full source images
+- one bounding box per real domino tile
+- one initial object class: `domino_tile`
+
+Detection training data should be rich enough to cover:
+- different table/background conditions
+- different lighting conditions
+- different camera angles and distances
+- different tile layouts and overlaps
+- cluttered scenes and distracting non-tile objects
+
+### Tile-value inference training data
+Tile-value inference training data should include:
+- cropped tile images
+- observed orientation metadata
+- observed ordered values:
+  - `first`
+  - `second`
+  - `display`
+- optional derived canonical identity for evaluation/matching support
+
+Tile-value inference data should cover:
+- horizontal tiles
+- vertical tiles
+- mild rotation/skew
+- edge cases where pips are hard to read
+- crops that look tile-like but should later be treated as invalid or low-confidence
+
+### Hard-negative and error-case data
+The training-data plan should explicitly retain error cases.
+
+Important examples:
+- false positives incorrectly detected as tiles
+- partial tiles
+- visually confusing backgrounds
+- blurry captures
+- low-light captures
+- overlapping or occluded tiles
+
+Why this matters:
+- detector quality improves from hard negatives
+- review history is valuable not only for correct examples but for difficult failure cases
+
+### Data-promotion workflow from Quick Scan history
+Quick Scan history should not automatically become training data. It should first act as a candidate pool.
+
+Recommended promotion states:
+- `candidateDetectionTraining`
+- `candidateValueTraining`
+- `hardNegative`
+- `needsReview`
+- `holdoutOnly`
+
+Promotion workflow:
+1. user performs scan
+2. scan history is saved with image, detections, corrections, and labels
+3. later review identifies useful examples
+4. selected scans or crops are promoted into curated training datasets
+
+### Dataset split policy
+Training and evaluation must remain separate.
+
+Required split policy:
+- the 49-photo evaluation set is **held out** for evaluation
+- evaluation images should **not** be used for main training
+- training, validation, and evaluation sets should be tracked separately
+- curated hard examples can be added to training or validation, but not by contaminating the held-out evaluation benchmark
+
+### Labeling implications
+The current saved-scan labels are useful, but training-dataset promotion needs more specific labeling states over time.
+
+Current scan labels:
+- `usefulForTraining`
+- `badExample`
+- `starred`
+
+Future training-oriented labels may include:
+- suitable for detection training
+- suitable for value-inference training
+- hard negative
+- low-confidence but valuable
+- holdout only
+
+### Phase 1 practical training-data stance
+Phase 1 does not need a massive polished dataset before any testing starts.
+
+But it does need:
+- a seed training dataset for detection
+- a seed training dataset for tile-value inference
+- a clean held-out evaluation set
+- a workflow for promoting corrected scans into future training data
 
 ## Evaluation dataset
 Phase 1 should include a **49-photo evaluation set**.
@@ -449,6 +558,15 @@ The tile-value inference stage should:
 - return first-side and second-side values
 - return orientation/order metadata
 - return confidence for the ordered prediction
+
+### Training-data requirements
+Phase 1 should include:
+- a seed detection training dataset
+- a seed tile-value inference training dataset
+- a held-out evaluation set separate from training
+- a workflow for promoting corrected Quick Scan history into curated future training data
+
+The main evaluation set should not serve as the main training dataset.
 
 ### Evaluation dataset requirements
 Phase 1 should include a **49-photo evaluation set**.
@@ -829,6 +947,13 @@ Use this checklist to pressure-test the build plan rather than just approving it
 - Is the ordered-pair prediction strategy the right Phase 1 choice?
 - Are stage boundaries and outputs explicit enough?
 
+### Training-data design
+- Is the training-data plan clearly separate from the evaluation set?
+- Do we have a workable seed-data strategy for detection training?
+- Do we have a workable seed-data strategy for tile-value inference training?
+- Is the promotion workflow from corrected scans into curated training data clear enough?
+- Are held-out evaluation boundaries clear enough to avoid contamination?
+
 ### Product coherence
 - Does the Quick Scan-first strategy make sense?
 - Is it clear enough that Round-end Scan can lag behind until Quick Scan stabilizes?
@@ -899,8 +1024,9 @@ Ask the reviewing agent to specifically evaluate:
 2. scanner architecture clarity
 3. YOLO detection formulation
 4. tile-value inference formulation
-5. product logic
-6. data model coherence
-7. evaluation design
-8. correction UX
-9. risks of overengineering or missing architecture decisions
+5. training-data plan quality
+6. product logic
+7. data model coherence
+8. evaluation design
+9. correction UX
+10. risks of overengineering or missing architecture decisions
