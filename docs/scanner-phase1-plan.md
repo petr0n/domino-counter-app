@@ -5,17 +5,35 @@ Phase 1 should prioritize a reliable, improvable domino-scanning workflow before
 
 This document records the agreed scanner, product, evaluation, storage, and review decisions so they are not lost between sessions and can be reviewed by other agents.
 
+## Core planning stance
+- The goal of this plan is to capture the **gist of every meaningful product and implementation decision made so far**, not a verbatim transcript of all prior questions.
+- The emphasis is on preventing gaps in scanner behavior, review behavior, evaluation design, storage design, and future improvement workflow.
+- When a later implementation choice is ambiguous, this document should be treated as the current source of intent unless explicitly superseded.
+
 ## Product strategy
 
 ### Quick Scan vs Round-end Scan
 - **Quick Scan** is the primary experimentation and validation surface.
 - **Round-end Scan** may lag behind initially and does not need to stay tightly synced with Quick Scan at first.
 - Quick Scan is the tester/experiment tool.
+- Scanner iteration should happen in Quick Scan first.
 - Once Quick Scan is stable and accurate, the rest of the app should be wired to use the proven scanner pipeline.
 - Long term, Quick Scan and Round-end Scan should converge on the same underlying scanner logic/model.
 
+### Product development sequence
+- Do not over-wire the full app around an unstable scanner.
+- First stabilize Quick Scan.
+- Then reuse the proven scanner behavior across the rest of the app.
+- The scanner should be designed for iterative improvement rather than one-shot perfection.
+
 ## Evaluation dataset
 Phase 1 should include a **49-photo evaluation set**.
+
+### Purpose of the evaluation set
+- Benchmark scanner quality consistently.
+- Compare scanner improvements over time.
+- Diagnose whether changes improve tile identity detection, orientation correctness, and review usability.
+- Support a disciplined improvement loop instead of guessing.
 
 ### Source-of-truth requirements
 Each evaluation image should support:
@@ -36,6 +54,7 @@ Orientation annotations should support:
 
 ### User-facing notation
 - Primary notation should be **slash-separated strings**, e.g. `2/12`, `9/2`.
+- Slash notation should be used consistently in plan language, manual-add UX, and evaluation examples.
 
 ### Meaning of order
 Tile order is orientation-aware:
@@ -47,6 +66,11 @@ Tile order is orientation-aware:
 - In review mode, preserve the detected/annotated order exactly as seen in the image.
 - Do not normalize display to a canonical sorted order.
 
+### Identity vs display
+- A tile can have one canonical identity for matching/analytics while still preserving observed display order in the UI.
+- Review UI should prioritize what was visually observed.
+- Matching logic may later use canonicalization internally, but that should not overwrite review presentation.
+
 ## Evaluation semantics
 
 ### Tile identity scoring
@@ -55,6 +79,7 @@ Tile order is orientation-aware:
 
 ### Orientation/order scoring
 - Orientation/order should be scored separately from identity.
+- This allows scanner evaluation to separate “found the right tile” from “understood its order/orientation correctly.”
 
 ### Required metrics
 Phase 1 evaluation should report both:
@@ -82,6 +107,11 @@ History should support:
 - supporting future model-improvement workflows
 - referring back to prior examples to improve the scanner/model later
 
+### General history philosophy
+- Scan history is not just a convenience feature.
+- It is part of the scanner-improvement workflow.
+- Saved history should preserve enough evidence to help understand why scans failed and how the scanner should evolve.
+
 ## Scan-history contents
 Each saved Quick Scan history record should include:
 - image reference
@@ -92,6 +122,11 @@ Each saved Quick Scan history record should include:
 - timestamp
 
 The saved history should preserve enough information to understand why a scan failed, including image evidence.
+
+### Additional useful history characteristics
+- History should be reviewable by humans later.
+- Saved records should be rich enough to identify false positives, missed tiles, and confusing cases.
+- History should support future filtering and triage of hard cases.
 
 ## Local storage architecture
 Phase 1 should use split local persistence.
@@ -117,6 +152,7 @@ Use localStorage for:
 - Full images matter for later scanner/model improvement.
 - localStorage is not the right place for large image payloads.
 - IndexedDB is the preferred local-first storage for history plus images.
+- This split keeps settings simple while allowing richer local records.
 
 ## Scan-history labeling
 Each saved scan may optionally be marked as:
@@ -128,6 +164,12 @@ Recommended simple flags:
 - `usefulForTraining`
 - `badExample`
 - `starred`
+
+### Labeling rationale
+- These labels serve different purposes and should all be available.
+- Some scans are useful for learning.
+- Some are just noisy or bad examples.
+- Some are worth pinning even if they are not explicit training examples.
 
 ## Post-scan correction UX
 After a scan, the app should:
@@ -145,6 +187,11 @@ After a scan, the app should:
 - The UX should support both explicit **Not Tile** and invalid placeholder entry if needed.
 - Internally, invalid detections should ideally normalize to a structured state such as `status: "not_tile"`.
 
+### False positive handling
+- Some false detections may come from upside-down or otherwise invalid tile-like crops.
+- The review workflow should make it easy to invalidate them without losing visibility into the fact that they were detected.
+- False positives are important learning cases and should remain useful in history.
+
 ## Manual add UX
 When the user adds a missing tile manually, the preferred Phase 1 flow is:
 - a single text entry in slash notation, e.g. `2/12`
@@ -160,6 +207,16 @@ This creates a deliberate split:
 - add missing tile: single slash-string input
 - edit existing detected tile: two separate numeric inputs
 
+### Edit UX rationale
+- Editing existing detections should be explicit and low-ambiguity.
+- Adding missing tiles should be optimized for speed.
+- These are different tasks and do not need identical inputs.
+
+## Confidence visibility
+- Confidence/scores should be shown during review for detected tiles.
+- Confidence values help explain why a bad prediction happened.
+- Confidence values are useful both for user review and future scanner diagnosis.
+
 ## Evaluation annotation storage
 For the 49-photo evaluation set, source-of-truth annotations should live as:
 - **JSON files in the repo**
@@ -172,6 +229,10 @@ This format is:
 - easy to diff
 - easy to validate
 - reusable in future evaluation scripts
+
+### Annotation storage philosophy
+- Evaluation data should be easy for both humans and tools to work with.
+- Repo-stored JSON is preferable to browser-only state or hard-to-parse markdown tables.
 
 ## Formal requirements/spec draft
 
