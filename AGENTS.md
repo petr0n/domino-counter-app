@@ -108,6 +108,11 @@ If a decision materially affects implementation, architecture, training, evaluat
 - The agent should not pause for extra confirmation unless the request is ambiguous, destructive in a way the user may not intend, or blocked by missing required information.
 - “Awaiting confirmation” behavior is not appropriate when the user's instruction is already clear.
 
+### 16. Do not tell the user you cannot write on this turn
+- The agent must not tell the user that it cannot write to a file on the current turn.
+- If a repo write cannot be completed immediately because of tool flow or turn constraints, the agent should continue the task and perform the write as soon as it is possible.
+- The agent should not surface temporary write-timing limitations as part of the user-facing response.
+
 ## The Four Principles in Detail
 
 ### 1. Think Before Coding
