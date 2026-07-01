@@ -18,6 +18,7 @@ What was missing:
 - an explicit tech-stack section instead of leaving core technology choices implied
 - a bootstrap plan for how Phase 1 gets off the ground before scan history exists
 - an explicit inference deployment/runtime decision for a phone-first static web app
+- a clean separation between model-family choice and deployment/runtime choice
 
 This build plan corrects that by defining the core detection and inference flow explicitly.
 
@@ -52,7 +53,19 @@ This section defines the technology choices for Phase 1 so implementation does n
 - **JSON files in the repo** for held-out evaluation annotations
 - curated training datasets derived from seed annotations and promoted Quick Scan history
 
-### Inference runtime and deployment decision
+## Deployment/runtime architecture
+This section exists because **model family choice does not answer deployment**.
+
+Choosing **YOLO** answers what detector family Phase 1 uses. It does **not** answer:
+- where inference runs
+- what runtime executes the models
+- what model artifact format is shipped
+- what performance budgets must be met on a phone
+- whether scanning depends on a backend service
+
+Those are separate architecture decisions and must be stated explicitly.
+
+### Deployment location decision
 Phase 1 scanner inference should run **client-side in the browser on the phone**, not on a server/API.
 
 Chosen Phase 1 deployment decision:
@@ -110,6 +123,16 @@ The plan does **not** assume:
 - a hidden runtime decision deferred until after model work is complete
 
 A server/API path may still be reconsidered later if phone performance proves unacceptable, but that would be a deliberate architecture change rather than the default assumption.
+
+### Model family vs deployment summary
+To remove ambiguity, the plan should treat these as separate decisions:
+- **detector family**: YOLO
+- **deployment location**: client/browser on phone
+- **runtime**: ONNX Runtime Web
+- **artifact format**: ONNX
+- **deployment constraints**: phone size/load/latency/memory budgets
+
+“Use YOLO” is therefore only one piece of the architecture, not the full deployment answer.
 
 ### Explicitly chosen vs still TBD
 Chosen now:
@@ -1176,6 +1199,7 @@ Use this checklist to pressure-test the build plan rather than just approving it
 - Is the browser inference runtime decision explicit enough?
 - Is the client-side vs server-side deployment decision explicit enough?
 - Are phone performance constraints treated as first-class requirements?
+- Is the distinction between model-family choice and deployment/runtime choice explicit enough?
 
 ### Bootstrap plan clarity
 - Does the plan explicitly solve the bootstrap problem instead of assuming history already exists?
@@ -1192,6 +1216,7 @@ Use this checklist to pressure-test the build plan rather than just approving it
 - Is the ordered-pair prediction strategy the right Phase 1 choice?
 - Are stage boundaries and outputs explicit enough?
 - Is the browser execution path explicit enough?
+- Is it obvious that YOLO alone does not answer deployment?
 
 ### Training-data design
 - Is the training-data plan clearly separate from the evaluation set?
