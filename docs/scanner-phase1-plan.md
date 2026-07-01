@@ -16,6 +16,7 @@ What was missing:
 - what should be optimized first in Phase 1
 - a separate training-data plan distinct from the evaluation set
 - an explicit tech-stack section instead of leaving core technology choices implied
+- a bootstrap plan for how Phase 1 gets off the ground before scan history exists
 
 This build plan corrects that by defining the core detection and inference flow explicitly.
 
@@ -251,6 +252,83 @@ This means the product strategy and model strategy are aligned:
 - First stabilize Quick Scan.
 - Then reuse the proven scanner behavior across the rest of the app.
 - The scanner should be designed for iterative improvement rather than one-shot perfection.
+
+## Bootstrap plan
+The improvement loop cannot begin with scan history alone. A working-enough first model and first dataset must exist before Quick Scan history can become useful training fuel.
+
+### Bootstrap problem statement
+The intended long-term loop is:
+1. scan
+2. save history
+3. review/correct
+4. promote useful cases into training data
+5. retrain or refine
+
+But that loop cannot start from zero. Phase 1 therefore needs an explicit bootstrap phase before the history-driven improvement loop becomes meaningful.
+
+### Bootstrap phase goals
+Before relying on saved history for improvement, Phase 1 must establish:
+- a seed detection dataset
+- a seed tile-value inference dataset
+- a first-pass detector trained on seed data
+- a first-pass tile-value inference stage trained or configured on seed data
+- a working Quick Scan review flow that can collect corrections from imperfect predictions
+
+### Bootstrap data sources
+The initial seed datasets should come from deliberately prepared data, not from hoping the scanner already works well enough.
+
+Recommended bootstrap sources:
+1. manually collected domino photos captured specifically for training
+2. manually annotated detection labels for those photos
+3. manually prepared tile crops for tile-value inference training
+4. curated difficult examples gathered intentionally during dataset creation
+
+### Bootstrap detection dataset
+Before history-driven iteration, create a seed YOLO training set containing:
+- full images
+- one bounding box per domino tile
+- one initial class: `domino_tile`
+
+Bootstrap target:
+- enough variety to make the detector usable in Quick Scan, even if imperfect
+- enough label quality that crops from detections are good enough for downstream value inference and review
+
+### Bootstrap tile-value inference dataset
+Before history-driven iteration, create a seed tile-value inference set containing:
+- tile crops
+- observed orientation metadata
+- observed ordered values
+- representative examples across the tile set and likely camera conditions
+
+Bootstrap target:
+- enough examples to produce reviewable ordered-value predictions
+- enough quality that users can correct mistakes rather than fight unusable outputs
+
+### Bootstrap release threshold
+Quick Scan should not depend on a zero-shot or imaginary model. The first usable scanner should clear a minimum threshold before the history loop becomes the primary improvement mechanism.
+
+Minimum bootstrap threshold:
+- detector outputs are usually close enough to tiles that review thumbnails are meaningful
+- tile-value inference outputs are often enough correct to support efficient correction
+- failure modes are understandable enough that saved history is useful for future training curation
+
+### Relationship between bootstrap and improvement loop
+The improvement loop should be understood in two phases:
+
+#### Phase A: bootstrap
+- create seed datasets
+- train/assemble first-pass models
+- validate on held-out eval set
+- ship to Quick Scan when output is reviewable
+
+#### Phase B: iterative improvement
+- collect scan history
+- collect corrections
+- promote curated examples into training datasets
+- retrain/refine
+- compare results against held-out eval set
+
+This resolves the bootstrap paradox by making seed-data creation an explicit prerequisite rather than an unstated assumption.
 
 ## Training-data plan
 The training-data plan is separate from the evaluation set. The 49-photo evaluation set is for benchmarking and regression checking only. It should not be treated as the main training dataset.
@@ -580,6 +658,18 @@ Phase 1 should use:
 - **JSON files in the repo** for held-out evaluation annotations
 
 The plan intentionally leaves the exact YOLO version and exact tile-value inference model architecture as TBD, but the above technology choices are fixed enough for Phase 1 planning.
+
+### Bootstrap requirements
+Phase 1 should explicitly include a bootstrap phase before the history-driven improvement loop.
+
+The bootstrap phase should include:
+- a seed detection dataset
+- a seed tile-value inference dataset
+- a first-pass detector trained or configured on seed data
+- a first-pass tile-value inference stage trained or configured on seed data
+- a minimum usability threshold for Quick Scan before scan history is treated as meaningful improvement fuel
+
+The long-term improvement loop should be treated as a second-phase benefit built on top of this bootstrap work, not as a substitute for it.
 
 ### Scanner definition requirements
 The scanner should:
@@ -994,6 +1084,13 @@ Use this checklist to pressure-test the build plan rather than just approving it
 - Is the local storage split stated clearly enough?
 - Is the evaluation annotation format stated clearly enough?
 
+### Bootstrap plan clarity
+- Does the plan explicitly solve the bootstrap problem instead of assuming history already exists?
+- Is the seed-data requirement concrete enough?
+- Is the first-pass model requirement explicit enough?
+- Is the transition from bootstrap phase to history-driven improvement clear enough?
+- Is the minimum Quick Scan usability threshold clear enough?
+
 ### Scanner architecture clarity
 - Does the document clearly define what the scanner is for?
 - Does the document clearly define what the scanner is?
@@ -1072,17 +1169,3 @@ Use this checklist to pressure-test the build plan rather than just approving it
 - Is the correction workflow too manual for the expected scan volume?
 - Are we overspecifying before learning from a few real scan sessions?
 - What is still missing that would block implementation?
-
-## Suggested review package for another agent
-Ask the reviewing agent to specifically evaluate:
-1. tech-stack clarity
-2. scanner purpose clarity
-3. scanner architecture clarity
-4. YOLO detection formulation
-5. tile-value inference formulation
-6. training-data plan quality
-7. product logic
-8. data model coherence
-9. evaluation design
-10. correction UX
-11. risks of overengineering or missing architecture decisions
