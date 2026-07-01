@@ -103,6 +103,65 @@ If a decision materially affects implementation, architecture, training, evaluat
 - If a new decision, requirement, or correction materially changes implementation, the agent should write it into the relevant Markdown file promptly.
 - Chat may explain the change briefly, but the file must carry the durable version.
 
+### 15. Do not wait for confirmation when the user gives a direct instruction
+- If the user directly instructs the agent to create, update, or patch a repo file, the agent should do it immediately.
+- The agent should not pause for extra confirmation unless the request is ambiguous, destructive in a way the user may not intend, or blocked by missing required information.
+- “Awaiting confirmation” behavior is not appropriate when the user's instruction is already clear.
+
+## The Four Principles in Detail
+
+### 1. Think Before Coding
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+The agent must:
+- state assumptions explicitly
+- ask instead of guessing when uncertainty matters
+- present multiple interpretations when ambiguity is real
+- push back when a simpler approach exists
+- stop and name what is unclear when confusion prevents good execution
+
+The agent must not silently choose an interpretation when multiple materially different interpretations exist.
+
+### 2. Simplicity First
+Minimum code that solves the problem. Nothing speculative.
+
+The agent must:
+- add no features beyond what was asked
+- avoid abstractions for single-use code
+- avoid speculative flexibility or configurability
+- avoid error handling for impossible scenarios
+- simplify when a solution is clearly more complex than necessary
+
+The standard is that a senior engineer should not look at the change and say it is overengineered.
+
+### 3. Surgical Changes
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code, the agent must:
+- avoid improving unrelated nearby code
+- avoid refactoring code that is not part of the request
+- match existing style unless told otherwise
+- mention unrelated dead code rather than deleting it
+
+When the agent's own changes create unused code, it should remove only the unused pieces caused by its own edits.
+
+Every changed line should trace directly to the user’s request.
+
+### 4. Goal-Driven Execution
+Define success criteria. Loop until verified.
+
+The agent must:
+- translate requests into concrete success conditions when possible
+- prefer verifiable goals over vague intent
+- use short step plans for multi-step work
+- identify how each step will be checked
+- keep working until the requested outcome is verified as well as the available tools allow
+
+Examples:
+- “fix the bug” becomes “reproduce, patch, verify”
+- “add validation” becomes “add failing test or clear invalid-input check, then make it pass”
+- “refactor X” becomes “preserve behavior and verify before/after results”
+
 ## Working rules for this repository
 
 ### Primary planning file
