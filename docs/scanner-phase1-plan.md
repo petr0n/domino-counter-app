@@ -5,10 +5,117 @@ Phase 1 should prioritize a reliable, improvable domino-scanning workflow before
 
 This document records the agreed scanner, product, evaluation, storage, and review decisions so they are not lost between sessions and can be reviewed by other agents.
 
+## Why the first draft missed the mark
+The first versions of this plan over-documented everything around the scanner while under-defining the scanner itself.
+
+What went wrong:
+- The plan captured review UX, history, storage, evaluation, and correction behavior before clearly defining what the scanner is.
+- It treated scanner-adjacent decisions as if they were enough to explain the scanner.
+- It failed to define the scanner as a concrete subsystem with a clear input/output contract.
+- It did not sharply separate scanner responsibilities from review-layer responsibilities.
+- It focused on preserving decisions from prior discussion more than on expressing the core architecture plainly.
+
+What this means:
+- The document was useful as a decision log, but incomplete as a scanner plan.
+- A scanner plan must first explain the scanner itself, then explain the systems around it.
+
+Corrective principle for this document:
+- Define the scanner first.
+- Then define how review, evaluation, persistence, and correction support that scanner.
+
 ## Core planning stance
 - The goal of this plan is to capture the **gist of every meaningful product and implementation decision made so far**, not a verbatim transcript of all prior questions.
 - The emphasis is on preventing gaps in scanner behavior, review behavior, evaluation design, storage design, and future improvement workflow.
 - When a later implementation choice is ambiguous, this document should be treated as the current source of intent unless explicitly superseded.
+
+## Scanner definition
+The Phase 1 scanner is the image-to-tile-detections subsystem used first in Quick Scan.
+
+Its job is to:
+1. accept an input image
+2. find candidate domino tiles in that image
+3. isolate each candidate as its own reviewable tile crop/thumbnail
+4. determine tile orientation and observed side order
+5. predict the two pip values for each candidate tile
+6. attach confidence/score information
+7. return results in a form that can be reviewed, corrected, persisted, and evaluated
+
+The scanner is not just “pip counting.” It is the full process from image input to structured tile detections that a human can verify.
+
+## Scanner responsibilities
+In Phase 1, the scanner is responsible for:
+- image ingestion from the scan surface
+- tile candidate detection
+- per-tile crop/thumbnail generation
+- per-tile value prediction
+- per-tile orientation/order prediction
+- per-tile confidence reporting
+- returning structured detections for review
+
+The scanner is not responsible for:
+- being perfectly final without review
+- full app-wide synchronization from day one
+- replacing correction UX
+- hiding uncertainty
+
+## Scanner input/output contract
+
+### Input
+The scanner takes:
+- a captured image from Quick Scan
+- later, the same scanner contract should be reusable by other scanning surfaces
+
+### Output
+At minimum, each scanner detection should provide:
+- a unique detection id
+- a tile crop/thumbnail
+- a bounding box in the source image
+- predicted first-side value
+- predicted second-side value
+- orientation metadata
+- observed-order meaning (left/right or top/bottom)
+- confidence/score
+- status suitable for later review normalization
+
+The scanner as a whole should return:
+- all detections for the image
+- enough metadata for review and history
+- enough structure for future evaluation against ground truth
+
+## Scanner pipeline shape
+The exact implementation may evolve, but the Phase 1 scanner conceptually has these stages:
+1. input image capture
+2. candidate tile detection/localization
+3. tile crop extraction
+4. orientation/order inference
+5. pip-value prediction per tile
+6. confidence attachment
+7. handoff to review/correction flow
+
+## Scanner success criteria
+The Phase 1 scanner is successful if it:
+- produces reviewable candidate tiles reliably enough to be useful
+- makes correction fast rather than painful
+- preserves enough evidence to diagnose why it failed
+- can be benchmarked against a fixed evaluation set
+- can improve over time through saved scans and corrections
+
+## Scanner scope vs non-scope
+
+### In scope for Phase 1
+- image-to-detection pipeline
+- candidate tile extraction
+- tile value prediction
+- orientation/order prediction
+- reviewable outputs
+- correction-loop support
+- evaluation support
+- history support for improvement
+
+### Not required in scope for Phase 1
+- full scanner automation with no human correction
+- tightly synchronized behavior across every app surface immediately
+- prematurely finalizing architecture before Quick Scan proves the workflow
 
 ## Product strategy
 
@@ -244,6 +351,16 @@ Phase 1 should prioritize a reliable, improvable domino-scanning workflow before
 - **Round-end Scan** may lag behind initially and does not need to stay tightly synced with Quick Scan at first.
 - Once Quick Scan is stable and accurate, the rest of the app should be wired to use the proven scanner pipeline.
 - Long term, Quick Scan and Round-end Scan should converge on the same underlying scanner logic/model.
+
+### Scanner definition requirements
+The scanner should:
+- accept an image
+- detect candidate tiles
+- extract reviewable tile crops
+- infer orientation and observed order
+- predict two values per tile
+- attach confidence
+- return structured detections suitable for review, persistence, and evaluation
 
 ### Evaluation dataset requirements
 Phase 1 should include a **49-photo evaluation set**.
@@ -581,6 +698,12 @@ This is a planning schema draft, not final production code.
 ## Review checklist
 Use this checklist to pressure-test the plan rather than just approving it.
 
+### Scanner clarity
+- Does the document now clearly define what the scanner is?
+- Is the scanner input/output contract explicit enough?
+- Are scanner responsibilities distinguished from review UX and storage responsibilities?
+- Is the scanner scope for Phase 1 clear enough?
+
 ### Product coherence
 - Does the Quick Scan-first strategy make sense?
 - Is it clear enough that Round-end Scan can lag behind until Quick Scan stabilizes?
@@ -647,11 +770,12 @@ Use this checklist to pressure-test the plan rather than just approving it.
 
 ## Suggested review package for another agent
 Ask the reviewing agent to specifically evaluate:
-1. product logic
-2. data model coherence
-3. evaluation design
-4. correction UX
-5. risks of overengineering or missing architecture decisions
+1. scanner definition clarity
+2. product logic
+3. data model coherence
+4. evaluation design
+5. correction UX
+6. risks of overengineering or missing architecture decisions
 
 ## Notes for later review
 These decisions were chosen to support scanner improvement first, especially through Quick Scan history, image retention, correction review, and an evaluation dataset that separates tile identity from orientation/order accuracy.
