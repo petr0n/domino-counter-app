@@ -17,6 +17,7 @@ What was missing:
 - a separate training-data plan distinct from the evaluation set
 - an explicit tech-stack section instead of leaving core technology choices implied
 - a bootstrap plan for how Phase 1 gets off the ground before scan history exists
+- an explicit inference deployment/runtime decision for a phone-first static web app
 
 This build plan corrects that by defining the core detection and inference flow explicitly.
 
@@ -41,6 +42,7 @@ This section defines the technology choices for Phase 1 so implementation does n
 ### Product/runtime tech
 - **Quick Scan** as the primary scanner surface in the app
 - app review/correction UI for scan output validation and editing
+- **phone-first static web app deployment**
 
 ### Storage tech
 - **IndexedDB** for full images, scan history, detections, corrections, confidence, timestamps, and rich local records
@@ -50,6 +52,65 @@ This section defines the technology choices for Phase 1 so implementation does n
 - **JSON files in the repo** for held-out evaluation annotations
 - curated training datasets derived from seed annotations and promoted Quick Scan history
 
+### Inference runtime and deployment decision
+Phase 1 scanner inference should run **client-side in the browser on the phone**, not on a server/API.
+
+Chosen Phase 1 deployment decision:
+- **client-side inference** inside the static web app
+- no required inference server for Phase 1 scanning
+- no Worker/API dependency for the main scan path
+
+Why this is the Phase 1 decision:
+- it matches the product’s phone-first static-web-app architecture
+- it avoids adding backend cost and operational complexity during Phase 1
+- it preserves the possibility of offline or poor-connectivity use later
+- it avoids uploading user photos to a server by default, which is better for privacy
+- it keeps scanner iteration focused on the product’s actual deployment environment rather than a separate hosted inference stack
+
+### Browser inference runtime decision
+For Phase 1, browser inference should use a **browser-compatible ONNX runtime path**.
+
+Chosen runtime direction:
+- export trained models to **ONNX**
+- run them in-browser with **ONNX Runtime Web**
+- prefer **WASM/WebGPU-capable browser execution paths** as supported by the target devices and browser environment
+
+Why this direction is chosen:
+- it is compatible with a static web app deployment
+- it provides a clearer deployment story than leaving the runtime unspecified
+- it forces model-size and latency tradeoffs to be made against the real phone target
+- it avoids creating a second architecture decision later just to make the models runnable in the app
+
+### Model format decision
+Phase 1 model artifacts should be shipped in **browser-runnable ONNX format**.
+
+This means:
+- the detector must be exportable to ONNX
+- the tile-value inference model must also be exportable to ONNX, or replaced with a browser-runnable equivalent if it is not
+- deployment-readiness is not just model quality; it also includes successful browser execution in the app target
+
+### Phone constraints and budgets
+Because this is a phone-first static web app, model deployment must obey practical phone budgets.
+
+Phase 1 deployment constraints:
+- model files must be small enough to load acceptably on a phone connection
+- startup/warm-load time must be acceptable for a quick-scan workflow
+- inference latency must be compatible with phone use, not desktop-only expectations
+- memory use must stay within practical mobile-browser limits
+
+This implies:
+- smaller detector variants may be preferable to larger YOLO variants even if offline benchmark quality is lower
+- tile-value inference should stay lightweight enough that crop-level inference does not dominate total scan time
+- deployment choices must be validated on actual phone hardware, not only desktop browsers
+
+### What this rules out for Phase 1
+The plan does **not** assume:
+- server-side inference as the primary scanner architecture
+- mandatory photo upload to a backend for detection
+- a hidden runtime decision deferred until after model work is complete
+
+A server/API path may still be reconsidered later if phone performance proves unacceptable, but that would be a deliberate architecture change rather than the default assumption.
+
 ### Explicitly chosen vs still TBD
 Chosen now:
 - detector family: **YOLO**
@@ -58,12 +119,15 @@ Chosen now:
 - prediction representation: ordered observed pair for tile-value inference
 - local persistence: IndexedDB + localStorage split
 - evaluation annotation format: repo-stored JSON
+- deployment architecture: **client-side browser inference in the static web app**
+- browser model/runtime direction: **ONNX + ONNX Runtime Web**
 
 Still TBD:
-- exact YOLO version
+- exact YOLO version/size variant
 - exact tile-value inference model architecture
 - exact detector/inference training framework
-- exact runtime placement of inference if later deployment decisions require it
+- exact ONNX Runtime Web execution backend mix used by target browsers
+- exact model-size/load-time/latency acceptance thresholds
 - exact annotation tool used to create labels
 
 ## Core scanner architecture
@@ -181,14 +245,15 @@ Why:
 - user correction is simpler when the prediction already matches review semantics
 
 ## How tile detection is done in this plan
-Tile detection is done by running **YOLO on the full input image**.
+Tile detection is done by running **YOLO on the full input image** in the browser on the client device.
 
 Detailed plan:
 1. user captures or provides one image
-2. YOLO runs on the full image
-3. YOLO predicts bounding boxes for full domino tiles using a single `domino_tile` class
-4. each box becomes a candidate tile detection
-5. each candidate is cropped for downstream inference and review
+2. the browser app loads the detector model/runtime
+3. YOLO runs on the full image on-device in the browser
+4. YOLO predicts bounding boxes for full domino tiles using a single `domino_tile` class
+5. each box becomes a candidate tile detection
+6. each candidate is cropped for downstream inference and review
 
 Detection assumptions for Phase 1:
 - boxes are axis-aligned unless later rotation-aware detection is explicitly added
@@ -199,19 +264,21 @@ Detection success criteria:
 - high enough recall to catch most tiles in a realistic photo
 - boxes accurate enough to support tile-value inference and human review
 - confidence useful for triaging low-quality detections
+- browser execution acceptable on target phones
 
 ## How pip counting / tile-value inference is done in this plan
-Pip counting is done as a **tile-level ordered value inference stage** on each crop.
+Pip counting is done as a **tile-level ordered value inference stage** on each crop, running client-side in the browser.
 
 Detailed plan:
 1. take the tile crop produced from YOLO detection
-2. infer whether the tile is horizontal or vertical
-3. infer observed order semantics:
+2. run tile-level inference in the browser on the client device
+3. infer whether the tile is horizontal or vertical
+4. infer observed order semantics:
    - horizontal -> left then right
    - vertical -> top then bottom
-4. infer the value of the first half
-5. infer the value of the second half
-6. output the ordered pair plus confidence
+5. infer the value of the first half
+6. infer the value of the second half
+7. output the ordered pair plus confidence
 
 Important framing:
 - even if users say “pip counting,” the plan treats this stage as **tile-value inference**
@@ -273,6 +340,7 @@ Before relying on saved history for improvement, Phase 1 must establish:
 - a first-pass detector trained on seed data
 - a first-pass tile-value inference stage trained or configured on seed data
 - a working Quick Scan review flow that can collect corrections from imperfect predictions
+- a first-pass browser-runnable deployment path for both inference stages
 
 ### Bootstrap data sources
 The initial seed datasets should come from deliberately prepared data, not from hoping the scanner already works well enough.
@@ -311,6 +379,7 @@ Minimum bootstrap threshold:
 - detector outputs are usually close enough to tiles that review thumbnails are meaningful
 - tile-value inference outputs are often enough correct to support efficient correction
 - failure modes are understandable enough that saved history is useful for future training curation
+- browser deployment is acceptable on target phone hardware for load time, memory use, and scan latency
 
 ### Relationship between bootstrap and improvement loop
 The improvement loop should be understood in two phases:
@@ -318,7 +387,9 @@ The improvement loop should be understood in two phases:
 #### Phase A: bootstrap
 - create seed datasets
 - train/assemble first-pass models
+- export browser-runnable model artifacts
 - validate on held-out eval set
+- validate on actual target phones
 - ship to Quick Scan when output is reviewable
 
 #### Phase B: iterative improvement
@@ -326,7 +397,9 @@ The improvement loop should be understood in two phases:
 - collect corrections
 - promote curated examples into training datasets
 - retrain/refine
+- re-export browser-runnable model artifacts
 - compare results against held-out eval set
+- confirm deployment still works on target phones
 
 This resolves the bootstrap paradox by making seed-data creation an explicit prerequisite rather than an unstated assumption.
 
@@ -437,6 +510,7 @@ But it does need:
 - a seed training dataset for tile-value inference
 - a clean held-out evaluation set
 - a workflow for promoting corrected scans into future training data
+- a browser-runnable deployment path for accepted model artifacts
 
 ## Evaluation dataset
 Phase 1 should include a **49-photo evaluation set**.
@@ -656,8 +730,21 @@ Phase 1 should use:
 - **IndexedDB** for images and rich scan-history persistence
 - **localStorage** for lightweight local settings and flags
 - **JSON files in the repo** for held-out evaluation annotations
+- **client-side browser inference** inside the static web app
+- **ONNX model artifacts** runnable in-browser via **ONNX Runtime Web**
 
 The plan intentionally leaves the exact YOLO version and exact tile-value inference model architecture as TBD, but the above technology choices are fixed enough for Phase 1 planning.
+
+### Deployment/runtime requirements
+Phase 1 scanner inference should run on the client in the browser, not depend on a required inference API.
+
+This implies:
+- the detector must be browser-runnable
+- the tile-value inference stage must be browser-runnable
+- both stages must fit acceptable phone budgets for model size, load time, latency, and memory use
+- deployment validation must happen on actual target phones, not just desktop browsers
+
+A server-side inference path is out of scope for the primary Phase 1 architecture unless the project explicitly changes the deployment decision later.
 
 ### Bootstrap requirements
 Phase 1 should explicitly include a bootstrap phase before the history-driven improvement loop.
@@ -668,6 +755,7 @@ The bootstrap phase should include:
 - a first-pass detector trained or configured on seed data
 - a first-pass tile-value inference stage trained or configured on seed data
 - a minimum usability threshold for Quick Scan before scan history is treated as meaningful improvement fuel
+- browser-runnable deployment artifacts for accepted first-pass models
 
 The long-term improvement loop should be treated as a second-phase benefit built on top of this bootstrap work, not as a substitute for it.
 
@@ -688,6 +776,7 @@ The detector should:
 - operate on the full source image
 - output bounding boxes and detection confidence
 - prioritize recall over precision in early Phase 1
+- execute acceptably on target phone browsers
 
 ### Tile-value inference requirements
 The tile-value inference stage should:
@@ -696,6 +785,7 @@ The tile-value inference stage should:
 - return first-side and second-side values
 - return orientation/order metadata
 - return confidence for the ordered prediction
+- execute acceptably on target phone browsers
 
 ### Training-data requirements
 Phase 1 should include:
@@ -1083,6 +1173,9 @@ Use this checklist to pressure-test the build plan rather than just approving it
 - Is the YOLO choice stated clearly enough?
 - Is the local storage split stated clearly enough?
 - Is the evaluation annotation format stated clearly enough?
+- Is the browser inference runtime decision explicit enough?
+- Is the client-side vs server-side deployment decision explicit enough?
+- Are phone performance constraints treated as first-class requirements?
 
 ### Bootstrap plan clarity
 - Does the plan explicitly solve the bootstrap problem instead of assuming history already exists?
@@ -1098,6 +1191,7 @@ Use this checklist to pressure-test the build plan rather than just approving it
 - Is the tile-value inference stage concrete enough to implement?
 - Is the ordered-pair prediction strategy the right Phase 1 choice?
 - Are stage boundaries and outputs explicit enough?
+- Is the browser execution path explicit enough?
 
 ### Training-data design
 - Is the training-data plan clearly separate from the evaluation set?
@@ -1111,6 +1205,7 @@ Use this checklist to pressure-test the build plan rather than just approving it
 - Is it clear enough that Round-end Scan can lag behind until Quick Scan stabilizes?
 - Are we avoiding premature wiring of unreliable scanner behavior into the rest of the app?
 - Is the correction workflow realistic for phone use?
+- Does the deployment/runtime choice match the product architecture?
 
 ### Tile semantics
 - Is the distinction between **tile identity** and **observed orientation/order** clear enough?
@@ -1125,6 +1220,7 @@ Use this checklist to pressure-test the build plan rather than just approving it
 - Are the proposed metrics sufficient:
   - tile identity accuracy
   - orientation/order accuracy
+- Does evaluation include target-phone deployment verification, not just model-quality verification?
 
 ### Correction UX
 - Is thumbnail-per-detection review the right default?
