@@ -172,8 +172,15 @@ trivial and the brittle part (counting/assignment) reuses the known grid model.
 ### 5.1 Stage 1 — tile detection (YOLO)
 
 - **Task:** detect full domino tiles on the whole image. One class: `domino_tile`.
-- **Output per tile:** bounding box (oriented preferred; axis-aligned + downstream
-  rotation acceptable to start) + confidence.
+- **Output per tile:** **oriented bounding box (OBB)** + confidence. Tiles are 2:1
+  rectangles that touch edge-to-edge at arbitrary angles; axis-aligned boxes on
+  rotated, touching tiles overlap heavily and NMS can drop a real tile, whereas
+  OBB fits tighter and separates crowded objects
+  ([Ultralytics OBB](https://www.ultralytics.com/blog/what-is-oriented-bounding-box-obb-detection-a-quick-guide)).
+  Use a YOLO-OBB head. Caveat: angle regression has a boundary-discontinuity pitfall
+  (mitigated by Circular Smooth Label), and OBB on-device cost must be validated
+  (§8 / Item-6 budgets). A plain axis-aligned box is the fallback only if OBB proves
+  too costly on phone.
 - **Priority:** **recall over precision.** Missed tiles hurt the user more than
   easily-removable false positives (review handles extras).
 - **Variant:** smallest YOLO variant that clears accuracy; size/latency matter for
@@ -199,9 +206,16 @@ the baseline plateaus below the per-half accuracy gate.
 ### 5.3 Orientation & ordering — deterministic, not learned
 
 The value model does **not** learn orientation. Geometry handles it:
-- Orientation (horizontal/vertical) from the tile box aspect + divider axis.
+- Orientation comes from the **OBB angle** (the tile is a 2:1 rectangle; the long
+  axis is unambiguous).
+- **Split at the physical divider bar, not at pips.** Every tile has a real centre
+  line (the "bar") dividing it into two square ends, present regardless of pip
+  count — so blank halves (0 pips) split cleanly. Locate the bar perpendicular to
+  the long axis (intensity scan / it sits at the box midpoint).
 - Ordered halves: **left→right** when horizontal, **top→bottom** when vertical.
-- Divider location via a column/row intensity scan across the crop.
+- **180° ambiguity doesn't matter for scoring:** the hand's pip total is
+  order-invariant (§7), so which end is "first" only affects observed-order
+  *display*, never the total.
 
 This shrinks what Stage 2 must learn to just "how many pips in this half."
 
