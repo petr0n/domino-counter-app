@@ -188,11 +188,26 @@ trivial and the brittle part (counting/assignment) reuses the known grid model.
 
 ### 5.2 Stage 2 — pip reading (count, not classify)
 
-Two framings; **prove the baseline first, upgrade if needed.**
+**Why crop first (not single-pass pip detection on the full image).** Pips are
+*small objects*; at a detector's ~640px working resolution they occupy few pixels
+and become "nearly invisible" — a well-known weakness that slicing/higher-res crops
+specifically fix (the SAHI principle;
+[Ultralytics](https://docs.ultralytics.com/guides/sahi-tiled-inference),
+[Labellerr](https://www.labellerr.com/blog/small-object-detection/)). Cropping each
+tile restores the resolution pips need, so detecting pips across a full multi-tile
+photo is **explicitly rejected**.
 
-- **Baseline (simplest that could work):** crop each detected tile → find the
-  divider (deterministic, §5.3) → a small CNN classifies each half's pip count as
-  **0–12 (13-way softmax per half)**. Trained on synthetic crops. Counting
+**Crop preparation (removes the crop-quality failure mode).** Using the OBB
+(§5.1), **perspective-rectify** each tile to a canonical upright, fixed-size
+rectangle and **pad slightly** so tight boxes don't clip edge pips. Stage 2 then
+always sees a consistent, high-res, upright, low-background tile with no bleed from
+adjacent touching tiles.
+
+Two framings for the counter; **prove the baseline first, upgrade if needed.**
+
+- **Baseline (simplest that could work):** on the rectified crop → split at the
+  divider bar (deterministic, §5.3) → a small CNN classifies each half's pip count
+  as **0–12 (13-way softmax per half)**. Trained on synthetic crops. Counting
   generalizes better than identity memorization.
 - **Target (more robust):** a **pip detector** (detect each pip as an object, or
   as keypoints) across the tile; assign pips to halves by geometry and count.
