@@ -1,1292 +1,438 @@
-# Domino Scanner Phase 1 Build Plan
-
-## Purpose
-Phase 1 should prioritize a reliable, improvable domino-scanning workflow before deeply wiring scanner behavior into the rest of the app.
-
-This document is a build plan for the planned scanner system itself. It is intended to be concrete enough to implement, review, and revise. It should describe the scanner architecture, the technical approach for its core stages, the review workflow around it, and the evaluation/storage systems that support iterative improvement.
-
-## Why earlier drafts were not workable enough
-Earlier drafts captured many surrounding decisions but stopped short of specifying the core scanner mechanics deeply enough.
-
-What was missing:
-- the scanner’s concrete technical architecture
-- how YOLO is used for tile detection
-- how tile-value inference / pip counting is performed after detection
-- the output contract of each stage
-- what should be optimized first in Phase 1
-- a separate training-data plan distinct from the evaluation set
-- an explicit tech-stack section instead of leaving core technology choices implied
-- a bootstrap plan for how Phase 1 gets off the ground before scan history exists
-- an explicit inference deployment/runtime decision for a phone-first static web app
-- a clean separation between model-family choice and deployment/runtime choice
-
-This build plan corrects that by defining the core detection and inference flow explicitly.
-
-## Scanner purpose
-The scanner exists to convert domino photos into structured, reviewable tile data.
-
-The scanner is for:
-- helping the user get tile values from a photo quickly
-- producing outputs that are easy to review and correct
-- preserving enough evidence to improve scanner quality over time
-
-The scanner is not just a detector and not just a pip counter. It is the full image-to-reviewable-results subsystem.
-
-## Tech stack spec
-This section defines the technology choices for Phase 1 so implementation does not depend on implied assumptions.
-
-### Core scanner tech
-- **YOLO** for full-image domino tile detection/localization
-- a separate downstream **tile-value inference / pip-counting model/stage** on each detected tile crop
-- crop extraction between detection and tile-value inference
-
-### Product/runtime tech
-- **Quick Scan** as the primary scanner surface in the app
-- app review/correction UI for scan output validation and editing
-- **phone-first static web app deployment**
-
-### Storage tech
-- **IndexedDB** for full images, scan history, detections, corrections, confidence, timestamps, and rich local records
-- **localStorage** for lightweight settings, flags, preferences, and optional recent scan pointers
-
-### Dataset/annotation tech
-- **JSON files in the repo** for held-out evaluation annotations
-- curated training datasets derived from seed annotations and promoted Quick Scan history
-
-## Deployment/runtime architecture
-This section exists because **model family choice does not answer deployment**.
-
-Choosing **YOLO** answers what detector family Phase 1 uses. It does **not** answer:
-- where inference runs
-- what runtime executes the models
-- what model artifact format is shipped
-- what performance budgets must be met on a phone
-- whether scanning depends on a backend service
-
-Those are separate architecture decisions and must be stated explicitly.
-
-### Deployment location decision
-Phase 1 scanner inference should run **client-side in the browser on the phone**, not on a server/API.
-
-Chosen Phase 1 deployment decision:
-- **client-side inference** inside the static web app
-- no required inference server for Phase 1 scanning
-- no Worker/API dependency for the main scan path
-
-Why this is the Phase 1 decision:
-- it matches the product’s phone-first static-web-app architecture
-- it avoids adding backend cost and operational complexity during Phase 1
-- it preserves the possibility of offline or poor-connectivity use later
-- it avoids uploading user photos to a server by default, which is better for privacy
-- it keeps scanner iteration focused on the product’s actual deployment environment rather than a separate hosted inference stack
-
-### Browser inference runtime decision
-For Phase 1, browser inference should use a **browser-compatible ONNX runtime path**.
-
-Chosen runtime direction:
-- export trained models to **ONNX**
-- run them in-browser with **ONNX Runtime Web**
-- prefer **WASM/WebGPU-capable browser execution paths** as supported by the target devices and browser environment
-
-Why this direction is chosen:
-- it is compatible with a static web app deployment
-- it provides a clearer deployment story than leaving the runtime unspecified
-- it forces model-size and latency tradeoffs to be made against the real phone target
-- it avoids creating a second architecture decision later just to make the models runnable in the app
-
-### Model format decision
-Phase 1 model artifacts should be shipped in **browser-runnable ONNX format**.
-
-This means:
-- the detector must be exportable to ONNX
-- the tile-value inference model must also be exportable to ONNX, or replaced with a browser-runnable equivalent if it is not
-- deployment-readiness is not just model quality; it also includes successful browser execution in the app target
-
-### Phone constraints and budgets
-Because this is a phone-first static web app, model deployment must obey practical phone budgets.
-
-Phase 1 deployment constraints:
-- model files must be small enough to load acceptably on a phone connection
-- startup/warm-load time must be acceptable for a quick-scan workflow
-- inference latency must be compatible with phone use, not desktop-only expectations
-- memory use must stay within practical mobile-browser limits
-
-This implies:
-- smaller detector variants may be preferable to larger YOLO variants even if offline benchmark quality is lower
-- tile-value inference should stay lightweight enough that crop-level inference does not dominate total scan time
-- deployment choices must be validated on actual phone hardware, not only desktop browsers
-
-### What this rules out for Phase 1
-The plan does **not** assume:
-- server-side inference as the primary scanner architecture
-- mandatory photo upload to a backend for detection
-- a hidden runtime decision deferred until after model work is complete
-
-A server/API path may still be reconsidered later if phone performance proves unacceptable, but that would be a deliberate architecture change rather than the default assumption.
-
-### Model family vs deployment summary
-To remove ambiguity, the plan should treat these as separate decisions:
-- **detector family**: YOLO
-- **deployment location**: client/browser on phone
-- **runtime**: ONNX Runtime Web
-- **artifact format**: ONNX
-- **deployment constraints**: phone size/load/latency/memory budgets
-
-“Use YOLO” is therefore only one piece of the architecture, not the full deployment answer.
-
-### Explicitly chosen vs still TBD
-Chosen now:
-- detector family: **YOLO**
-- detection scope: full-image domino-tile localization
-- one initial detector class: `domino_tile`
-- prediction representation: ordered observed pair for tile-value inference
-- local persistence: IndexedDB + localStorage split
-- evaluation annotation format: repo-stored JSON
-- deployment architecture: **client-side browser inference in the static web app**
-- browser model/runtime direction: **ONNX + ONNX Runtime Web**
-
-Still TBD:
-- exact YOLO version/size variant
-- exact tile-value inference model architecture
-- exact detector/inference training framework
-- exact ONNX Runtime Web execution backend mix used by target browsers
-- exact model-size/load-time/latency acceptance thresholds
-- exact annotation tool used to create labels
-
-## Core scanner architecture
-The planned Phase 1 scanner has two core model stages and several supporting systems.
-
-### Stage 1: YOLO tile detection/localization
-Use **YOLO** on the full source image to detect full domino tiles.
-
-Planned formulation:
-- run **single-pass full-image object detection**
-- detect **full domino tiles** as objects
-- start with **one detector class**: `domino_tile`
-- output one detection per likely tile with:
-  - bounding box
-  - confidence score
-
-Phase 1 optimization priority for detection:
-- prioritize **recall over precision**
-- allow some false positives if they are easy to remove in review
-- avoid missing tiles when possible, because missed tiles are harder on the user than removable extras
-
-Detection-stage responsibilities:
-- identify all likely tiles in the image
-- localize each tile with a bounding box
-- produce enough information for crop extraction, review, and evaluation
-
-Detection-stage output contract per tile:
-- `detectionId`
-- `bbox`
-- `detectionConfidence`
-- `sourceImageId`
-
-### Stage 2: crop extraction
-After YOLO detection, extract one crop per detected tile.
-
-Crop-stage responsibilities:
-- cut out each detected tile region from the source image
-- generate a reviewable thumbnail/crop
-- preserve linkage back to the source image and bounding box
-
-Crop-stage output contract per tile:
-- `detectionId`
-- `thumbnailImageId`
-- `cropImageId`
-- `bbox`
-- `sourceImageId`
-
-### Stage 3: orientation and tile-value inference
-After crop extraction, run a downstream tile-level inference stage.
-
-Phase 1 recommended formulation:
-- treat this as **two-side ordered prediction** on the tile crop
-- infer:
-  - tile orientation metadata
-  - observed order meaning
-  - first-side value
-  - second-side value
-  - confidence
-
-Recommended output strategy:
-- predict the **ordered pair directly** as observed
-- do **not** reduce to a canonical unordered identity in the prediction output
-- preserve observed order for review and annotation alignment
-- canonical identity can be derived later for evaluation matching if needed
-
-Why this formulation is preferred for Phase 1:
-- it maps directly to review UX
-- it preserves what the user sees
-- it aligns with the requirement that review display preserve observed order
-- it avoids a second normalization step before review
-
-Inference-stage responsibilities:
-- determine whether the crop should be interpreted as horizontal or vertical
-- determine left/right or top/bottom order meaning
-- predict first-side value
-- predict second-side value
-- return confidence for the ordered prediction
-
-Inference-stage output contract per tile:
-- `detectionId`
-- `orientation.layout` (`horizontal` or `vertical`)
-- `orientation.rotationDegrees` (approximate is acceptable)
-- `orderedSidesMeaning` (`[left,right]` or `[top,bottom]`)
-- `predicted.first`
-- `predicted.second`
-- `predicted.display`
-- `predicted.confidence`
-
-### Stage 4: review/correction handoff
-After inference, send all detections to the review layer.
-
-Review-stage responsibilities:
-- present each detection as a tile thumbnail
-- show ordered predicted values
-- show confidence
-- allow edit, invalidation, and manual addition
-
-## Why two-side ordered prediction is the chosen pip-counting approach
-The key unresolved technical choice was how to represent tile-value inference.
-
-Options included:
-- direct full-tile identity classification
-- unordered identity + separate order prediction
-- two-side independent value prediction
-- direct ordered-pair prediction
-
-Chosen Phase 1 approach:
-- **predict the ordered pair directly from the crop**
-- represent that as `first/second` in observed order
-
-Why:
-- review UI needs ordered values anyway
-- annotation format preserves observed order
-- evaluation separately handles identity vs order, so ordered outputs are acceptable and useful
-- user correction is simpler when the prediction already matches review semantics
-
-## How tile detection is done in this plan
-Tile detection is done by running **YOLO on the full input image** in the browser on the client device.
-
-Detailed plan:
-1. user captures or provides one image
-2. the browser app loads the detector model/runtime
-3. YOLO runs on the full image on-device in the browser
-4. YOLO predicts bounding boxes for full domino tiles using a single `domino_tile` class
-5. each box becomes a candidate tile detection
-6. each candidate is cropped for downstream inference and review
-
-Detection assumptions for Phase 1:
-- boxes are axis-aligned unless later rotation-aware detection is explicitly added
-- orientation can be inferred downstream from the crop
-- some overlapping or imperfect boxes are acceptable if review remains usable
-
-Detection success criteria:
-- high enough recall to catch most tiles in a realistic photo
-- boxes accurate enough to support tile-value inference and human review
-- confidence useful for triaging low-quality detections
-- browser execution acceptable on target phones
-
-## How pip counting / tile-value inference is done in this plan
-Pip counting is done as a **tile-level ordered value inference stage** on each crop, running client-side in the browser.
-
-Detailed plan:
-1. take the tile crop produced from YOLO detection
-2. run tile-level inference in the browser on the client device
-3. infer whether the tile is horizontal or vertical
-4. infer observed order semantics:
-   - horizontal -> left then right
-   - vertical -> top then bottom
-5. infer the value of the first half
-6. infer the value of the second half
-7. output the ordered pair plus confidence
-
-Important framing:
-- even if users say “pip counting,” the plan treats this stage as **tile-value inference**
-- the output is the observed ordered tile value, e.g. `2/12`
-- canonicalization for identity comparison happens only later when needed for evaluation or analytics
-
-Phase 1 prediction target:
-- ordered observed pair, not just unordered identity
-
-Phase 1 confidence target:
-- one confidence score per predicted ordered tile
-- optional future extension: per-side confidence
-
-## False positives, misses, and review strategy
-Phase 1 does not require perfect autonomous output.
-
-Planned behavior:
-- favor catching likely tiles even if some false positives slip through
-- let review handle explicit invalidation through **Not Tile**
-- let review handle missed detections through manual add
-- preserve both mistakes in history so the scanner can improve later
-
-This means the product strategy and model strategy are aligned:
-- detector recall is more important than detector purity early on
-- review is part of the system, not an admission of failure
-
-## Quick Scan as the primary scanner surface
-### Quick Scan vs Round-end Scan
-- **Quick Scan** is the primary experimentation and validation surface.
-- **Round-end Scan** may lag behind initially and does not need to stay tightly synced with Quick Scan at first.
-- Quick Scan is the tester/experiment tool.
-- Scanner iteration should happen in Quick Scan first.
-- Once Quick Scan is stable and accurate, the rest of the app should be wired to use the proven scanner pipeline.
-- Long term, Quick Scan and Round-end Scan should converge on the same underlying scanner logic/model.
-
-### Product development sequence
-- Do not over-wire the full app around an unstable scanner.
-- First stabilize Quick Scan.
-- Then reuse the proven scanner behavior across the rest of the app.
-- The scanner should be designed for iterative improvement rather than one-shot perfection.
-
-## Bootstrap plan
-The improvement loop cannot begin with scan history alone. A working-enough first model and first dataset must exist before Quick Scan history can become useful training fuel.
-
-### Bootstrap problem statement
-The intended long-term loop is:
-1. scan
-2. save history
-3. review/correct
-4. promote useful cases into training data
-5. retrain or refine
-
-But that loop cannot start from zero. Phase 1 therefore needs an explicit bootstrap phase before the history-driven improvement loop becomes meaningful.
-
-### Bootstrap phase goals
-Before relying on saved history for improvement, Phase 1 must establish:
-- a seed detection dataset
-- a seed tile-value inference dataset
-- a first-pass detector trained on seed data
-- a first-pass tile-value inference stage trained or configured on seed data
-- a working Quick Scan review flow that can collect corrections from imperfect predictions
-- a first-pass browser-runnable deployment path for both inference stages
-
-### Bootstrap data sources
-The initial seed datasets should come from deliberately prepared data, not from hoping the scanner already works well enough.
-
-Recommended bootstrap sources:
-1. manually collected domino photos captured specifically for training
-2. manually annotated detection labels for those photos
-3. manually prepared tile crops for tile-value inference training
-4. curated difficult examples gathered intentionally during dataset creation
-
-### Bootstrap detection dataset
-Before history-driven iteration, create a seed YOLO training set containing:
-- full images
-- one bounding box per domino tile
-- one initial class: `domino_tile`
-
-Bootstrap target:
-- enough variety to make the detector usable in Quick Scan, even if imperfect
-- enough label quality that crops from detections are good enough for downstream value inference and review
-
-### Bootstrap tile-value inference dataset
-Before history-driven iteration, create a seed tile-value inference set containing:
-- tile crops
-- observed orientation metadata
-- observed ordered values
-- representative examples across the tile set and likely camera conditions
-
-Bootstrap target:
-- enough examples to produce reviewable ordered-value predictions
-- enough quality that users can correct mistakes rather than fight unusable outputs
-
-### Bootstrap release threshold
-Quick Scan should not depend on a zero-shot or imaginary model. The first usable scanner should clear a minimum threshold before the history loop becomes the primary improvement mechanism.
-
-Minimum bootstrap threshold:
-- detector outputs are usually close enough to tiles that review thumbnails are meaningful
-- tile-value inference outputs are often enough correct to support efficient correction
-- failure modes are understandable enough that saved history is useful for future training curation
-- browser deployment is acceptable on target phone hardware for load time, memory use, and scan latency
-
-### Relationship between bootstrap and improvement loop
-The improvement loop should be understood in two phases:
-
-#### Phase A: bootstrap
-- create seed datasets
-- train/assemble first-pass models
-- export browser-runnable model artifacts
-- validate on held-out eval set
-- validate on actual target phones
-- ship to Quick Scan when output is reviewable
-
-#### Phase B: iterative improvement
-- collect scan history
-- collect corrections
-- promote curated examples into training datasets
-- retrain/refine
-- re-export browser-runnable model artifacts
-- compare results against held-out eval set
-- confirm deployment still works on target phones
-
-This resolves the bootstrap paradox by making seed-data creation an explicit prerequisite rather than an unstated assumption.
-
-## Training-data plan
-The training-data plan is separate from the evaluation set. The 49-photo evaluation set is for benchmarking and regression checking only. It should not be treated as the main training dataset.
-
-### Training-data goals
-Phase 1 training data should support both core model stages:
-- YOLO tile detection/localization
-- tile-value inference / pip counting on cropped tiles
-
-### Training-data sources
-Training data should come from three sources:
-1. a manually annotated seed dataset created specifically for model training
-2. corrected Quick Scan history promoted into training candidates
-3. curated hard cases, including false positives, missed tiles, partial tiles, visually difficult scenes, and noisy images
-
-### Detection training data
-YOLO detection training data should include:
-- full source images
-- one bounding box per real domino tile
-- one initial object class: `domino_tile`
-
-Detection training data should be rich enough to cover:
-- different table/background conditions
-- different lighting conditions
-- different camera angles and distances
-- different tile layouts and overlaps
-- cluttered scenes and distracting non-tile objects
-
-### Tile-value inference training data
-Tile-value inference training data should include:
-- cropped tile images
-- observed orientation metadata
-- observed ordered values:
-  - `first`
-  - `second`
-  - `display`
-- optional derived canonical identity for evaluation/matching support
-
-Tile-value inference data should cover:
-- horizontal tiles
-- vertical tiles
-- mild rotation/skew
-- edge cases where pips are hard to read
-- crops that look tile-like but should later be treated as invalid or low-confidence
-
-### Hard-negative and error-case data
-The training-data plan should explicitly retain error cases.
-
-Important examples:
-- false positives incorrectly detected as tiles
-- partial tiles
-- visually confusing backgrounds
-- blurry captures
-- low-light captures
-- overlapping or occluded tiles
-
-Why this matters:
-- detector quality improves from hard negatives
-- review history is valuable not only for correct examples but for difficult failure cases
-
-### Data-promotion workflow from Quick Scan history
-Quick Scan history should not automatically become training data. It should first act as a candidate pool.
-
-Recommended promotion states:
-- `candidateDetectionTraining`
-- `candidateValueTraining`
-- `hardNegative`
-- `needsReview`
-- `holdoutOnly`
-
-Promotion workflow:
-1. user performs scan
-2. scan history is saved with image, detections, corrections, and labels
-3. later review identifies useful examples
-4. selected scans or crops are promoted into curated training datasets
-
-### Dataset split policy
-Training and evaluation must remain separate.
-
-Required split policy:
-- the 49-photo evaluation set is **held out** for evaluation
-- evaluation images should **not** be used for main training
-- training, validation, and evaluation sets should be tracked separately
-- curated hard examples can be added to training or validation, but not by contaminating the held-out evaluation benchmark
-
-### Labeling implications
-The current saved-scan labels are useful, but training-dataset promotion needs more specific labeling states over time.
-
-Current scan labels:
-- `usefulForTraining`
-- `badExample`
-- `starred`
-
-Future training-oriented labels may include:
-- suitable for detection training
-- suitable for value-inference training
-- hard negative
-- low-confidence but valuable
-- holdout only
-
-### Phase 1 practical training-data stance
-Phase 1 does not need a massive polished dataset before any testing starts.
-
-But it does need:
-- a seed training dataset for detection
-- a seed training dataset for tile-value inference
-- a clean held-out evaluation set
-- a workflow for promoting corrected scans into future training data
-- a browser-runnable deployment path for accepted model artifacts
-
-## Evaluation dataset
-Phase 1 should include a **49-photo evaluation set**.
-
-### Purpose of the evaluation set
-- benchmark scanner quality consistently
-- compare scanner improvements over time
-- diagnose whether changes improve tile identity detection, orientation correctness, and review usability
-- support a disciplined improvement loop instead of guessing
-
-### Source-of-truth requirements
-Each evaluation image should support:
-- tile identity annotations
-- tile bounding-box annotations
-- tile orientation annotations
-
-### Bounding-box quality
-- Bounding boxes should be **accurate annotation-grade boxes** suitable for trustworthy evaluation.
-
-### Orientation annotation quality
-Orientation annotations should support:
-- horizontal vs vertical classification
-- approximate/full rotation angle
-- enough information to determine which half is first vs second
-
-## Tile value representation
-### User-facing notation
-- Primary notation should be **slash-separated strings**, e.g. `2/12`, `9/2`.
-- Slash notation should be used consistently in plan language, manual-add UX, and evaluation examples.
-
-### Meaning of order
-Tile order is orientation-aware:
-- **left/right** when the tile is horizontal
-- **top/bottom** when the tile is vertical
-
-### Preservation of observed order
-- Observed order should be preserved in scan review and annotation contexts.
-- In review mode, preserve the detected/annotated order exactly as seen in the image.
-- Do not normalize display to a canonical sorted order.
-
-### Identity vs display
-- A tile can have one canonical identity for matching/analytics while still preserving observed display order in the UI.
-- Review UI should prioritize what was visually observed.
-- Matching logic may later use canonicalization internally, but that should not overwrite review presentation.
-
-## Evaluation semantics
-### Tile identity scoring
-- A reversed tile such as `12/2` should count as the same tile identity as `2/12`.
-- If the tile is a correct match, reversed order still counts as **correct** for identity.
-
-### Orientation/order scoring
-- Orientation/order should be scored separately from identity.
-- This allows scanner evaluation to separate “found the right tile” from “understood its order/orientation correctly.”
-
-### Required metrics
-Phase 1 evaluation should report both:
-- tile identity accuracy
-- orientation/order accuracy
-
-### Example
-If expected is `2/12` and detected is `12/2`, then:
-- identity can be correct
-- orientation/order can be incorrect
-
-## Review-mode display
-- Review UI should preserve the observed order exactly as seen in the image.
-- Review UI should not normalize the tile to a canonical sorted order for display.
-- Canonicalization can still exist later for matching or analytics, but review UI should preserve observed order.
-
-## Post-scan correction UX
-After a scan, the app should:
-- show each detected tile as its own thumbnail
-- show detected values in editable inputs
-- let the user correct values directly
-- provide a **Not Tile** action/button for detections that are not actually a valid tile
-- allow the user to add missing tiles manually
-
-### Detailed correction behavior
-- The correction screen should show each detected tile thumbnail with its values and score/confidence.
-- Existing detections should be editable directly.
-- Missing tiles should be addable manually.
-- Some false detections may effectively be marked by entering `.` as a placeholder value.
-- The UX should support both explicit **Not Tile** and invalid placeholder entry if needed.
-- Internally, invalid detections should ideally normalize to a structured state such as `status: "not_tile"`.
-
-### False positive handling
-- Some false detections may come from upside-down or otherwise invalid tile-like crops.
-- The review workflow should make it easy to invalidate them without losing visibility into the fact that they were detected.
-- False positives are important learning cases and should remain useful in history.
-
-## Manual add UX
-When the user adds a missing tile manually, the preferred Phase 1 flow is:
-- a single text entry in slash notation, e.g. `2/12`
-
-This is preferred because it is fastest, especially on phone.
-
-## Detected-tile edit UX
-When the user edits an existing detected tile:
-- use **two separate numeric inputs**
-- these map to left/right or top/bottom depending on orientation
-
-This creates a deliberate split:
-- add missing tile: single slash-string input
-- edit existing detected tile: two separate numeric inputs
-
-### Edit UX rationale
-- Editing existing detections should be explicit and low-ambiguity.
-- Adding missing tiles should be optimized for speed.
-- These are different tasks and do not need identical inputs.
-
-## Confidence visibility
-- Confidence/scores should be shown during review for detected tiles.
-- Confidence values help explain why a bad prediction happened.
-- Confidence values are useful both for user review and future scanner diagnosis.
-
-## Quick Scan history persistence
-Quick Scan history should persist across app reloads.
-
-### Purpose
-History should support:
-- reviewing earlier scans
-- comparing scan outcomes over time
-- identifying recurring failure cases
-- supporting future model-improvement workflows
-- referring back to prior examples to improve the scanner/model later
-
-### General history philosophy
-- Scan history is not just a convenience feature.
-- It is part of the scanner-improvement workflow.
-- Saved history should preserve enough evidence to help understand why scans failed and how the scanner should evolve.
-
-## Scan-history contents
-Each saved Quick Scan history record should include:
-- image reference
-- full original image
-- detections
-- user corrections
-- confidence data
-- timestamp
-
-The saved history should preserve enough information to understand why a scan failed, including image evidence.
-
-### Additional useful history characteristics
-- History should be reviewable by humans later.
-- Saved records should be rich enough to identify false positives, missed tiles, and confusing cases.
-- History should support future filtering and triage of hard cases.
-
-## Local storage architecture
-Phase 1 should use split local persistence.
-
-### IndexedDB
-Use IndexedDB for:
-- full original images
-- scan history entries
-- detections
-- user corrections
-- confidence data
-- timestamps
-- richer JSON records
-
-### localStorage
-Use localStorage for:
-- lightweight settings
-- preferences
-- app flags
-- optional recent scan pointers
-
-### Storage rationale
-- Full images matter for later scanner/model improvement.
-- localStorage is not the right place for large image payloads.
-- IndexedDB is the preferred local-first storage for history plus images.
-- This split keeps settings simple while allowing richer local records.
-
-## Scan-history labeling
-Each saved scan may optionally be marked as:
-- useful for training/improvement
-- bad/noisy example
-- favorite/important
-
-Recommended simple flags:
-- `usefulForTraining`
-- `badExample`
-- `starred`
-
-### Labeling rationale
-- These labels serve different purposes and should all be available.
-- Some scans are useful for learning.
-- Some are just noisy or bad examples.
-- Some are worth pinning even if they are not explicit training examples.
-
-## Evaluation annotation storage
-For the 49-photo evaluation set, source-of-truth annotations should live as:
-- **JSON files in the repo**
-
-### Why
-This format is:
-- fast for tools to read
-- structured
-- version controlled
-- easy to diff
-- easy to validate
-- reusable in future evaluation scripts
-
-### Annotation storage philosophy
-- Evaluation data should be easy for both humans and tools to work with.
-- Repo-stored JSON is preferable to browser-only state or hard-to-parse markdown tables.
-
-## Formal requirements/spec draft
-### Project focus
-Phase 1 should prioritize a reliable, improvable domino-scanning workflow before deeply wiring scanner behavior into the rest of the app.
-
-### Tech-stack requirements
-Phase 1 should use:
-- **YOLO** for full-image tile detection/localization
-- a separate downstream tile-value inference stage for ordered tile-value prediction
-- **Quick Scan** as the main scanner surface for iteration and validation
-- **IndexedDB** for images and rich scan-history persistence
-- **localStorage** for lightweight local settings and flags
-- **JSON files in the repo** for held-out evaluation annotations
-- **client-side browser inference** inside the static web app
-- **ONNX model artifacts** runnable in-browser via **ONNX Runtime Web**
-
-The plan intentionally leaves the exact YOLO version and exact tile-value inference model architecture as TBD, but the above technology choices are fixed enough for Phase 1 planning.
-
-### Deployment/runtime requirements
-Phase 1 scanner inference should run on the client in the browser, not depend on a required inference API.
-
-This implies:
-- the detector must be browser-runnable
-- the tile-value inference stage must be browser-runnable
-- both stages must fit acceptable phone budgets for model size, load time, latency, and memory use
-- deployment validation must happen on actual target phones, not just desktop browsers
-
-A server-side inference path is out of scope for the primary Phase 1 architecture unless the project explicitly changes the deployment decision later.
-
-### Bootstrap requirements
-Phase 1 should explicitly include a bootstrap phase before the history-driven improvement loop.
-
-The bootstrap phase should include:
-- a seed detection dataset
-- a seed tile-value inference dataset
-- a first-pass detector trained or configured on seed data
-- a first-pass tile-value inference stage trained or configured on seed data
-- a minimum usability threshold for Quick Scan before scan history is treated as meaningful improvement fuel
-- browser-runnable deployment artifacts for accepted first-pass models
-
-The long-term improvement loop should be treated as a second-phase benefit built on top of this bootstrap work, not as a substitute for it.
-
-### Scanner definition requirements
-The scanner should:
-- accept an image
-- run YOLO-based tile localization on the full image
-- extract reviewable tile crops
-- run tile-level ordered value inference on each crop
-- infer orientation and observed order
-- predict two values per tile
-- attach confidence
-- return structured detections suitable for review, persistence, and evaluation
-
-### Detection requirements
-The detector should:
-- use one `domino_tile` object class initially
-- operate on the full source image
-- output bounding boxes and detection confidence
-- prioritize recall over precision in early Phase 1
-- execute acceptably on target phone browsers
-
-### Tile-value inference requirements
-The tile-value inference stage should:
-- operate on each detected tile crop
-- predict the ordered observed pair directly
-- return first-side and second-side values
-- return orientation/order metadata
-- return confidence for the ordered prediction
-- execute acceptably on target phone browsers
-
-### Training-data requirements
-Phase 1 should include:
-- a seed detection training dataset
-- a seed tile-value inference training dataset
-- a held-out evaluation set separate from training
-- a workflow for promoting corrected Quick Scan history into curated future training data
-
-The main evaluation set should not serve as the main training dataset.
-
-### Evaluation dataset requirements
-Phase 1 should include a **49-photo evaluation set**.
-
-Each evaluation image should support:
-- tile identity annotations
-- tile bounding-box annotations
-- tile orientation annotations
-
-Bounding boxes should be **accurate annotation-grade boxes**.
-
-Orientation annotations should support:
-- horizontal vs vertical classification
-- approximate/full rotation angle
-- enough information to determine which half is first vs second
-
-### Tile value representation requirements
-- Primary notation should be **slash-separated strings**, e.g. `2/12`, `9/2`.
-- Tile order is orientation-aware:
-  - **left/right** when horizontal
-  - **top/bottom** when vertical
-- Observed order should be preserved in scan review and annotation contexts.
-
-### Evaluation semantics requirements
-- A reversed tile such as `12/2` should count as the same tile identity as `2/12`.
-- Orientation/order should be scored separately from identity.
-- Phase 1 evaluation should report both:
-  - tile identity accuracy
-  - orientation/order accuracy
-
-### Review-mode display requirements
-- Review UI should preserve the observed order exactly as seen in the image.
-- Review UI should not normalize the tile to a canonical sorted order for display.
-
-### Quick Scan history requirements
-Quick Scan history should persist across app reloads and support:
-- reviewing earlier scans
-- comparing scan outcomes over time
-- identifying recurring failure cases
-- supporting future model-improvement workflows
-
-Each saved Quick Scan history record should include:
-- image reference
-- full original image
-- detections
-- user corrections
-- confidence data
-- timestamp
-
-### Local storage requirements
-Phase 1 should use split local persistence.
-
-Use IndexedDB for:
-- full original images
-- scan history entries
-- detections
-- user corrections
-- confidence data
-- timestamps
-- richer JSON records
-
-Use localStorage for:
-- lightweight settings
-- preferences
-- app flags
-- optional recent scan pointers
-
-### Labeling requirements
-Each saved scan may optionally be marked as:
-- useful for training/improvement
-- bad/noisy example
-- favorite/important
-
-### Post-scan correction requirements
-After a scan, the app should:
-- show each detected tile as its own thumbnail
-- show detected values in editable inputs
-- let the user correct values directly
-- provide a **Not Tile** action/button for detections that are not actually a valid tile
-- allow the user to add missing tiles manually
-
-Invalid detections may also tolerate placeholder values such as `.` and should ideally normalize internally to `status: "not_tile"`.
-
-### Manual add requirements
-When the user adds a missing tile manually, the preferred Phase 1 flow is:
-- a single text entry in slash notation, e.g. `2/12`
-
-### Detected-tile edit requirements
-When the user edits an existing detected tile:
-- use **two separate numeric inputs**
-- map these to left/right or top/bottom depending on orientation
-
-### Annotation storage requirements
-For the 49-photo evaluation set, source-of-truth annotations should live as:
-- **JSON files in the repo**
-
-## Data model draft
-This is a planning schema draft, not final production code.
-
-### Tile concepts
+# Domino Scanner — Phase 1 Build Plan (ML Rewrite)
+
+> **Status:** Active source of truth for the scanner rewrite.
+> **Supersedes:** the OpenCV.js pipeline described in the archived root `CLAUDE.md`.
+> That approach was abandoned after weeks of effort (see §0). The Vite/React
+> migration doc (`docs/vite-react-ts-migration.md`) assumed the OpenCV pipeline
+> stayed locked and is therefore **out of date**; it is kept for history only.
+> **Companion:** `docs/web-first-phased-ml-plan-checklist.md` (operator checklist).
+
+---
+
+## 0. Why we're rewriting — and why ML this time
+
+The previous app used a deterministic OpenCV.js pipeline (grayscale + contrast
+stretch → Otsu/contour tile detection → per-half blob counting). It was tuned
+hard against a local eval harness and still could not be made reliable.
+
+**The honest diagnosis of why it failed** (from the archived design notes): the
+failures clustered in **tile *detection* on hard backgrounds** — glare, white
+tiles on white cloth, sun-washed surfaces, tiles stacked or touching. Each new
+failure mode required a new hand-coded heuristic (`dividerScan`, `edgeScan`,
+`pipClusterScan`, stacked-tile splitting…). That is the core problem with
+hand-engineered CV here: **the space of backgrounds, lighting, angles, and tile
+finishes is combinatorial, and hand-tuned features do not generalize across it.**
+Every fix patched one photo and left the long tail untouched.
+
+**Why ML is the right different bet — and not just a harder version of the same
+problem:** a learned detector handles the long tail through *data coverage*
+instead of *hand-coded special cases*. If we can produce training data that
+spans the background/lighting/angle space, the model generalizes where
+heuristics couldn't. The whole plan therefore lives or dies on **data**, which
+is why the data strategy (§4) comes before everything else.
+
+**What we keep from the old work:** the *deterministic pip-grid model* was the
+one thing the old code got right — every half lays pips on a known 3×3 (0–9) or
+4×3 (10–12) grid. We reuse that as geometry (§5.3) rather than throwing it away.
+We also keep the eval-driven, no-regression discipline.
+
+---
+
+## 1. Mission & scope (Phase 1)
+
+**Mission:** from a phone photo of domino tiles, detect every tile and read its
+pip values as accurately as practical, surfacing uncertain results for fast
+human correction.
+
+**In scope:** the scanner (detection + pip reading), Quick Scan as the iteration
+surface, an editable review/correction step, local scan history, and a minimal
+round/game flow.
+
+**Out of scope for Phase 1** (see §14): catalog, accounts/auth, server-side
+multiplayer sync, Postgres. Local-first (`localStorage` + `IndexedDB`) only.
+
+**Tiles:** double-12 set — each half is **0–12 pips**. 91 unique tiles.
+
+**Non-negotiable inherited rule:** **pip color is never a signal.** Sets use many
+pip colors; the model and any preprocessing must be fully color-agnostic.
+
+---
+
+## 2. Core strategy on one page
+
+The plan hangs on four load-bearing decisions. Everything else is detail.
+
+1. **Synthetic-data-first.** Domino tiles are rigid, planar, and have a *known,
+   finite* appearance space (91 faces, canonical pip grids). We render
+   near-unlimited, perfectly-labeled training data with heavy domain
+   randomization. Real photos are held out for **eval only**. This is what
+   breaks the bootstrap paradox without a manual-labeling slog. (§4)
+
+2. **Detect, don't classify — count pips via geometry.** Split the problem into
+   two dead-simple object-detection tasks (a *tile* and a *pip*), then use the
+   known grid geometry to assign pips to halves and count. This is far more
+   data-efficient than teaching a model to recognize 91 specific tile faces, and
+   synthetic data saturates it easily. (§5)
+
+3. **Accuracy before deployment.** Prove the model hits accuracy targets on real
+   held-out photos *anywhere convenient* (Colab/desktop) first. Only then port
+   to on-device ONNX Runtime Web. Do not pay the in-browser-inference tax while
+   the core question — "can a model read these tiles at all?" — is still open. (§6, §8)
+
+4. **A hard, numeric kill-gate up front.** The single riskiest assumption
+   (synthetic-trained models transfer to real photos) is tested first, cheapest,
+   with a concrete pass/fail number and a date. If it fails, we pivot
+   deliberately instead of grinding for weeks again. (§6)
+
+---
+
+## 3. Key decisions & rationale (flag these — easy to flip)
+
+These three reshape the whole plan. Each is a recommendation with rationale; if
+you disagree with one, only its section changes.
+
+| # | Decision | Chosen | Why | Alternative if flipped |
+|---|----------|--------|-----|------------------------|
+| D1 | Training data | **Synthetic primary; real = held-out eval only** | Biggest lever against another manual-labeling slog; known tile geometry makes rendering cheap and labels free | Synthetic + a small hand-labeled real fine-tune set (more robust, more work); or manual-only (highest labor) |
+| D2 | Pip reading | **Count (detect pips + geometry), not identity classification** | Data-efficient; "a pip" is a trivial, uniform object synthetic data nails; reuses the old deterministic grid model | Classify the ordered pair directly (simplest inference code, most data-hungry) |
+| D3 | Deployment timing | **Decouple: accuracy milestone anywhere → on-device port later** | Removes integration tax from every early experiment; isolates the real risk (model quality) from the runtime risk (ONNX-in-browser) | Client-side ONNX from day one (every experiment runs in-browser) |
+
+---
+
+## 4. Data strategy
+
+### 4.1 Synthetic generation (primary) — D1
+
+A renderer produces labeled scenes procedurally:
+
+- **Tile face:** draw a tile with two halves; place pips on the **canonical grid**
+  for each half's value (0–9 → 3×3; 10–12 → 4×3, with the special centred
+  11-middle-row). This is deterministic and known.
+- **Randomize appearance (color-agnostic):** pip color (full spectrum, incl.
+  white/black), tile body color (white, black, colored, marbled), gloss/specular,
+  divider style, edge rounding, wear/scratches.
+- **Compose scenes:** 1–N tiles, non-overlapping (tiles may touch edge-to-edge
+  but **never overlap** — a hard domain rule we can rely on), random positions,
+  rotations, and a random perspective homography.
+- **Randomize capture conditions:** background image (diverse real-surface pool —
+  wood, cloth, felt, grass, glare/white surfaces), lighting + cast shadows,
+  color cast/white balance, motion/defocus blur, sensor noise, JPEG compression.
+- **Auto-emit labels:** tile bounding boxes (oriented), per-pip boxes/points,
+  per-half pip counts, orientation, ordered values — all free and exact.
+
+**Renderer options (pick during M0):** 2D canvas/SVG compositing (fast, simple,
+likely sufficient since tiles are planar) vs. a lightweight 3D render (Blender)
+for more realistic lighting/perspective. Start 2D; escalate only if the sim-to-
+real gap (§4.4) demands it.
+
+**Background pool:** the single most important randomization axis, because
+backgrounds are where the old CV failed. Gather a few hundred diverse surface
+photos (CC-licensed texture sets + reuse of the old failure-case backgrounds:
+white cloth, glare, grass). Never let backgrounds be uniform.
+
+### 4.2 Real data — held-out eval only (+ optional fine-tune)
+
+- The **49-photo real eval set** is **held out** and never trained on. It is our
+  honest read on the sim-to-real gap. (It is a smoke-test *floor*, not enough for
+  per-tile precision — plan to grow it; see §7.)
+- **Optional (D1 alternative):** if M0 shows a large sim-to-real gap, add a small
+  hand-labeled real *training* set for fine-tuning — kept strictly separate from
+  the eval set to avoid contamination.
+
+### 4.3 Domain-randomization checklist (must all vary)
+
+Background · lighting/shadows · white balance/color cast · tile body color · pip
+color · gloss · tile count · position · rotation · perspective · blur · noise ·
+JPEG artifacts · partial tiles at frame edge.
+
+### 4.4 Sim-to-real gap — the top risk
+
+Synthetic-only models can overfit to render artifacts and miss real texture.
+Mitigations, in order of preference:
+1. Aggressive domain randomization (§4.3) — the primary defense.
+2. Photorealistic-enough backgrounds (real surface photos, not solid colors).
+3. A small real fine-tune set (D1 alternative) if 1–2 aren't enough.
+4. Always measure on the **real** held-out set so the gap is visible, never hidden.
+
+The M0 gate (§6) exists specifically to measure this gap before we over-invest.
+
+---
+
+## 5. Model architecture — D2
+
+Two object classes, then deterministic geometry. This keeps the learned part
+trivial and the brittle part (counting/assignment) reuses the known grid model.
+
+### 5.1 Stage 1 — tile detection (YOLO)
+
+- **Task:** detect full domino tiles on the whole image. One class: `domino_tile`.
+- **Output per tile:** bounding box (oriented preferred; axis-aligned + downstream
+  rotation acceptable to start) + confidence.
+- **Priority:** **recall over precision.** Missed tiles hurt the user more than
+  easily-removable false positives (review handles extras).
+- **Variant:** smallest YOLO variant that clears accuracy; size/latency matter for
+  the eventual phone target (§8). Exact version = TBD (M0/M1).
+
+### 5.2 Stage 2 — pip reading (count, not classify)
+
+Two framings; **prove the baseline first, upgrade if needed.**
+
+- **Baseline (simplest that could work):** crop each detected tile → find the
+  divider (deterministic, §5.3) → a small CNN classifies each half's pip count as
+  **0–12 (13-way softmax per half)**. Trained on synthetic crops. Counting
+  generalizes better than identity memorization.
+- **Target (more robust):** a **pip detector** (detect each pip as an object, or
+  as keypoints) across the tile; assign pips to halves by geometry and count.
+  Elegant because a "pip" is a uniform, trivial object synthetic data saturates,
+  it yields natural per-pip confidence, and all counting is deterministic. Reuses
+  the old grid model as a sanity check (counts must fit a valid 3×3/4×3 layout).
+
+Recommendation: ship the baseline to clear M1, adopt the pip-detector target if
+the baseline plateaus below the per-half accuracy gate.
+
+### 5.3 Orientation & ordering — deterministic, not learned
+
+The value model does **not** learn orientation. Geometry handles it:
+- Orientation (horizontal/vertical) from the tile box aspect + divider axis.
+- Ordered halves: **left→right** when horizontal, **top→bottom** when vertical.
+- Divider location via the same column/row-scan idea the old code used.
+
+This shrinks what Stage 2 must learn to just "how many pips in this half."
+
+### 5.4 Stage output contracts
+
+**Detector (Stage 1) — per tile**
 ```json
-{
-  "displayNotation": "slash",
-  "examples": ["2/12", "9/2"],
-  "orderMeaning": {
-    "horizontal": ["left", "right"],
-    "vertical": ["top", "bottom"]
-  },
-  "identityComparison": "unordered-pair",
-  "reviewDisplay": "preserve-observed-order",
-  "evaluation": {
-    "identityAccuracy": true,
-    "orientationOrderAccuracy": true
-  }
-}
+{ "detectionId": "det_001", "sourceImageId": "img_001",
+  "bbox": { "x": 120, "y": 240, "width": 88, "height": 176, "rotationDegrees": 3 },
+  "detectionConfidence": 0.95 }
 ```
 
-### Detector output example
+**Crop (Stage 2 input) — per tile**
 ```json
-{
-  "detectionId": "det_001",
-  "sourceImageId": "img_full_001",
-  "bbox": {
-    "x": 120,
-    "y": 240,
-    "width": 88,
-    "height": 176
-  },
-  "detectionConfidence": 0.95
-}
+{ "detectionId": "det_001", "sourceImageId": "img_001",
+  "thumbnailImageId": "thumb_001", "cropImageId": "crop_001",
+  "bbox": { "x": 120, "y": 240, "width": 88, "height": 176 } }
 ```
 
-### Crop-stage output example
+**Pip reading (Stage 2 output) — per tile** (orientation/order from geometry)
 ```json
-{
-  "detectionId": "det_001",
-  "sourceImageId": "img_full_001",
-  "thumbnailImageId": "img_crop_thumb_001",
-  "cropImageId": "img_crop_full_001",
-  "bbox": {
-    "x": 120,
-    "y": 240,
-    "width": 88,
-    "height": 176
-  }
-}
+{ "detectionId": "det_001",
+  "orientation": { "layout": "vertical", "rotationDegrees": 91,
+                   "orderedSidesMeaning": ["top", "bottom"] },
+  "predicted": { "first": 2, "second": 12, "display": "2/12",
+                 "firstConfidence": 0.94, "secondConfidence": 0.90,
+                 "confidence": 0.90 },
+  "gridValid": true }
+```
+`gridValid` = counts fit a legal 3×3/4×3 layout (a cheap deterministic guard;
+false → flag low-confidence for review).
+
+---
+
+## 6. Milestones & acceptance gates
+
+Every gate is numeric and measured on the **real held-out eval set** (§7).
+Targets below are proposed starting points — adjust once M0 gives a baseline.
+
+### M0 — Sim-to-real spike (the kill-gate) · target: days, not weeks
+Build the minimal synthetic renderer + train a small tile detector on **synthetic
+only** → measure on the 49 real photos.
+- **Pass:** tile detection **recall ≥ 0.70 @ IoU 0.5** on real photos.
+- **Fail → pivot decision**, not more grinding: add a real fine-tune set (§4.2),
+  improve rendering realism (§4.1), or reconsider the approach.
+- This tests the single riskiest assumption (transfer) before any app work.
+
+### M1 — Accuracy proven (anywhere; no app integration)
+- Tile detection **recall ≥ 0.95 @ IoU 0.5**, precision reported (recall-biased OK).
+- **Per-half pip accuracy ≥ 0.97.**
+- **Exact-tile (identity) accuracy ≥ 0.90.**
+- Orientation/order accuracy reported.
+
+**Accuracy math — why review is load-bearing, not optional.** Exact-tile ≈
+(per-half)². At 0.97/half → ~0.94/tile. For a 7-tile hand, P(all correct) ≈
+0.94⁷ ≈ **0.65**. So even a strong model gets a full hand perfectly only ~2 of 3
+times — **the correction UX (§9.2) is a first-class part of the product, not an
+admission of failure.** This is why detection is recall-biased and every result
+is editable.
+
+### M2 — On-device deployment
+Port M1 models to **ONNX Runtime Web**; verify:
+- Output parity with the M1 (server) models on the eval crops.
+- Phone budgets met: total model size, cold-load time, per-scan latency, memory
+  (concrete numbers = TBD; set them from a real mid-range phone in M2).
+
+### M3 — Quick Scan integration
+Wire the on-device scanner into Quick Scan: camera + photo upload, multi-tile
+detection, review/correction (§9.2), local history (§10). No regression vs. M1
+accuracy on the eval set (now measured end-to-end through the real capture path).
+
+### M4 — Minimal round/game flow
+Lightweight local rounds (§9.3). Only after the scanner is stable.
+
+**No milestone advances without its gate measured — never a number we didn't run.**
+
+---
+
+## 7. Evaluation methodology
+
+- **Held-out real set:** the 49 photos, JSON annotations in-repo (§11). Never
+  trained on. Treat as a floor and grow it toward multiple examples per tile.
+- **Metrics reported every run:**
+  - Detection: recall & precision @ IoU 0.5; count of missed tiles / false positives.
+  - Value: per-half pip accuracy; **exact-tile identity accuracy** (`12/2` ==
+    `2/12` for identity); orientation/order accuracy (scored *separately* from
+    identity); full-photo exact-hand rate.
+- **Identity vs. orientation are scored separately** so "found the right tile" and
+  "read its order right" are distinguishable.
+- **Regression rule:** no change ships that lowers a gate metric without an
+  explicit, measured justification.
+
+---
+
+## 8. Deployment / runtime (M2) — D3
+
+- **Where:** client-side, in-browser, on the phone. No required inference server
+  for the scan path (privacy + no backend cost + offline-capable).
+- **Runtime:** export to **ONNX**, run via **ONNX Runtime Web** (WASM baseline;
+  WebGPU where available).
+- **Size:** int8 quantization as needed to meet the phone size budget.
+- **Budgets (set in M2 from a real device):** model size, cold-load, per-scan
+  latency, memory. Smaller detector variants preferred even at some accuracy cost
+  if they're what fits the phone.
+- **Explicitly deferred, not decided:** a server-side inference fallback remains a
+  possible *later* pivot if phone performance proves unacceptable — a deliberate
+  change, not the default.
+
+---
+
+## 9. Product surfaces
+
+### 9.1 Quick Scan (primary iteration surface)
+Carry forward the useful `quick.html` feature set as the baseline: camera scan,
+photo upload/load, multi-tile detection from one image, review before confirm,
+per-tile edit, remove detection, per-tile + aggregate totals, visible history,
+reset/clear, scan guidance messaging. Quick Scan is where scanner iteration
+happens first; Round-end Scan (§9.3) may lag and converges on the same pipeline
+later.
+
+### 9.2 Review / correction UX (load-bearing — see M1 math)
+After a scan:
+- Each detection shown as its own thumbnail with editable values + confidence.
+- **Edit existing detection:** two separate numeric inputs (map to left/right or
+  top/bottom by orientation).
+- **Add missing tile:** single slash-notation text input, e.g. `2/12` (fastest on
+  phone).
+- **Not Tile:** explicit action to invalidate a false positive (normalized
+  internally to `status: "not_tile"`); a `.` placeholder may also mark invalid.
+- False positives stay visible in history — they are valuable hard cases (§12).
+- **Review preserves observed order** — never normalized to a canonical sort for
+  display (canonical identity exists only for matching/eval).
+
+### 9.3 Minimal round/game flow (M4, secondary)
+Local only: typed display names remembered on-device; numbered rounds; each
+player submits per round; exactly one winner (`I won`); non-winners `Scan my
+tiles` (one full-hand scan → review → submit); a player can edit until the round
+auto-finalizes (one winner + all non-winners submitted); then `Start Next Round`
+(any player). No partial multi-scan merge in Phase 1.
+
+---
+
+## 10. Storage (local-first)
+
+- **IndexedDB:** full original images, scan-history entries, detections,
+  corrections, confidence, timestamps, rich JSON records. (Images belong here,
+  not localStorage.)
+- **localStorage:** lightweight settings, flags, preferences, optional recent-scan
+  pointers.
+- Postgres / true multi-device sync: **later**, not Phase 1.
+
+---
+
+## 11. Data model / schemas
+
+Planning drafts, not final code. (Stage outputs are in §5.4.)
+
+**Reviewed detection record**
+```json
+{ "id": "det_001", "status": "detected", "source": "model",
+  "sourceImageId": "img_001", "thumbnailImageId": "thumb_001", "cropImageId": "crop_001",
+  "bbox": { "x": 120, "y": 240, "width": 88, "height": 176 },
+  "orientation": { "layout": "vertical", "rotationDegrees": 91,
+                   "orderedSidesMeaning": ["top", "bottom"] },
+  "predicted": { "first": 2, "second": 12, "display": "2/12", "confidence": 0.90 },
+  "userCorrection": { "first": 2, "second": 12, "display": "2/12", "status": "confirmed" },
+  "reviewFlags": { "notTile": false, "manuallyAdded": false } }
 ```
 
-### Inference-stage output example
+**Not-tile / invalid** — `status: "not_tile"`, `reviewFlags.notTile: true`,
+`userCorrection.display: "."` (kept in history as a hard negative).
+
+**Manually added tile** — `source: "manual"`, `bbox/predicted: null`,
+`userCorrection: { first, second, display, status: "added" }`,
+`reviewFlags.manuallyAdded: true`.
+
+**Quick Scan history record**
 ```json
-{
-  "detectionId": "det_001",
-  "orientation": {
-    "layout": "vertical",
-    "rotationDegrees": 91,
-    "orderedSidesMeaning": ["top", "bottom"]
-  },
-  "predicted": {
-    "first": 2,
-    "second": 12,
-    "display": "2/12",
-    "confidence": 0.93
-  }
-}
+{ "scanId": "scan_...", "createdAt": "2026-06-30T18:42:11Z",
+  "sourceImage": { "imageId": "img_001", "storage": "indexeddb",
+                   "mimeType": "image/jpeg", "width": 3024, "height": 4032 },
+  "scannerVersion": { "detector": "yolo-<ver>", "pipReader": "count-<ver>" },
+  "detections": [ { "id": "det_001", "status": "detected" } ],
+  "finalReviewedTiles": ["2/12", "9/2", "0/0"],
+  "metrics": { "detectionCount": 14, "confirmedTileCount": 11, "notTileCount": 3 },
+  "tags": { "usefulForTraining": true, "badExample": false, "starred": true },
+  "notes": "False positives on upside-down partial crops." }
 ```
 
-### Reviewed detection record
+**Eval-image annotation (held-out, in-repo)**
 ```json
-{
-  "id": "det_001",
-  "status": "detected",
-  "source": "model",
-  "sourceImageId": "img_full_001",
-  "thumbnailImageId": "img_crop_thumb_001",
-  "cropImageId": "img_crop_full_001",
-  "bbox": {
-    "x": 120,
-    "y": 240,
-    "width": 88,
-    "height": 176
-  },
-  "orientation": {
-    "layout": "vertical",
-    "rotationDegrees": 91,
-    "orderedSidesMeaning": ["top", "bottom"]
-  },
-  "predicted": {
-    "first": 2,
-    "second": 12,
-    "display": "2/12",
-    "confidence": 0.93
-  },
-  "userCorrection": {
-    "first": 2,
-    "second": 12,
-    "display": "2/12",
-    "status": "confirmed"
-  },
-  "reviewFlags": {
-    "notTile": false,
-    "manuallyAdded": false
-  }
-}
-```
-
-### Not-tile / invalid detection example
-```json
-{
-  "id": "det_014",
-  "status": "not_tile",
-  "source": "model",
-  "sourceImageId": "img_full_001",
-  "thumbnailImageId": "img_crop_thumb_014",
-  "cropImageId": "img_crop_full_014",
-  "bbox": {
-    "x": 510,
-    "y": 190,
-    "width": 94,
-    "height": 180
-  },
-  "orientation": {
-    "layout": "vertical",
-    "rotationDegrees": 270,
-    "orderedSidesMeaning": ["top", "bottom"]
-  },
-  "predicted": {
-    "first": 8,
-    "second": 11,
-    "display": "8/11",
-    "confidence": 0.41
-  },
-  "userCorrection": {
-    "status": "not_tile",
-    "display": "."
-  },
-  "reviewFlags": {
-    "notTile": true,
-    "manuallyAdded": false
-  }
-}
-```
-
-### Manually added missing tile example
-```json
-{
-  "id": "manual_003",
-  "status": "confirmed",
-  "source": "manual",
-  "thumbnailImageId": null,
-  "cropImageId": null,
-  "bbox": null,
-  "orientation": null,
-  "predicted": null,
-  "userCorrection": {
-    "first": 9,
-    "second": 2,
-    "display": "9/2",
-    "status": "added"
-  },
-  "reviewFlags": {
-    "notTile": false,
-    "manuallyAdded": true
-  }
-}
-```
-
-### Quick Scan history record
-```json
-{
-  "scanId": "scan_2026_06_30_001",
-  "createdAt": "2026-06-30T18:42:11Z",
-  "sourceImage": {
-    "imageId": "img_full_001",
-    "storage": "indexeddb",
-    "mimeType": "image/jpeg",
-    "width": 3024,
-    "height": 4032
-  },
-  "scannerVersion": {
-    "detector": "yolo",
-    "tileValueInference": "ordered-pair-phase1"
-  },
-  "detections": [
-    {
-      "id": "det_001",
-      "status": "detected"
-    },
-    {
-      "id": "det_014",
-      "status": "not_tile"
-    }
-  ],
-  "finalReviewedTiles": [
-    "2/12",
-    "9/2",
-    "0/0"
-  ],
-  "metrics": {
-    "detectionCount": 14,
-    "confirmedTileCount": 11,
-    "notTileCount": 3
-  },
-  "tags": {
-    "usefulForTraining": true,
-    "badExample": false,
-    "starred": true
-  },
-  "notes": "False positives on upside-down partial crops."
-}
-```
-
-### Evaluation-image annotation file draft
-```json
-{
-  "imageId": "eval_017",
-  "imagePath": "evaluation/images/eval_017.jpg",
-  "imageWidth": 3024,
-  "imageHeight": 4032,
+{ "imageId": "eval_017", "imagePath": "eval/real/eval_017.jpg",
+  "imageWidth": 3024, "imageHeight": 4032,
   "tiles": [
-    {
-      "tileId": "tile_01",
-      "identity": {
-        "first": 2,
-        "second": 12,
-        "display": "2/12",
-        "unorderedKey": "2-12"
-      },
-      "observedOrder": {
-        "firstMeaning": "top",
-        "secondMeaning": "bottom"
-      },
-      "bbox": {
-        "x": 210,
-        "y": 388,
-        "width": 120,
-        "height": 232
-      },
-      "orientation": {
-        "layout": "vertical",
-        "rotationDegrees": 89
-      }
-    },
-    {
-      "tileId": "tile_02",
-      "identity": {
-        "first": 9,
-        "second": 2,
-        "display": "9/2",
-        "unorderedKey": "2-9"
-      },
-      "observedOrder": {
-        "firstMeaning": "left",
-        "secondMeaning": "right"
-      },
-      "bbox": {
-        "x": 470,
-        "y": 420,
-        "width": 210,
-        "height": 104
-      },
-      "orientation": {
-        "layout": "horizontal",
-        "rotationDegrees": 2
-      }
-    }
-  ]
-}
+    { "tileId": "t01",
+      "identity": { "first": 2, "second": 12, "display": "2/12", "unorderedKey": "2-12" },
+      "observedOrder": { "firstMeaning": "top", "secondMeaning": "bottom" },
+      "bbox": { "x": 210, "y": 388, "width": 120, "height": 232 },
+      "orientation": { "layout": "vertical", "rotationDegrees": 89 } } ] }
 ```
 
-## Review checklist
-Use this checklist to pressure-test the build plan rather than just approving it.
+**Tile notation:** slash strings (`2/12`); order is orientation-aware
+(left/right horizontal, top/bottom vertical); identity is the unordered pair
+(`unorderedKey` = `min-max`).
 
-### Tech-stack clarity
-- Are the chosen Phase 1 technologies explicit enough?
-- Is it clear which technologies are fixed vs still TBD?
-- Is the YOLO choice stated clearly enough?
-- Is the local storage split stated clearly enough?
-- Is the evaluation annotation format stated clearly enough?
-- Is the browser inference runtime decision explicit enough?
-- Is the client-side vs server-side deployment decision explicit enough?
-- Are phone performance constraints treated as first-class requirements?
-- Is the distinction between model-family choice and deployment/runtime choice explicit enough?
+---
 
-### Bootstrap plan clarity
-- Does the plan explicitly solve the bootstrap problem instead of assuming history already exists?
-- Is the seed-data requirement concrete enough?
-- Is the first-pass model requirement explicit enough?
-- Is the transition from bootstrap phase to history-driven improvement clear enough?
-- Is the minimum Quick Scan usability threshold clear enough?
+## 12. Improvement loop (history → training)
 
-### Scanner architecture clarity
-- Does the document clearly define what the scanner is for?
-- Does the document clearly define what the scanner is?
-- Is the YOLO detection stage concrete enough to implement?
-- Is the tile-value inference stage concrete enough to implement?
-- Is the ordered-pair prediction strategy the right Phase 1 choice?
-- Are stage boundaries and outputs explicit enough?
-- Is the browser execution path explicit enough?
-- Is it obvious that YOLO alone does not answer deployment?
+Phase A (bootstrap) is §4/§6. Phase B, once the scanner ships:
+1. Scan → save rich history (image + detections + corrections + confidence).
+2. Human review flags useful cases: `usefulForTraining`, `badExample`, `starred`
+   (extendable later to detection-vs-value-training, `hardNegative`,
+   `holdoutOnly`).
+3. Promote curated real cases — **especially hard negatives and corrected
+   mistakes** — into the *training* set (never the held-out eval set).
+4. Retrain (synthetic + promoted real), re-export ONNX, re-measure on eval,
+   confirm phone budgets, ship if no regression.
 
-### Training-data design
-- Is the training-data plan clearly separate from the evaluation set?
-- Do we have a workable seed-data strategy for detection training?
-- Do we have a workable seed-data strategy for tile-value inference training?
-- Is the promotion workflow from corrected scans into curated training data clear enough?
-- Are held-out evaluation boundaries clear enough to avoid contamination?
+History is not a convenience feature — it's the fuel that closes the sim-to-real
+gap over time.
 
-### Product coherence
-- Does the Quick Scan-first strategy make sense?
-- Is it clear enough that Round-end Scan can lag behind until Quick Scan stabilizes?
-- Are we avoiding premature wiring of unreliable scanner behavior into the rest of the app?
-- Is the correction workflow realistic for phone use?
-- Does the deployment/runtime choice match the product architecture?
+---
 
-### Tile semantics
-- Is the distinction between **tile identity** and **observed orientation/order** clear enough?
-- Is it correct to treat `2/12` and `12/2` as identity-equal but orientation-order-different?
-- Is slash notation the right user-facing standard?
-- Is the left/right vs top/bottom interpretation defined clearly enough?
+## 13. Open questions / TBD
 
-### Evaluation design
-- Is the 49-photo evaluation set enough for early benchmarking?
-- Are annotation-grade bounding boxes required, or is that too costly for Phase 1?
-- Is the orientation annotation detail appropriate?
-- Are the proposed metrics sufficient:
-  - tile identity accuracy
-  - orientation/order accuracy
-- Does evaluation include target-phone deployment verification, not just model-quality verification?
+- Exact YOLO version/size variant (M0/M1).
+- Baseline per-half classifier vs. pip-detector target — which clears M1 (§5.2).
+- 2D vs. 3D synthetic renderer (§4.1); how large a real fine-tune set, if any (§4.4).
+- Final numeric gates (M1 targets are proposals; phone budgets set in M2).
+- Annotation tooling for growing the real eval set.
+- Whether oriented boxes are needed from Stage 1 or axis-aligned + rotation suffices.
 
-### Correction UX
-- Is thumbnail-per-detection review the right default?
-- Are two separate numeric inputs for editing existing detections the right choice?
-- Is single text slash input the right choice for manually adding missing tiles?
-- Should `.` be supported explicitly, or should the UI push all invalid cases into **Not Tile** only?
-- Does the plan need a separate delete/remove action distinct from **Not Tile**?
+---
 
-### Data model sanity
-- Are the detector, crop, inference, and reviewed-detection records separated clearly enough?
-- Do we need both `display` and structured `first`/`second`, or is that redundant?
-- Should manual entries and detected entries share the exact same schema?
-- Is `unorderedKey` the right canonical identity helper?
-- Is the `scannerVersion` block describing the planned stack clearly enough?
+## 14. Out of scope for Phase 1
 
-### Storage strategy
-- Is the IndexedDB/localStorage split the right Phase 1 design?
-- Is full-image retention necessary for model improvement, or too heavy?
-- Should thumbnails/crops be persisted separately, or generated on demand?
-- Are there privacy/storage-size concerns with keeping full original images locally?
-- Do we need export/import JSON early, or can it wait?
-
-### Model-improvement usefulness
-- Does the saved history include enough information to diagnose model failures?
-- Are confidence values enough, or do we also want raw detection metadata later?
-- Should scans support freeform notes?
-- Are the three tags enough:
-  - usefulForTraining
-  - badExample
-  - starred
-- Should we add a way to surface hard cases automatically later?
-
-### Repo annotation format
-- Are JSON files in the repo clearly the best format for evaluation annotations?
-- Should there be one JSON per image, or one larger manifest plus per-image files?
-- Do we need a formal schema/validation script early?
-- Do the JSON files need normalized keys/naming conventions now to avoid churn later?
-
-### Risks / unresolved concerns
-- Are there hidden contradictions between preserving observed order and counting reversed tiles as correct?
-- Could users be confused by identity-correct but orientation-wrong scoring?
-- Is the correction workflow too manual for the expected scan volume?
-- Are we overspecifying before learning from a few real scan sessions?
-- What is still missing that would block implementation?
+Catalog · accounts/auth · server-side multiplayer sync · Postgres · any feature
+that doesn't improve detection accuracy, pip-reading accuracy, or scanner
+validation. Do not expand scope until the M1 accuracy gate is met.
