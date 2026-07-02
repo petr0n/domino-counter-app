@@ -1,4 +1,4 @@
-# Domino Scanner — Phase 1 Build Plan
+# Domino Scanner — Build Plan v2
 
 > **Status:** Active source of truth for the scanner build.
 > **Companion:** `docs/web-first-phased-ml-plan-checklist.md` (operator checklist).
