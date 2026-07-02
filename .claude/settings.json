@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/js-check.sh",
+            "timeout": 30,
+            "statusMessage": "Checking JS syntax…"
+          }
+        ]
+      }
+    ]
+  }
+}
