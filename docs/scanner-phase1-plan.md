@@ -73,7 +73,7 @@ you disagree with one, only its section changes.
 
 | # | Decision | Chosen | Why | Alternative if flipped |
 |---|----------|--------|-----|------------------------|
-| D1 | Training data | **Synthetic primary; real = held-out eval only** | Biggest lever against another manual-labeling slog; known tile geometry makes rendering cheap and labels free | Synthetic + a small hand-labeled real fine-tune set (more robust, more work); or manual-only (highest labor) |
+| D1 | Training data | **Copy-paste real tile faces onto real backgrounds (primary) + rendered variety + small real fine-tune. Real *scenes* = held-out eval only** | Proven recipe for flat card-like objects; only patch-level realism needed; labels are free and exact. Real tile-face crops are cheap source material and don't touch the eval set | Pure photorealistic rendering (harder, larger sim-to-real gap); or manual scene labeling (highest labor) |
 | D2 | Pip reading | **Count (detect pips + geometry), not identity classification** | Data-efficient; "a pip" is a trivial, uniform object synthetic data nails; validates against the known pip-grid geometry | Classify the ordered pair directly (simplest inference code, most data-hungry) |
 | D3 | Deployment timing | **Decouple: accuracy milestone anywhere → on-device port later** | Removes integration tax from every early experiment; isolates the real risk (model quality) from the runtime risk (ONNX-in-browser) | Client-side ONNX from day one (every experiment runs in-browser) |
 
@@ -81,43 +81,66 @@ you disagree with one, only its section changes.
 
 ## 4. Data strategy
 
-### 4.1 Synthetic generation (primary) — D1
+### 4.1 Data generation: copy-paste-first — D1
 
-A renderer produces labeled scenes procedurally:
+The pipeline synthesizes labeled multi-tile scenes by compositing tiles onto real
+backgrounds. Labels (boxes, per-pip points, per-half counts, orientation) are
+emitted for free and exactly. This is the proven recipe for flat, card-like
+objects — see the evidence at the end of this section.
 
-- **Tile face:** draw a tile with two halves; place pips on the **canonical grid**
-  for each half's value (0–9 → 3×3; 10–12 → 4×3, with the special centred
-  11-middle-row). This is deterministic and known.
-- **Randomize appearance (color-agnostic):** pip color (full spectrum, incl.
-  white/black), tile body color (white, black, colored, marbled), gloss/specular,
-  divider style, edge rounding, wear/scratches.
-- **Compose scenes:** 1–N tiles, non-overlapping (tiles may touch edge-to-edge
-  but **never overlap** — a hard domain rule we can rely on), random positions,
-  rotations, and a random perspective homography.
-- **Randomize capture conditions:** background image (diverse real-surface pool —
-  wood, cloth, felt, grass, glare/white surfaces), lighting + cast shadows,
-  color cast/white balance, motion/defocus blur, sensor noise, JPEG compression.
-- **Auto-emit labels:** tile bounding boxes (oriented), per-pip boxes/points,
-  per-half pip counts, orientation, ordered values — all free and exact.
+**Tier 1 (primary) — copy-paste real tile faces.** One-time, bounded capture:
+photograph each of the 91 tiles flat (a few lighting/rotation variants, on a
+contrasting/green background for trivial segmentation). Composite these real
+crops onto a diverse real background pool with randomized rotation, perspective,
+brightness/relight, blur, and sharpen. Cut-Paste-Learn shows *patch-level*
+realism is enough to train competitive detectors for this kind of object.
 
-**Renderer options (pick during M0):** 2D canvas/SVG compositing (fast, simple,
-likely sufficient since tiles are planar) vs. a lightweight 3D render (Blender)
-for more realistic lighting/perspective. Start 2D; escalate only if the sim-to-
-real gap (§4.4) demands it.
+**Tier 2 (variety) — rendered tiles.** Procedurally draw tiles from the canonical
+grid (0–9 → 3×3; 10–12 → 4×3, incl. the centred 11-middle-row), randomizing
+appearance **color-agnostically**: pip color (full spectrum incl. white/black),
+body color (white/black/colored/marbled), gloss, divider style, edge rounding,
+wear. This cheaply covers the long tail and tile finishes the real captures miss
+(domain-randomization rationale, Tremblay et al.).
 
-**Background pool:** the single most important randomization axis — backgrounds
-are the hardest part of tile detection. Gather a few hundred diverse surface photos
-(CC-licensed texture sets plus deliberately hard surfaces: white cloth, glare,
-grass, wood grain). Never let backgrounds be uniform.
+**Tier 3 — fine-tune on a small real set.** After Tier 1+2 training, fine-tune on
+a small hand-labeled set of real *scenes*. Synthetic + real fine-tuning beats
+either alone (Tremblay et al.; Cut-Paste-Learn: >21% relative gain combined with
+real).
 
-### 4.2 Real data — held-out eval only (+ optional fine-tune)
+**Scene composition:** 1–N tiles, non-overlapping (tiles may touch edge-to-edge
+but **never overlap** — a hard domain rule), random positions/rotations, random
+perspective homography, plus capture-condition noise (color cast/white balance,
+motion/defocus blur, sensor noise, JPEG compression).
 
-- The **49-photo real eval set** is **held out** and never trained on. It is our
-  honest read on the sim-to-real gap. (It is a smoke-test *floor*, not enough for
-  per-tile precision — plan to grow it; see §7.)
-- **Optional (D1 alternative):** if M0 shows a large sim-to-real gap, add a small
-  hand-labeled real *training* set for fine-tuning — kept strictly separate from
-  the eval set to avoid contamination.
+**Implementation musts (from the evidence):**
+- **Blend paste boundaries** (Gaussian/Poisson blending, edge blur). Naive paste
+  leaves boundary artifacts that measurably hurt the detector (Cut-Paste-Learn).
+- **Curate backgrounds** — context matters; bad context can hurt. Gather a few
+  hundred diverse real surfaces (texture sets + hard cases: white cloth, glare,
+  grass, wood grain). Never uniform.
+- **Scale to ~10–20k composited images**, in line with comparable card-detector
+  datasets.
+
+**Evidence base:**
+- Cut, Paste and Learn — Dwibedi et al., ICCV 2017: <https://arxiv.org/abs/1708.01642>
+- Simple Copy-Paste — Ghiasi et al., CVPR 2021: <https://arxiv.org/abs/2012.07177>
+- Domain Randomization for detection — Tremblay et al., CVPR-W 2018: <https://arxiv.org/abs/1804.06516>
+- Analogous playing-card YOLO datasets (paste cards onto textures, ~20k imgs):
+  <https://universe.roboflow.com/augmented-startups/playing-cards-ow27d>,
+  <https://github.com/DanielGonzalezAlv/PlaycDC>
+
+### 4.2 Real data — two distinct kinds (no eval contamination)
+
+Two separate pools of real imagery, never mixed:
+- **Real tile-face crops (training source):** the flat single-tile captures used
+  by Tier 1 copy-paste (§4.1). Cheap, bounded (~91 tiles × a few variants).
+- **Real *scenes* (held-out eval + Tier-3 fine-tune):** multi-tile photos as the
+  app will see them.
+  - The **49-photo eval set** is **held out** and never trained on — our honest
+    read on the sim-to-real gap. It is a smoke-test *floor*, not enough for
+    per-tile precision (plan to grow it; see §7).
+  - A **separate** small labeled scene set is used for Tier-3 fine-tuning, kept
+    strictly disjoint from the eval set.
 
 ### 4.3 Domain-randomization checklist (must all vary)
 
@@ -127,11 +150,12 @@ JPEG artifacts · partial tiles at frame edge.
 
 ### 4.4 Sim-to-real gap — the top risk
 
-Synthetic-only models can overfit to render artifacts and miss real texture.
+Synthesized models can overfit to paste artifacts or miss real texture.
 Mitigations, in order of preference:
-1. Aggressive domain randomization (§4.3) — the primary defense.
-2. Photorealistic-enough backgrounds (real surface photos, not solid colors).
-3. A small real fine-tune set (D1 alternative) if 1–2 aren't enough.
+1. Real tile-face pixels (Tier 1 copy-paste) — the strongest defense; the tiles
+   themselves are already real.
+2. Blended paste boundaries + aggressive domain randomization (§4.1, §4.3).
+3. Tier-3 fine-tune on a small real scene set (§4.1) if 1–2 aren't enough.
 4. Always measure on the **real** held-out set so the gap is visible, never hidden.
 
 The M0 gate (§6) exists specifically to measure this gap before we over-invest.
