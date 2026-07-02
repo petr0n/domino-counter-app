@@ -266,6 +266,8 @@ Build the minimal copy-paste/render pipeline (§4) + train a small tile detector
 - Tile detection **recall ≥ 0.95 @ IoU 0.5**, precision reported (recall-biased OK).
 - **Per-half pip accuracy ≥ 0.97.**
 - **Exact-tile (identity) accuracy ≥ 0.90.**
+- **Hand-total (product gate): ≥X% of hands with the exact correct pip total** (set
+  X from the M0/M1 baseline). This is the metric the game actually uses.
 - Orientation/order accuracy reported.
 
 **Accuracy math — why review is load-bearing, not optional.** Exact-tile ≈
@@ -306,12 +308,22 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
   enough for stable per-identity estimates.
   ([Ultralytics tips](https://docs.ultralytics.com/yolov5/tutorials/tips-for-best-training-results))
 - **Metrics reported every run:**
+  - **Hand-total pip count (the product metric):** dominoes are scored by summing
+    the pips left in a hand, so this is the number the app actually produces
+    ([rules](https://walnutstudiolo.com/blogs/blog/how-to-play-mexican-train-dominoes-double-9-and-double-12-rules-of-play)).
+    Report **MAE on the hand total**, **% of hands with the exact correct total**,
+    and **% within ±N pips** — measured both **pre-correction** (raw model) and
+    **post-correction** (what the user submits). Per-tile errors can cancel or
+    compound, so this is not implied by per-tile accuracy.
   - Detection: recall & precision @ IoU 0.5; count of missed tiles / false positives.
   - Value: per-half pip accuracy; **exact-tile identity accuracy** (`12/2` ==
     `2/12` for identity); orientation/order accuracy (scored *separately* from
     identity); full-photo exact-hand rate.
 - **Identity vs. orientation are scored separately** so "found the right tile" and
   "read its order right" are distinguishable.
+- **Scope note:** the scanner reports actual pip counts (blank half = 0);
+  house-rule scoring (e.g. double-blank = 50) lives in the app's scoring layer, not
+  the scanner.
 - **Regression rule:** no change ships that lowers a gate metric without an
   explicit, measured justification.
 
