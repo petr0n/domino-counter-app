@@ -120,6 +120,8 @@ motion/defocus blur, sensor noise, JPEG compression).
   grass, wood grain). Never uniform.
 - **Scale to ~10–20k composited images**, in line with comparable card-detector
   datasets.
+- **Include 0–10% "background" images (no tiles)** to cut false positives (COCO
+  uses ~1%; Ultralytics [tips](https://docs.ultralytics.com/yolov5/tutorials/tips-for-best-training-results)).
 
 **Evidence base:**
 - Cut, Paste and Learn — Dwibedi et al., ICCV 2017: <https://arxiv.org/abs/1708.01642>
@@ -239,9 +241,22 @@ false → flag low-confidence for review).
 Every gate is numeric and measured on the **real held-out eval set** (§7).
 Targets below are proposed starting points — adjust once M0 gives a baseline.
 
+### M-1 — Eval infrastructure (prerequisite to M0)
+You cannot measure a gate without a held-out set and a scorer, and industry
+guidance is explicit that test images must never leak into training (Ultralytics,
+[tips](https://docs.ultralytics.com/yolov5/tutorials/tips-for-best-training-results)).
+Deliverables, before any training:
+- **Annotation tool chosen and set up.** Recommended: **Roboflow** free tier
+  (SAM-2 AI-assisted labeling, dataset versioning, YOLO/COCO export); **CVAT** as
+  the fully self-hosted open-source alternative.
+- **Real eval scenes annotated** (boxes + per-half values + orientation, §11).
+- **Scoring harness** that computes the §7 metrics from model output vs. labels.
+- Note: copy-paste/rendered training data is auto-labeled (§4), so manual
+  annotation here is scoped to eval scenes + the Tier-3 fine-tune set only.
+
 ### M0 — Sim-to-real spike (the kill-gate) · target: days, not weeks
-Build the minimal synthetic renderer + train a small tile detector on **synthetic
-only** → measure on the 49 real photos.
+Build the minimal copy-paste/render pipeline (§4) + train a small tile detector on
+**synthetic only** → measure on the real eval scenes.
 - **Pass:** tile detection **recall ≥ 0.70 @ IoU 0.5** on real photos.
 - **Fail → pivot decision**, not more grinding: add a real fine-tune set (§4.2),
   improve rendering realism (§4.1), or reconsider the approach.
@@ -280,8 +295,16 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
 
 ## 7. Evaluation methodology
 
-- **Held-out real set:** the 49 photos, JSON annotations in-repo (§11). Never
-  trained on. Treat as a floor and grow it toward multiple examples per tile.
+- **Held-out real set:** real *scenes* only (synthetic can't validate sim-to-real),
+  JSON annotations in-repo (§11). Never trained on; kept disjoint from the Tier-3
+  fine-tune set. Class distributions matched across splits (Ultralytics).
+- **Eval set size:** the 49 photos are a smoke-test **floor** — far below a credible
+  measurement bar for 91 identities (only a handful of instances each). Grow toward
+  enough real scenes that **every identity appears multiple times** (practically a
+  few hundred scenes). Sizing rationale: Ultralytics recommends ≥1500 images /
+  ≥10k instances *per class* for training (met synthetically); eval must be large
+  enough for stable per-identity estimates.
+  ([Ultralytics tips](https://docs.ultralytics.com/yolov5/tutorials/tips-for-best-training-results))
 - **Metrics reported every run:**
   - Detection: recall & precision @ IoU 0.5; count of missed tiles / false positives.
   - Value: per-half pip accuracy; **exact-tile identity accuracy** (`12/2` ==
