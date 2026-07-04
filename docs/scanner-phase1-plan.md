@@ -309,8 +309,10 @@ is editable.
 ### M2 — On-device deployment
 Port M1 models to **ONNX Runtime Web**; verify:
 - Output parity with the M1 (server) models on the eval crops.
-- Phone budgets met: total model size, cold-load time, per-scan latency, memory
-  (concrete numbers = TBD; set them from a real mid-range phone in M2).
+- **§8 target budgets met** on a real mid-range phone (end-to-end ≤ ~2 s, model
+  download ≤ ~10–15 MB, plus cold-load/memory), via the WASM baseline path with
+  WebGPU benchmarked opportunistically. (A nano-OBB feasibility probe already ran
+  in M1, so this confirms rather than discovers.)
 
 ### M3 — Quick Scan integration
 Wire the on-device scanner into Quick Scan: camera + photo upload, multi-tile
@@ -362,12 +364,25 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
 
 - **Where:** client-side, in-browser, on the phone. No required inference server
   for the scan path (privacy + no backend cost + offline-capable).
-- **Runtime:** export to **ONNX**, run via **ONNX Runtime Web** (WASM baseline;
-  WebGPU where available).
-- **Size:** int8 quantization as needed to meet the phone size budget.
-- **Budgets (set in M2 from a real device):** model size, cold-load, per-scan
-  latency, memory. Smaller detector variants preferred even at some accuracy cost
-  if they're what fits the phone.
+- **Runtime:** export to **ONNX**, run via **ONNX Runtime Web**. **WASM
+  (SIMD + multithread) is the *required baseline* path** — many phones have no
+  WebGPU (Android Chrome 121+ / Android 12+ only, ~78% of Chrome-Android by Q1 2026;
+  **iOS Safari only from iOS 26+**). **WebGPU is opportunistic** and must be
+  **benchmarked per model, never assumed faster** — the wrong backend is a 10–15×
+  swing and WebGPU is sometimes *slower*.
+  ([web.dev](https://web.dev/blog/webgpu-supported-major-browsers),
+  [SitePoint](https://www.sitepoint.com/webgpu-vs-webasm-transformers-js/))
+- **Quantize to int8.** Hard anchor: YOLOv8-nano ~40 ms int8 vs ~110 ms fp32 on a
+  recent phone, mAP@50 0.350 → 0.347 (negligible).
+- **Target budgets (starting points — validate on a real mid-range phone):**
+  - End-to-end scan (1 detection pass + up to ~15 rectified crop counts): **≤ ~2 s**.
+  - Detection: **≤ ~300–500 ms**. Per-crop count: **≤ ~30–50 ms**.
+  - Total model download: **≤ ~10–15 MB**. Plus cold-load and memory within mobile
+    limits. Smaller variants preferred even at some accuracy cost if they're what
+    fits.
+- **Early feasibility probe (in M1):** time a **nano OBB** model in ORT-Web **WASM**
+  on a real mid-range phone *before* locking the two-model + OBB architecture, so a
+  perf dead-end (esp. OBB, §5.1) surfaces early rather than at M2.
 - **Explicitly deferred, not decided:** a server-side inference fallback remains a
   possible *later* pivot if phone performance proves unacceptable — a deliberate
   change, not the default.
