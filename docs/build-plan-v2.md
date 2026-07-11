@@ -263,6 +263,27 @@ This shrinks what Stage 2 must learn to just "how many pips in this half."
 `gridValid` = counts fit a legal 3×3/4×3 layout (a cheap deterministic guard;
 false → flag low-confidence for review).
 
+### 5.5 Training & compute
+
+- **Framework:** **Ultralytics YOLO** — the standard, well-documented package for
+  object detection; has the **OBB head** (§5.1) and **one-line ONNX export** (§8).
+  The Stage-2 pip counter is a small CNN, trivial to train.
+- **Compute is free for Phase 1** (satisfies the cost rule — no paid compute
+  without approval). A nano model trains fast — **YOLOv8n ≈ 2.5 h / 100 epochs on a
+  free GPU** — which fits comfortably in free cloud GPU quotas:
+  - **Kaggle** (primary): NVIDIA P100, **30 h/week guaranteed**, 9 h/session
+    ([quota](https://www.kaggle.com/general/108481)).
+  - **Colab free** (overflow): T4, ~12 h sessions but *variable* weekly availability
+    ([guide](https://www.hivenet.com/post/google-colaboratory-gpu-complete-guide-to-free-cloud-gpu-access-and-limitations)).
+  - Training-time anchor: [YOLOv8 custom-training guide](https://learnopencv.com/train-yolov8-on-custom-dataset/).
+- **Iteration cadence:** ~2.5 h per train→eval loop → a handful of full loops per
+  week within free quota. Reinforces "fewer, better-informed loops."
+- **Experiment tracking:** log each run's dataset + config → eval numbers (Ultralytics
+  auto-logs runs; optionally Weights & Biases free tier) so every accuracy figure is
+  traceable to a model version (feeds `scannerVersion`, §11).
+- **Revisit paid compute only** if a run genuinely exceeds free quota — and only with
+  explicit approval.
+
 ---
 
 ## 6. Milestones & acceptance gates
@@ -505,12 +526,15 @@ gap over time.
 
 ## 13. Open questions / TBD
 
-- Exact YOLO version/size variant (M0/M1).
+- Exact YOLO version/size variant (M0/M1). *(Framework settled: Ultralytics, §5.5.)*
 - Baseline per-half classifier vs. pip-detector target — which clears M1 (§5.2).
-- 2D vs. 3D synthetic renderer (§4.1); how large a real fine-tune set, if any (§4.4).
+- How much rendered variety (Tier 2) and real fine-tune data (Tier 3) are needed to
+  close the sim-to-real gap (§4).
 - Final numeric gates (M1 targets are proposals; phone budgets set in M2).
-- Annotation tooling for growing the real eval set.
-- Whether oriented boxes are needed from Stage 1 or axis-aligned + rotation suffices.
+
+*Resolved during review:* data strategy (§4, copy-paste-first) · eval infra &
+annotation tooling (§M-1, Roboflow/CVAT) · oriented boxes (§5.1, OBB chosen) ·
+training framework & free compute (§5.5).
 
 ---
 
