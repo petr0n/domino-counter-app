@@ -20,16 +20,27 @@ brittle counting/assignment step. Discipline is eval-driven with no regressions
 
 ## 1. Mission & scope (Phase 1)
 
-**Mission:** from a phone photo of domino tiles, detect every tile and read its
-pip values as accurately as practical, surfacing uncertain results for fast
-human correction.
+**This is a two-phase project.** **Phase 1** (this document) builds, tests,
+validates, and confirms the tile/pip scanner in isolation — the app's biggest
+current weakness and the reason this plan exists. **Phase 2** builds the full
+multiplayer game app around the proven scanner — join-by-code sessions, a game
+manager, cross-device standings — as described in
+[`README.md`](../README.md), which is the Phase 2 product vision (not
+Phase 1 scope). Phase 2 doesn't start until Phase 1's accuracy gates (§6) are
+met; its tech stack/implementation details get written up once it does.
 
-**In scope:** the scanner (detection + pip reading), Quick Scan as the iteration
-surface, an editable review/correction step, local scan history, and a minimal
-round/game flow.
+**Mission (Phase 1):** from a phone photo of domino tiles, detect every tile
+and read its pip values as accurately as practical, surfacing uncertain
+results for fast human correction.
 
-**Out of scope for Phase 1** (see §14): catalog, accounts/auth, server-side
-multiplayer sync, Postgres. Local-first (`localStorage` + `IndexedDB`) only.
+**In scope (Phase 1):** the scanner (detection + pip reading), Quick Scan as
+the iteration surface, an editable review/correction step, local scan history,
+and a minimal single-device round/game flow (§9.3) — just enough to exercise
+the scanner end-to-end, not the Phase 2 multiplayer product.
+
+**Deferred to Phase 2** (see §14): catalog, accounts/auth, server-side
+multiplayer sync (join codes, shared sessions, game manager), Postgres.
+Phase 1 is local-first (`localStorage` + `IndexedDB`) only.
 
 **Tiles:** double-12 set — each half is **0–12 pips**. 91 unique tiles.
 
@@ -88,12 +99,14 @@ backgrounds. Labels (boxes, per-pip points, per-half counts, orientation) are
 emitted for free and exactly. This is the proven recipe for flat, card-like
 objects — see the evidence at the end of this section.
 
-**Tier 1 (primary) — copy-paste real tile faces.** One-time, bounded capture:
-photograph each of the 91 tiles flat (a few lighting/rotation variants, on a
-contrasting/green background for trivial segmentation). Composite these real
-crops onto a diverse real background pool with randomized rotation, perspective,
-brightness/relight, blur, and sharpen. Cut-Paste-Learn shows *patch-level*
-realism is enough to train competitive detectors for this kind of object.
+**Tier 1 (primary) — copy-paste real tile faces.** One-time source material:
+real photos covering all 91 tile faces, in diverse arrangements (touching,
+askew, spaced — but never overlapping). Individual tile-face crops are extracted
+via the detection/segmentation pipeline (or assisted annotation), not by
+assuming clean backgrounds. These real patches are composited onto a diverse
+background pool with randomized rotation, perspective, brightness/relight, blur,
+and sharpen. Cut-Paste-Learn shows *patch-level* realism is enough to train
+competitive detectors for this kind of object.
 
 **Tier 2 (variety) — rendered tiles.** Procedurally draw tiles from the canonical
 grid (0–9 → 3×3; 10–12 → 4×3, incl. the centred 11-middle-row), randomizing
@@ -141,6 +154,13 @@ Two separate pools of real imagery, never mixed:
   - The **49-photo eval set** is **held out** and never trained on — our honest
     read on the sim-to-real gap. It is a smoke-test *floor*, not enough for
     per-tile precision (plan to grow it; see §7).
+  - **This set already exists from the prior (archived) OpenCV-heuristic
+    effort** — 49 real photos, 190 tiles, hand-verified pip identities
+    (`eval/corpus_photos/` locally; ground truth recovered from branch
+    `tooling/corpus-benchmark` into `eval/corpus_truth.json`). Reuse it rather
+    than recapturing from zero — but it has **no bounding boxes or
+    orientation**, so it must be extended (not just imported) before it can
+    back the IoU/orientation metrics in §6/§7 (see M-1).
   - A **separate** small labeled scene set is used for Tier-3 fine-tuning, kept
     strictly disjoint from the eval set.
 
@@ -225,8 +245,17 @@ The value model does **not** learn orientation. Geometry handles it:
   axis is unambiguous).
 - **Split at the physical divider bar, not at pips.** Every tile has a real centre
   line (the "bar") dividing it into two square ends, present regardless of pip
-  count — so blank halves (0 pips) split cleanly. Locate the bar perpendicular to
-  the long axis (intensity scan / it sits at the box midpoint).
+  count — so blank halves (0 pips) split cleanly. This step is **critical**:
+  a misplaced bar shifts both halves' pip counts, so bar-localization error
+  propagates directly into the product metric. Approach: on the perspective-rectified
+  crop, scan intensity perpendicular to the long axis — the bar is a dark
+  horizontal/vertical line at the tile centre. Fit a peak in the intensity profile
+  along the long axis; validate it's centred within a tolerance (domino bars are
+  manufactured at the geometric midpoint). **Fallback:** if the bar isn't detected
+  (e.g. extreme glare or wear), default to the geometric midpoint of the rectified
+  crop and flag the reading as lower-confidence. **Eval metric:** bar-localization
+  error in pixels (distance between detected bar position and true centre) — track
+  this to catch regressions that silently degrade pip accuracy.
 - Ordered halves: **left→right** when horizontal, **top→bottom** when vertical.
 - **180° ambiguity doesn't matter for scoring:** the hand's pip total is
   order-invariant (§7), so which end is "first" only affects observed-order
@@ -303,11 +332,21 @@ You cannot measure a gate without a held-out set and a scorer, and industry
 guidance is explicit that test images must never leak into training (Ultralytics,
 [tips](https://docs.ultralytics.com/yolov5/tutorials/tips-for-best-training-results)).
 Deliverables, before any training:
-- **Annotation tool chosen and set up.** Recommended: **Roboflow** free tier
-  (SAM-2 AI-assisted labeling, dataset versioning, YOLO/COCO export); **CVAT** as
-  the fully self-hosted open-source alternative.
-- **Real eval scenes annotated** (boxes + per-half values + orientation, §11).
-- **Scoring harness** that computes the §7 metrics from model output vs. labels.
+- **Start from the existing 49-photo/190-tile corpus (§4.2), don't rebuild
+  from zero.** It already has real photos + verified pip identities; it's
+  missing bounding boxes and orientation. Extend it:
+  - **Annotation tool chosen and set up.** Recommended: **Roboflow** free tier
+    (SAM-2 AI-assisted labeling, dataset versioning, YOLO/COCO export); **CVAT**
+    as the fully self-hosted open-source alternative. Import the 49 photos and
+    add boxes + orientation on top of the existing pip-identity labels (don't
+    relabel identities that are already verified).
+  - **Grow the set** toward the §7 sizing target (every identity appears
+    multiple times) — the 49 photos are the floor, not the ceiling.
+- **Scoring harness** that computes the §7 metrics from model output vs.
+  labels. The old `eval/corpus_eval.cjs` is a template for the matching/scoring
+  logic (tile-count, exact-pair matching, batching, confusion table) but its
+  detector hook (`window.runDetect`, the old OpenCV heuristic) is not reused —
+  swap in the new YOLO/pip-count model's output.
 - Note: copy-paste/rendered training data is auto-labeled (§4), so manual
   annotation here is scoped to eval scenes + the Tier-3 fine-tune set only.
 
@@ -367,13 +406,14 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
   enough for stable per-identity estimates.
   ([Ultralytics tips](https://docs.ultralytics.com/yolov5/tutorials/tips-for-best-training-results))
 - **Metrics reported every run:**
-  - **Hand-total pip count (the product metric):** dominoes are scored by summing
-    the pips left in a hand, so this is the number the app actually produces
-    ([rules](https://walnutstudiolo.com/blogs/blog/how-to-play-mexican-train-dominoes-double-9-and-double-12-rules-of-play)).
-    Report **MAE on the hand total**, **% of hands with the exact correct total**,
-    and **% within ±N pips** — measured both **pre-correction** (raw model) and
-    **post-correction** (what the user submits). Per-tile errors can cancel or
-    compound, so this is not implied by per-tile accuracy.
+  - **Hand-total pip count (the product metric):** the sum of all pip counts
+    across every tile detected in the photo (raw scanner output — blank half = 0,
+    double-blank = 0). This is *not* house-rule-adjusted (e.g. double-blank = 50
+    lives in the app's scoring layer, §7 scope note). Report **MAE on the hand
+    total**, **% of hands with the exact correct total**, and **% within ±N pips**
+    — measured both **pre-correction** (raw model) and **post-correction** (what
+    the user submits). Per-tile errors can cancel or compound, so this is not
+    implied by per-tile accuracy.
   - Detection: recall & precision @ IoU 0.5; count of missed tiles / false positives.
   - Value: per-half pip accuracy; **exact-tile identity accuracy** (`12/2` ==
     `2/12` for identity); orientation/order accuracy (scored *separately* from
@@ -541,6 +581,13 @@ Planning drafts, not final code. (Stage outputs are in §5.4.)
 (left/right horizontal, top/bottom vertical); identity is the unordered pair
 (`unorderedKey` = `min-max`).
 
+**Eval annotation convention:** `observedOrder.firstMeaning` / `secondMeaning` use
+image-relative positioning, not tile-relative: **"first" = the half whose center
+is closer to the top of the image** (lower y-coordinate), regardless of tile
+rotation. This is unambiguous for annotators at any angle and matches the
+pipeline's output convention (§5.3: left→right when horizontal, top→bottom when
+vertical).
+
 ---
 
 ## 12. Improvement loop (history → training)
@@ -570,12 +617,16 @@ gap over time.
 
 *Resolved during review:* data strategy (§4, copy-paste-first) · eval infra &
 annotation tooling (§M-1, Roboflow/CVAT) · oriented boxes (§5.1, OBB chosen) ·
-training framework & free compute (§5.5).
+training framework & free compute (§5.5) · two-phase scope split (§1/§14,
+Phase 1 scanner / Phase 2 multiplayer per `README.md`) · eval-corpus reuse
+(§4.2/M-1, extend the existing 49-photo corpus rather than rebuild).
 
 ---
 
-## 14. Out of scope for Phase 1
+## 14. Deferred to Phase 2
 
-Catalog · accounts/auth · server-side multiplayer sync · Postgres · any feature
-that doesn't improve detection accuracy, pip-reading accuracy, or scanner
-validation. Do not expand scope until the M1 accuracy gate is met.
+Catalog · accounts/auth · server-side multiplayer sync (join codes, shared
+sessions, game manager) · Postgres · any feature that doesn't improve detection
+accuracy, pip-reading accuracy, or scanner validation. These are the Phase 2
+product (`README.md`'s vision), not rejected — just sequenced after Phase 1.
+Do not expand Phase 1 scope until the M1 accuracy gate is met.

@@ -121,14 +121,37 @@ verify before you write.
 
 ## Current repo state
 
-The scanner is **to be built** per the plan — the ML detector + pip reader, the
-Quick Scan UI, local storage (`IndexedDB` + `localStorage`), and the eval harness
-against the real held-out set. Nothing is implemented yet.
+**Two-phase project.** Phase 1 (active, this repo's current focus) builds and
+validates the tile/pip scanner per `docs/build-plan-v2.md`. Phase 2 (later,
+not started) is the multiplayer game app described in `README.md` — join-code
+sessions, game manager, cross-device standings. Don't build Phase 2 features
+while Phase 1's accuracy gates are open.
 
-**Present:**
+The Phase 1 scanner (ML detector + pip reader, Quick Scan UI, local storage,
+eval harness) is **to be built** per the plan on `main` — nothing scanner-side
+is implemented on `main` yet.
+
+**But `main` is not the whole history — check other branches before assuming
+something doesn't exist.** A prior OpenCV-heuristic scanner (pre-pivot) was
+deliberately archived off `main` in the "Clean start" reset, and its assets are
+still valuable:
+- **The 49-photo/190-tile hand-labeled eval corpus is real and reusable** — see
+  `docs/build-plan-v2.md` §4.2/M-1. Photos live locally in `eval/corpus_photos/`
+  (gitignored, never lost); ground truth (`eval/corpus_truth.json`) was
+  recovered from branch `tooling/corpus-benchmark` (it predates the new plan's
+  bbox/orientation schema, so it needs extending, not just importing).
+  `eval/corpus_eval.cjs` on that branch is a scoring-logic template, not a
+  reusable detector (its detector hook is the old OpenCV heuristic).
+  `archive/legacy-opencv-app` (remote) holds the full old app for reference.
+- Before claiming a data/tooling asset "doesn't exist yet," check
+  `git branch -a` / `git log --all` — the clean start moved things off `main`,
+  it didn't delete them.
+
+**Present on `main`:**
 - `CLAUDE.md` — this file.
 - `AGENTS.md` — agent behavior rules for planning work.
-- `docs/build-plan-v2.md` — the build plan (source of truth).
+- `README.md` — Phase 2 product vision.
+- `docs/build-plan-v2.md` — the Phase 1 build plan (source of truth).
 - `docs/web-first-phased-ml-plan-checklist.md` — operator checklist companion.
 - `.claude/` — Stop hook (`hooks/js-check.sh`) that syntax-checks changed JS/HTML.
 - `.gitignore` and repo config.
