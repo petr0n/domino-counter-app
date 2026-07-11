@@ -1,5 +1,29 @@
 # Claude Code Rules for This Project
 
+## ⚠️ Working environment & file paths — settle BEFORE writing (TOP PRIORITY)
+
+The device the user chats from and the machine where commands run are **different
+things**. What matters for file paths is **where Claude Code is actually
+executing**, not which device the user is looking at.
+
+- **Running locally on the user's Mac** (VS Code extension, or the `claude` CLI in a
+  Mac terminal) → write to the local checkout:
+  `/Users/peterabeln/Documents/github/petr0n/domino-counter-app/`
+- **Running in the cloud / remote** (web, phone, remote session) → the Mac disk is
+  unreachable; work in the cloud checkout and **push to GitHub**.
+
+**How to tell (detect first, don't guess):** check the execution environment — macOS
+(Darwin) with the `/Users/peterabeln/...` path present = local Mac; a Linux container
+(e.g. `/home/user/...`) = remote/cloud. **If it's genuinely ambiguous, or before the
+first file write when unsure, ASK the user** ("Is this running on your Mac, or
+remote?") — never assume.
+
+**GitHub `main` is the single source of truth.** Local Mac work and remote work both
+sync through it, so nothing is lost switching between Mac and phone: remote sessions
+push to GitHub; on the Mac, `git pull` brings that work down.
+
+---
+
 ## Source of truth
 
 **The build plan is [`docs/build-plan-v2.md`](docs/build-plan-v2.md).
