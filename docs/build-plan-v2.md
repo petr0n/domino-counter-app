@@ -422,6 +422,28 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
 
 ## 9. Product surfaces
 
+### 9.0 App stack & platform constraints
+
+**Hard constraints (get these wrong and the camera or offline mode simply won't work):**
+- **Serve over HTTPS.** The camera API (`getUserMedia`) works only in a secure
+  context (HTTPS or localhost); otherwise `navigator.mediaDevices` is undefined
+  ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)).
+  Use static HTTPS hosting (e.g. GitHub Pages / Netlify).
+- **Camera from a user gesture.** iOS Safari requires camera access to be triggered
+  by a tap and granted by permission (supported since iOS 11). Always provide the
+  **photo-upload fallback** when the camera is denied/unavailable.
+- **Offline via PWA.** A service worker + Cache Storage API precache the app shell
+  and the **ONNX model** so scanning works offline; a web app manifest enables
+  install-to-homescreen
+  ([MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Caching)).
+  Large blobs (images, history) live in **IndexedDB** (§10); the model lives in
+  Cache Storage.
+
+**Softer call (reversible preference):**
+- Build with **Vite**; keep the UI **lightweight** (vanilla or a small library such
+  as Preact/Svelte) to minimize mobile bundle size. The round/game UI is simple
+  enough that minimal wins; revisit only if the UI grows.
+
 ### 9.1 Quick Scan (primary iteration surface)
 The Quick Scan feature baseline: camera scan, photo upload/load, multi-tile
 detection from one image, review before confirm, per-tile edit, remove detection,
