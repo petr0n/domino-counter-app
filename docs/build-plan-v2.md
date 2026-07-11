@@ -263,6 +263,13 @@ This shrinks what Stage 2 must learn to just "how many pips in this half."
 `gridValid` = counts fit a legal 3×3/4×3 layout (a cheap deterministic guard;
 false → flag low-confidence for review).
 
+**Confidence must be calibrated.** Neural nets are systematically *overconfident*,
+so a raw score of 0.9 does not mean 90% correct
+([Guo et al. 2017](https://arxiv.org/abs/1706.04599)). Apply **temperature scaling**
+(one parameter, fit on a held-out slice) to the counter softmax and calibrate
+detector scores, so the confidence that drives review triage (§9.2) is trustworthy.
+Track calibration error (ECE) in eval (§7).
+
 ### 5.5 Training & compute
 
 - **Framework:** **Ultralytics YOLO** — the standard, well-documented package for
@@ -371,6 +378,9 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
   - Value: per-half pip accuracy; **exact-tile identity accuracy** (`12/2` ==
     `2/12` for identity); orientation/order accuracy (scored *separately* from
     identity); full-photo exact-hand rate.
+  - **Calibration:** Expected Calibration Error (ECE) + a reliability diagram for
+    the confidence that drives review triage (§5.4, §9.2). Overconfident scores make
+    the triage lie; track this so calibration holds.
 - **Identity vs. orientation are scored separately** so "found the right tile" and
   "read its order right" are distinguishable.
 - **Scope note:** the scanner reports actual pip counts (blank half = 0);
@@ -423,6 +433,10 @@ later.
 ### 9.2 Review / correction UX (load-bearing — see M1 math)
 After a scan:
 - Each detection shown as its own thumbnail with editable values + confidence.
+- **Triage uses *calibrated* confidence (§5.4):** high/medium/low bands are set from
+  calibrated confidence mapped to observed accuracy (e.g. "high" = the band where
+  empirical accuracy ≥ target), combined with the `gridValid` guard — so "low →
+  please check" is trustworthy, not overconfident noise.
 - **Edit existing detection:** two separate numeric inputs (map to left/right or
   top/bottom by orientation).
 - **Add missing tile:** single slash-notation text input, e.g. `2/12` (fastest on
