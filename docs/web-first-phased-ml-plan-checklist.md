@@ -1,172 +1,103 @@
-# Web-First Domino ML Plan — Operator Checklist (Execution Runbook)
+# Domino Scanner — Operator Runbook (Build Plan v2 Companion)
 
-**Companion doc:** `docs/build-plan-v2.md`  
-**Scope:** Execute Phase 1 with strict focus on tile detection + pip reading first, while preserving a lightweight path for later round/game UX.  
-**Rule:** No architecture or multiplayer expansion that distracts from scan accuracy until the scanner acceptance gates are met.
-
----
-
-## 0) Operating Rules (Must Hold)
-
-- [ ] Tile detection accuracy is the top priority
-- [ ] Pip-reading accuracy is the top priority
-- [ ] Nothing ships that reduces scanner reliability
-- [ ] Keep implementation simple; avoid unnecessary complexity
-- [ ] Use low-cost, local-first development paths where possible
-- [ ] Do not spend major effort on multiplayer/backend architecture until scanner quality is proven
-- [ ] Quick Scan remains available as a testing/validation surface during Phase 1
+**Source of truth:** `docs/build-plan-v2.md` — this file is the same plan in
+checkbox form, for tracking execution. Section references (§) point there.
+Per CLAUDE.md, when one changes the other updates in the same PR.
 
 ---
 
-## 1) Phase 1 Product Direction
+## 0) Standing rules (hold for every task)
 
-- [ ] Ground-up build
-- [ ] Features are added only when explicitly specified
-- [ ] Catalog is out of scope
-- [ ] Auth/accounts are out of scope
-- [ ] localStorage now; Postgres later
-- [ ] Multiplayer syncing is deferred until after scanner quality is proven
-
----
-
-## 2) Core Scanner Requirements
-
-### 2.1 Success definition
-- [ ] Detect all tiles present in an image as reliably as possible
-- [ ] Correctly read the pip values for each detected tile as reliably as possible
-- [ ] Reach as close to 100% combined tile detection + pip reading accuracy as practical
-
-### 2.2 Behavior under uncertainty
-- [ ] Show best guesses when uncertain
-- [ ] Mark uncertain results for user review
-- [ ] Use confidence labels: `high`, `medium`, `low`
-- [ ] Avoid numeric confidence UI unless it becomes necessary later
-
-### 2.3 Correction workflow
-- [ ] Scanner results must be editable before final confirmation
-- [ ] User can fix incorrect tile values
-- [ ] User can remove incorrect detections
-- [ ] Correction UX must stay simple and fast
+- [ ] The eval set is never trained on — no exceptions, no "just this once"
+- [ ] No milestone advances without its gate **measured** (§6)
+- [ ] No regression ships without an explicit, measured justification (§7)
+- [ ] No paid compute/API without explicit per-task approval (§5.5)
+- [ ] Pip color is never a signal — everything color-agnostic (§1)
+- [ ] Scanner code stays a self-contained module: `scanner/`, no DOM, no
+      storage, §5.4 contracts as its API (§1)
 
 ---
 
-## 3) Quick Scan (Required in Phase 1)
+## 1) User capture sessions (§4.3 — external dependency, schedule these)
 
-### 3.1 Purpose
-- [ ] Provide a direct way to test scanner progress
-- [ ] Confirm the scan model works end-to-end
-- [ ] Serve as a playground for UX/UI decisions
-- [ ] Support repeatable validation during implementation
-
-### 3.2 Position in product
-- [ ] Quick Scan is accessible in the app for now
-- [ ] It is primarily a testing/validation surface during Phase 1
-- [ ] It may be hidden or deprioritized later
-
-### 3.3 Starting feature baseline
-Carry forward the current `quick.html` feature set as the planning baseline:
-- [ ] Camera-based scan flow
-- [ ] Photo upload / load photo
-- [ ] Multi-tile detection from a single image
-- [ ] Review detected tiles before confirming
-- [ ] Edit left/right values per detected tile
-- [ ] Remove incorrect detected tiles
-- [ ] Show per-tile totals
-- [ ] Show aggregate total
-- [ ] Keep a visible scanned-tile history/results area
-- [ ] Reset / clear all
-- [ ] Provide scan guidance/status messaging
+- [ ] **Tier-1 faces (before M0):** one sitting, ~30–60 min — all 91 faces,
+      small groups per photo, a few arrangements/lighting variants.
+      (`eval/photos/` does NOT cover this — 49/68 of those ARE the eval set.)
+- [ ] **Eval-set growth (M0→M1):** more real multi-tile scenes, toward every
+      identity appearing multiple times (§7)
+- [ ] **Tier-3 fine-tune scenes (only if M0/M1 show the gap needs them):**
+      disjoint from eval; reserve ~20% of them as the calibration set (§5.4)
+- [ ] **Phone access:** M1 feasibility probe + M2 budget runs on the real
+      mid-range phone (§8)
 
 ---
 
-## 4) Scanner Evaluation (Explicit Feature)
+## 2) M-1 — Eval infrastructure (before any training)
 
-### 4.1 Available evaluation set
-- [ ] Use the 49-photo evaluation set provided by the user
-- [ ] Treat it as covering the full 91-tile double-12 set
-- [ ] Use it to guide scanner iteration and regression testing
+- [ ] Annotation tool chosen; **verified** it supports oriented boxes and
+      exports a YOLO-OBB-compatible format (Roboflow free tier recommended;
+      CVAT fallback)
+- [ ] 49 corpus photos imported; boxes + orientation annotated (pip
+      identities already verified in `eval/corpus_truth.json` — don't relabel)
+- [ ] Merge script written: tool export + `corpus_truth.json` → §11 JSON
+      (critical path to M0)
+- [ ] Scoring harness computes every §7 metric from model output vs. §11 JSON
+- [ ] (Ongoing) eval set grown per capture session above
 
-### 4.2 Expected results source of truth
-- [ ] Store expected results in code/JSON
-- [ ] Keep the dataset easy to revise as learning improves
-- [ ] Make validation repeatable and comparable across revisions
+## 3) M0 — Sim-to-real kill-gate (days, not weeks)
 
-### 4.3 Evaluation needs
-- [ ] Compare detected vs expected tiles for known test images
-- [ ] Highlight missed tiles
-- [ ] Highlight incorrect tile reads
-- [ ] Highlight false-positive/extra detections
-- [ ] Make Quick Scan useful for regression testing, not just manual play
+- [ ] Tier-1 crops extracted from the new capture session
+- [ ] Copy-paste compositor: blended boundaries, curated backgrounds,
+      randomization checklist (§4.4), 0–10% background-only images
+- [ ] Nano OBB tile detector trained on **synthetic only** (Kaggle free GPU)
+- [ ] Measured on real eval scenes:
+  - **PASS = recall ≥ 0.70 @ IoU 0.5** → proceed to M1
+  - **FAIL → pivot decision** (§6), not open-ended grinding
 
----
+## 4) M1 — Accuracy proven (anywhere; no app integration)
 
-## 5) Lightweight Round/Game Flow (Secondary to Scanner)
+- [ ] Tier-2 renderer added (procedural tiles, color-agnostic randomization)
+- [ ] Crop pipeline: OBB → perspective-rectify → pad (§5.2)
+- [ ] Divider-bar localizer + fallback + bar-error metric (§5.3)
+- [ ] Stage-2 baseline counter trained (13-way softmax per half)
+- [ ] Gates measured on real eval:
+  - [ ] Tile recall ≥ 0.95 @ IoU 0.5
+  - [ ] Per-half pip accuracy ≥ 0.97
+  - [ ] Exact-tile identity ≥ 0.90
+  - [ ] Hand-total exact ≥ 65% pre-correction (provisional, §6)
+- [ ] Temperature T fit on calibration set; ECE reported (§5.4)
+- [ ] Phone feasibility probe: nano OBB in ORT-Web WASM on the real phone (§8)
+- [ ] If baseline counter plateaus below gate → switch to pip-detector target
+      (§5.2)
 
-### 5.1 Scope guardrail
-- [ ] Implement only the minimum round/game flow needed while scanner work is active
-- [ ] Do not let game architecture distract from scan accuracy work
+## 5) M2 — On-device port
 
-### 5.2 Player identity
-- [ ] Players use typed display names
-- [ ] Player names are remembered locally on that device
+- [ ] ONNX export + int8 quantization
+- [ ] Output parity vs. M1 models on eval crops
+- [ ] Budgets on the real phone: e2e ≤ ~2 s, download ≤ ~10–15 MB, WASM
+      baseline (WebGPU only if benchmarked faster)
+- [ ] Model copied into site assets at deploy; precached by service worker
+      (§5.5, §9.0)
 
-### 5.3 Round model
-- [ ] Support numbered rounds
-- [ ] Each player must submit something each round
-- [ ] Exactly one winner per round
-- [ ] Winner submits `I won`
-- [ ] Non-winners submit via `Scan my tiles`
-- [ ] Show winner and all player scores after round completion
+## 6) M3 — Quick Scan integration
 
-### 5.4 Round-end scan UX
-- [ ] Non-winner taps `Scan my tiles`
-- [ ] One full-hand scan attempt is the intended flow
-- [ ] User reviews detected result
-- [ ] User edits/fixes scanned values if needed
-- [ ] User submits corrected final hand
-- [ ] No partial multi-scan merge workflow in Phase 1
+- [ ] `scanner/` module consumed by Quick Scan (camera + upload)
+- [ ] Review/correction UX per §9.2 (calibrated-confidence triage, edit, add,
+      not-tile)
+- [ ] Local history per §10 (IndexedDB images, rich records)
+- [ ] End-to-end eval through the real capture path: no regression vs. M1
+- [ ] Hand-total post-correction ≥ 99% measured
 
-### 5.5 Editing and locking
-- [ ] A player can edit their own submission until the round is finalized
-- [ ] A round auto-finalizes when exactly one winner exists and all non-winners have submitted
-- [ ] No manual finalize step is required
+## 7) M4 — Minimal round/game flow (single-device, §9.3)
 
-### 5.6 After finalization
-- [ ] Show completed round results
-- [ ] Require explicit tap on `Start Next Round`
-- [ ] Any player can start the next round
-
----
-
-## 6) Storage and Architecture Direction
-
-### 6.1 Near-term
-- [ ] Use localStorage in Phase 1
-- [ ] Treat create/join game as local-first prototype behavior for now
-
-### 6.2 Later
-- [ ] Plan for Postgres-backed persistence later
-- [ ] Plan true multi-device synchronization later
-- [ ] Do not over-design backend decisions before scanner quality is proven
+- [ ] Typed names, numbered rounds, one winner, scan-my-tiles, auto-finalize,
+      start-next-round
+- [ ] No Phase 2 features (no join codes, no game manager, no sync)
 
 ---
 
-## 7) Acceptance Gates (Scanner First)
+## 8) Phase 2 (do not start until M1+ gates met)
 
-- [ ] Tile detection recall reaches agreed target
-- [ ] Exact tile-read accuracy reaches agreed target
-- [ ] Combined scanner behavior is stable across the provided test-photo set
-- [ ] Uncertain results are clearly surfaced and easy to correct
-- [ ] No regression is accepted without measurement
-
-**If any fail:** remain focused on scanner iteration and do not expand scope.
-
----
-
-## 8) Iteration Rules
-
-- [ ] Use evaluation data to drive changes
-- [ ] Prefer fewer, better-informed iteration loops over trial-and-error churn
-- [ ] Keep files and changes small where practical
-- [ ] Preserve or improve scanner accuracy with every accepted change
-- [ ] Avoid spending effort on features that do not improve detection reliability, pip-reading reliability, or scanner validation
+The multiplayer product in `README.md` — join-by-code sessions, game manager,
+cross-device standings. When it starts: add tech stack + implementation
+details to `README.md`, and the scanner module ports over unchanged.

@@ -38,6 +38,17 @@ the iteration surface, an editable review/correction step, local scan history,
 and a minimal single-device round/game flow (§9.3) — just enough to exercise
 the scanner end-to-end, not the Phase 2 multiplayer product.
 
+**Phase 1's hand-off to Phase 2:** the scanner must be built as a
+**self-contained module** — models + pre/post-processing behind the §5.4 stage
+contracts as its public API, with Quick Scan as merely its first consumer.
+Concretely: scanner code lives in its own directory (`scanner/`), exposes
+`init()` (loads/caches the ONNX models) and `scanImage(image) → §5.4 JSON`,
+and touches **no DOM and no storage** — UI and persistence belong to the
+consumer. Phase 2 then embeds the module in the multiplayer app without
+reworking scanner internals. Any Phase 1 shortcut that welds detection or
+counting logic into Quick Scan's page code violates this and gets rejected in
+review.
+
 **Deferred to Phase 2** (see §14): catalog, accounts/auth, server-side
 multiplayer sync (join codes, shared sessions, game manager), Postgres.
 Phase 1 is local-first (`localStorage` + `IndexedDB`) only.
@@ -164,19 +175,42 @@ Two separate pools of real imagery, never mixed:
   - A **separate** small labeled scene set is used for Tier-3 fine-tuning, kept
     strictly disjoint from the eval set.
 
-### 4.3 Domain-randomization checklist (must all vary)
+### 4.3 User capture sessions (the schedule's external dependency)
+
+Several inputs require the **user physically photographing tiles** — nothing
+else on the plan can substitute for them, so they gate the schedule. (Checked:
+the old catalog branch stored only pip *values* in `catalog.json`, no photos —
+none of this is already done.)
+
+1. **Tier-1 source capture (before M0) — still required.** Checked
+   (2026-07-11): `eval/photos/` holds 68 images, but 49 of them are
+   **byte-identical to the held-out eval corpus** (`eval/corpus_photos/` —
+   same photos, renamed), and the rest are screenshots/web scraps plus one
+   extra phone photo. **Eval photos cannot be Tier-1 training source:**
+   training on crops cut from eval scenes means the model is graded on tiles
+   it trained on, and the benchmark becomes a lie. So one new capture session
+   is needed — all 91 faces, small groups per photo, a few
+   arrangements/lighting variants; roughly 30–60 minutes.
+2. **Eval-set growth (during M0→M1):** more real multi-tile scenes on diverse
+   backgrounds, toward the §7 sizing target (every identity multiple times).
+3. **Tier-3 fine-tune scenes (only if M0/M1 shows the gap needs it):** a
+   separate small batch of real scenes, kept disjoint from eval (§4.2).
+4. **Phone access for perf probes:** the M1 feasibility probe and M2 budgets
+   (§8) need runs on the user's real mid-range phone.
+
+### 4.4 Domain-randomization checklist (must all vary)
 
 Background · lighting/shadows · white balance/color cast · tile body color · pip
 color · gloss · tile count · position · rotation · perspective · blur · noise ·
 JPEG artifacts · partial tiles at frame edge.
 
-### 4.4 Sim-to-real gap — the top risk
+### 4.5 Sim-to-real gap — the top risk
 
 Synthesized models can overfit to paste artifacts or miss real texture.
 Mitigations, in order of preference:
 1. Real tile-face pixels (Tier 1 copy-paste) — the strongest defense; the tiles
    themselves are already real.
-2. Blended paste boundaries + aggressive domain randomization (§4.1, §4.3).
+2. Blended paste boundaries + aggressive domain randomization (§4.1, §4.4).
 3. Tier-3 fine-tune on a small real scene set (§4.1) if 1–2 aren't enough.
 4. Always measure on the **real** held-out set so the gap is visible, never hidden.
 
@@ -292,12 +326,25 @@ This shrinks what Stage 2 must learn to just "how many pips in this half."
 `gridValid` = counts fit a legal 3×3/4×3 layout (a cheap deterministic guard;
 false → flag low-confidence for review).
 
-**Confidence must be calibrated.** Neural nets are systematically *overconfident*,
-so a raw score of 0.9 does not mean 90% correct
-([Guo et al. 2017](https://arxiv.org/abs/1706.04599)). Apply **temperature scaling**
-(one parameter, fit on a held-out slice) to the counter softmax and calibrate
-detector scores, so the confidence that drives review triage (§9.2) is trustworthy.
-Track calibration error (ECE) in eval (§7).
+**Confidence must be calibrated — what that means and exactly what we do.**
+The review UI (§9.2) flags tiles as "check this one" based on the model's
+confidence score. Problem: raw neural-net confidence is inflated — a model
+that says "90% sure" is often right only ~70–75% of the time
+([Guo et al. 2017](https://arxiv.org/abs/1706.04599)). Use raw scores and the
+app will fail to flag exactly the tiles the user needed to check. The fix is
+**temperature scaling**, the standard one-parameter method:
+1. Set aside a **calibration set** — a few hundred real tile readings that are
+   in **neither** training **nor** the eval set. Concretely: when capturing the
+   Tier-3 fine-tune scenes (§4.2/§4.3), reserve ~20% of those photos for
+   calibration instead of fine-tuning.
+2. After training, run the model on the calibration set and fit the single
+   constant **T** that makes stated confidence match observed accuracy. A few
+   lines of scipy; no retraining.
+3. Bake **T** into the app as a constant applied to every confidence score
+   before the review UI sees it. Refit T for each model release — it is
+   specific to one trained model.
+
+Track calibration error (ECE) in eval (§7) to confirm the fix holds.
 
 ### 5.5 Training & compute
 
@@ -317,6 +364,18 @@ Track calibration error (ECE) in eval (§7).
 - **Experiment tracking:** log each run's dataset + config → eval numbers (Ultralytics
   auto-logs runs; optionally Weights & Biases free tier) so every accuracy figure is
   traceable to a model version (feeds `scannerVersion`, §11).
+- **Where code & artifacts live:**
+  - Synthetic-generation + training code: a `train/` directory in this repo
+    (Python; runs on Kaggle/Colab by cloning the repo or uploading the dir).
+  - Datasets: versioned in the annotation tool (Roboflow) / regenerated from
+    `train/` scripts — composited images are **not** committed to git.
+  - Trained weights (`.pt`) and ONNX exports: attached to **GitHub Releases**,
+    one release per model version, tag = `scannerVersion` (§11), e.g.
+    `scanner-v0.3.0` — never committed to the repo (binary bloat).
+  - How the app gets the model: the deploy step copies the release's ONNX
+    files into the site's static assets (e.g. `models/`), so the PWA service
+    worker can precache them (§9.0) and offline scanning works. The app never
+    fetches from the GitHub Release URL at runtime.
 - **Revisit paid compute only** if a run genuinely exceeds free quota — and only with
   explicit approval.
 
@@ -339,9 +398,21 @@ Deliverables, before any training:
     (SAM-2 AI-assisted labeling, dataset versioning, YOLO/COCO export); **CVAT**
     as the fully self-hosted open-source alternative. Import the 49 photos and
     add boxes + orientation on top of the existing pip-identity labels (don't
-    relabel identities that are already verified).
+    relabel identities that are already verified). **Verify before committing to
+    a tool** that it supports *oriented* boxes and exports a format the
+    YOLO-OBB trainer accepts (§5.1 depends on OBB labels).
+  - **Combine the two label files (small script — schedule it).** After
+    annotation we'll have two files describing the same 49 photos: the old
+    `eval/corpus_truth.json` says **what** is in each photo (pip values per
+    tile), and the annotation tool's export says **where** (box + rotation per
+    tile). The scoring harness needs both merged into one record per photo
+    (the §11 format). Write a ~50-line script that pairs each box with a
+    pip-value label (same photo; flag any count mismatch for manual fix) and
+    emits the §11 JSON. About half a day — and it's on the critical path to
+    M0, because no merged file means no measurable kill-gate.
   - **Grow the set** toward the §7 sizing target (every identity appears
-    multiple times) — the 49 photos are the floor, not the ceiling.
+    multiple times) — the 49 photos are the floor, not the ceiling. Requires
+    user capture sessions (§4.3).
 - **Scoring harness** that computes the §7 metrics from model output vs.
   labels. The old `eval/corpus_eval.cjs` is a template for the matching/scoring
   logic (tile-count, exact-pair matching, batching, confusion table) but its
@@ -362,8 +433,12 @@ Build the minimal copy-paste/render pipeline (§4) + train a small tile detector
 - Tile detection **recall ≥ 0.95 @ IoU 0.5**, precision reported (recall-biased OK).
 - **Per-half pip accuracy ≥ 0.97.**
 - **Exact-tile (identity) accuracy ≥ 0.90.**
-- **Hand-total (product gate): ≥X% of hands with the exact correct pip total** (set
-  X from the M0/M1 baseline). This is the metric the game actually uses.
+- **Hand-total (product gate): ≥ 65% of hands with the exact correct pip total
+  pre-correction; ≥ 99% post-correction.** (Provisional: 65% follows from the
+  per-half math below for a 7-tile hand; revise once M0/M1 give a real
+  baseline. The post-correction number is the one the game experience rides
+  on — it measures scanner + review UX together.) This is the metric the game
+  actually uses.
 - Orientation/order accuracy reported.
 
 **Accuracy math — why review is load-bearing, not optional.** Exact-tile ≈
