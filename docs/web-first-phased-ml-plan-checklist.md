@@ -1,6 +1,6 @@
 # Web-First Domino ML Plan — Operator Checklist (Execution Runbook)
 
-**Companion doc:** `docs/scanner-phase1-plan.md`  
+**Companion doc:** `docs/build-plan-v2.md`  
 **Scope:** Execute Phase 1 with strict focus on tile detection + pip reading first, while preserving a lightweight path for later round/game UX.  
 **Rule:** No architecture or multiplayer expansion that distracts from scan accuracy until the scanner acceptance gates are met.
 

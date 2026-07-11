@@ -2,7 +2,7 @@
 
 ## Source of truth
 
-**The build plan is [`docs/scanner-phase1-plan.md`](docs/scanner-phase1-plan.md).
+**The build plan is [`docs/build-plan-v2.md`](docs/build-plan-v2.md).
 Read it before doing scanner work.** Its four load-bearing decisions (§3):
 
 1. **Synthetic-data-first** — render labeled training tiles from the known pip-grid
@@ -55,7 +55,7 @@ unverified. If you screw up, produce a concrete fix, not an apology.
 
 ### Accuracy is measured, not guessed
 No accuracy number ships that you didn't run. Evaluate on the **real held-out set**
-(`docs/scanner-phase1-plan.md` §7). No milestone advances without its gate measured
+(`docs/build-plan-v2.md` §7). No milestone advances without its gate measured
 (§6). **Regressions are unacceptable** — confirm a metric held or improved before
 pushing.
 
@@ -69,7 +69,7 @@ Before writing any function/constant/logic, search for it first; reuse or extend
 rather than pasting a second copy. One responsibility → one place.
 
 ### Keep CLAUDE.md and the plan in sync with the code
-This file and `docs/scanner-phase1-plan.md` are guardrails — a wrong statement here
+This file and `docs/build-plan-v2.md` are guardrails — a wrong statement here
 sends the next session down the wrong path. When a change makes either inaccurate,
 update it in the **same PR**. Don't document aspirational behavior as if it ships;
 verify before you write.
@@ -104,7 +104,7 @@ against the real held-out set. Nothing is implemented yet.
 **Present:**
 - `CLAUDE.md` — this file.
 - `AGENTS.md` — agent behavior rules for planning work.
-- `docs/scanner-phase1-plan.md` — the build plan (source of truth).
+- `docs/build-plan-v2.md` — the build plan (source of truth).
 - `docs/web-first-phased-ml-plan-checklist.md` — operator checklist companion.
 - `.claude/` — Stop hook (`hooks/js-check.sh`) that syntax-checks changed JS/HTML.
 - `.gitignore` and repo config.
@@ -137,5 +137,5 @@ they say otherwise.
 
 **Domino Counter App** — a phone-first tool to scan domino tiles and read pip
 counts, with a lightweight local round/game flow. Built around an on-device ML
-scanner per `docs/scanner-phase1-plan.md`. Local-first storage; no accounts, no
+scanner per `docs/build-plan-v2.md`. Local-first storage; no accounts, no
 server-side multiplayer in Phase 1.

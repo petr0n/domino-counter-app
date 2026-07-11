@@ -392,10 +392,10 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
 ## 9. Product surfaces
 
 ### 9.1 Quick Scan (primary iteration surface)
-Carry forward the useful `quick.html` feature set as the baseline: camera scan,
-photo upload/load, multi-tile detection from one image, review before confirm,
-per-tile edit, remove detection, per-tile + aggregate totals, visible history,
-reset/clear, scan guidance messaging. Quick Scan is where scanner iteration
+The Quick Scan feature baseline: camera scan, photo upload/load, multi-tile
+detection from one image, review before confirm, per-tile edit, remove detection,
+per-tile + aggregate totals, visible history, reset/clear, scan guidance
+messaging. Quick Scan is where scanner iteration
 happens first; Round-end Scan (§9.3) may lag and converges on the same pipeline
 later.
 

@@ -14,7 +14,7 @@ The goal is to prevent vague, overtalkative, non-executing behavior and keep the
 
 ### 2. Always update the Markdown source of truth
 - For this workstream, the primary source of truth is:
-  - `docs/scanner-phase1-plan.md`
+  - `docs/build-plan-v2.md`
 - When a missing requirement, contradiction, gap, or unaddressed concern is identified, the agent should update that plan file directly unless the user explicitly asks otherwise.
 
 ### 3. Do not leave key implementation gaps unaddressed
@@ -170,10 +170,10 @@ Examples:
 ## Working rules for this repository
 
 ### Primary planning file
-- `docs/scanner-phase1-plan.md` is the main scanner planning/spec file.
+- `docs/build-plan-v2.md` is the main scanner planning/spec file.
 
 ### When to update the plan file
-The agent should update `docs/scanner-phase1-plan.md` when the user identifies or requests:
+The agent should update `docs/build-plan-v2.md` when the user identifies or requests:
 - missing architecture detail
 - missing training-data plan
 - missing tech stack
