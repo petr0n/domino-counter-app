@@ -6,6 +6,30 @@ Per CLAUDE.md, when one changes the other updates in the same PR.
 
 ---
 
+## Who does what (division of labor)
+
+**Your jobs — only the things nobody else can do:**
+1. **Camera:** the capture sessions in §1. Before M0 that's exactly one:
+   the 91-face session (~30–60 min). The rest come later or conditionally.
+2. **Boxes on the 49 eval photos:** ~1 hour in the annotation tool
+   (AI-assisted — click a tile, it drafts the box, you accept/adjust).
+   Claude sets the project up and gives you the link; you click through it.
+3. **Phone:** hand it over for the two timing tests (M1 probe, M2 budgets).
+4. **Approvals:** any spend (target is $0) and the review of accuracy
+   reports at each gate.
+
+**Claude's jobs — everything else:** annotation project setup, the label
+merge script, the scoring harness, the synthetic-data pipeline, all training
+runs (Kaggle free GPU), calibration, ONNX export/quantization, all app code,
+and running/reporting every measurement. If a task isn't in your list above,
+it's not yours.
+
+**First two steps, runnable this week, in parallel:**
+- You: the 91-face capture session (§1, Tier-1).
+- Claude: annotation project + scoring harness (§2, M-1).
+
+---
+
 ## 0) Standing rules (hold for every task)
 
 - [ ] The eval set is never trained on — no exceptions, no "just this once"

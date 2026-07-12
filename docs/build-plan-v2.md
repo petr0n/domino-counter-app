@@ -188,9 +188,16 @@ none of this is already done.)
    same photos, renamed), and the rest are screenshots/web scraps plus one
    extra phone photo. **Eval photos cannot be Tier-1 training source:**
    training on crops cut from eval scenes means the model is graded on tiles
-   it trained on, and the benchmark becomes a lie. So one new capture session
-   is needed — all 91 faces, small groups per photo, a few
-   arrangements/lighting variants; roughly 30–60 minutes.
+   it trained on, and the benchmark becomes a lie. (This is the universal
+   train/test split rule, and this project already saw the soft version of
+   the failure: the old scanner was tuned against its own benchmark one
+   photo at a time until it looked good there and still missed tiles in real
+   use.) It's also no loss: eval photos are angled multi-tile scenes — the
+   *wrong shape* for Tier-1, which wants flat, close, well-lit face shots to
+   cut clean crops from. So one new capture session is needed — all 91
+   faces, small groups per photo, a few arrangements/lighting variants;
+   roughly 30–60 minutes — and it produces *better* training material than
+   reusing eval photos would.
 2. **Eval-set growth (during M0→M1):** more real multi-tile scenes on diverse
    backgrounds, toward the §7 sizing target (every identity multiple times).
 3. **Tier-3 fine-tune scenes (only if M0/M1 shows the gap needs it):** a
