@@ -106,7 +106,8 @@ you disagree with one, only its section changes.
 ### 4.1 Data generation: copy-paste-first — D1
 
 The pipeline synthesizes labeled multi-tile scenes by compositing tiles onto real
-backgrounds. Labels (boxes, per-pip points, per-half counts, orientation) are
+backgrounds. Labels (boxes, per-pip points, per-half counts, orientation,
+**corner keypoints in a fixed deterministic winding order — §5.4**) are
 emitted for free and exactly. This is the proven recipe for flat, card-like
 objects — see the evidence at the end of this section.
 
@@ -121,9 +122,11 @@ competitive detectors for this kind of object.
 
 **Tier 2 (variety) — rendered tiles.** Procedurally draw tiles from the canonical
 grid (0–9 → 3×3; 10–12 → 4×3, incl. the centred 11-middle-row), randomizing
-appearance **color-agnostically**: pip color (full spectrum incl. white/black),
-body color (white/black/colored/marbled), gloss, divider style, edge rounding,
-wear. This cheaply covers the long tail and tile finishes the real captures miss
+appearance **color-agnostically**: pip color (full spectrum, excluding pure
+black — real sets never use literal black pips, only dark tones), gloss,
+divider style, edge rounding, wear. **Body color is fixed white and the
+divider is fixed black** — a universal domino fact, not randomized. This
+cheaply covers the long tail and tile finishes the real captures miss
 (domain-randomization rationale, Tremblay et al.).
 
 **Tier 3 — fine-tune on a small real set.** After Tier 1+2 training, fine-tune on
@@ -200,6 +203,11 @@ none of this is already done.)
    reusing eval photos would.
 2. **Eval-set growth (during M0→M1):** more real multi-tile scenes on diverse
    backgrounds, toward the §7 sizing target (every identity multiple times).
+   **Reserve ~15–20% of each new capture batch as a calibration split**
+   (disjoint from both eval and training) — this happens unconditionally as
+   part of eval-set growth, so calibration data collection doesn't depend on
+   whether Tier-3 fine-tuning (below) ends up triggered. Feeds the temperature
+   scaling in §5.4.
 3. **Tier-3 fine-tune scenes (only if M0/M1 shows the gap needs it):** a
    separate small batch of real scenes, kept disjoint from eval (§4.2).
 4. **Phone access for perf probes:** the M1 feasibility probe and M2 budgets
@@ -207,9 +215,12 @@ none of this is already done.)
 
 ### 4.4 Domain-randomization checklist (must all vary)
 
-Background · lighting/shadows · white balance/color cast · tile body color · pip
-color · gloss · tile count · position · rotation · perspective · blur · noise ·
-JPEG artifacts · partial tiles at frame edge.
+Background · lighting/shadows · white balance/color cast · pip color (never
+pure black) · gloss · tile count · position · rotation · perspective · blur ·
+noise · JPEG artifacts · partial tiles at frame edge.
+
+(Tile body color and divider color are **not** randomized — universal domino
+fact: body is always white, divider always black, §4.1.)
 
 ### 4.5 Sim-to-real gap — the top risk
 
@@ -233,19 +244,36 @@ trivial and the brittle part (counting/assignment) reuses the known grid model.
 ### 5.1 Stage 1 — tile detection (YOLO)
 
 - **Task:** detect full domino tiles on the whole image. One class: `domino_tile`.
-- **Output per tile:** **oriented bounding box (OBB)** + confidence. Tiles are 2:1
-  rectangles that touch edge-to-edge at arbitrary angles; axis-aligned boxes on
-  rotated, touching tiles overlap heavily and NMS can drop a real tile, whereas
-  OBB fits tighter and separates crowded objects
-  ([Ultralytics OBB](https://www.ultralytics.com/blog/what-is-oriented-bounding-box-obb-detection-a-quick-guide)).
-  Use a YOLO-OBB head. Caveat: angle regression has a boundary-discontinuity pitfall
-  (mitigated by Circular Smooth Label), and OBB on-device cost must be validated
-  (§8 / Item-6 budgets). A plain axis-aligned box is the fallback only if OBB proves
-  too costly on phone.
+- **Output per tile:** a standard **axis-aligned bounding box** + confidence,
+  plus the tile's **4 corners as keypoints** — Ultralytics **YOLO-Pose** head, a
+  first-class, documented task with standard ONNX export
+  ([Ultralytics Pose docs](https://docs.ultralytics.com/tasks/pose)).
+  **Chosen over YOLO-OBB** (the earlier plan): OBB's angle output has a
+  boundary-discontinuity pitfall, and — the deciding factor — its rotated-box
+  NMS has **no existing JS/ONNX-Runtime-Web library**; porting rotated NMS by
+  hand is real, unscoped engineering (verified: no off-the-shelf npm package
+  handles rotated NMS or OBB angle decode in-browser; `onnxruntime-web` only
+  runs the model graph). Pose keeps NMS **completely standard** — the same
+  axis-aligned pattern every plain-YOLO browser demo already uses — while the
+  4 corners feed §5.2's perspective-rectify step directly, more precisely than
+  a single angle value.
+  **Trade-off inherited from the OBB discussion, not eliminated by switching to
+  Pose:** tiles are 2:1 rectangles that touch edge-to-edge at arbitrary angles,
+  and an axis-aligned box around a rotated tile is looser than a tight OBB —
+  two touching, rotated tiles' axis-aligned boxes can overlap heavily even
+  though the tiles themselves never overlap (§1). **Mitigation:** a permissive
+  NMS threshold (or soft-NMS, a standard technique — no custom rotated-IoU
+  math needed) so a real touching tile isn't wrongly suppressed; consistent
+  with the recall-over-precision priority below and the fact that the review
+  UX (§9.2) already exists to clean up duplicate/false-positive detections.
+  **Fallback:** a plain box-only detector (no keypoints), with orientation
+  resolved by classical CV on the Stage-2 crop instead (viable since tile body
+  is always white, §4.1 — guaranteed high contrast against most backgrounds),
+  if Pose keypoint accuracy underperforms.
 - **Priority:** **recall over precision.** Missed tiles hurt the user more than
   easily-removable false positives (review handles extras).
-- **Variant:** smallest YOLO variant that clears accuracy; size/latency matter for
-  the eventual phone target (§8). Exact version = TBD (M0/M1).
+- **Variant:** smallest YOLO-Pose variant that clears accuracy; size/latency
+  matter for the eventual phone target (§8). Exact version = TBD (M0/M1).
 
 ### 5.2 Stage 2 — pip reading (count, not classify)
 
@@ -258,8 +286,8 @@ specifically fix (the SAHI principle;
 tile restores the resolution pips need, so detecting pips across a full multi-tile
 photo is **explicitly rejected**.
 
-**Crop preparation (removes the crop-quality failure mode).** Using the OBB
-(§5.1), **perspective-rectify** each tile to a canonical upright, fixed-size
+**Crop preparation (removes the crop-quality failure mode).** Using the 4
+corner keypoints (§5.1), **perspective-rectify** each tile to a canonical upright, fixed-size
 rectangle and **pad slightly** so tight boxes don't clip edge pips. Stage 2 then
 always sees a consistent, high-res, upright, low-background tile with no bleed from
 adjacent touching tiles.
@@ -267,9 +295,10 @@ adjacent touching tiles.
 Two framings for the counter; **prove the baseline first, upgrade if needed.**
 
 - **Baseline (simplest that could work):** on the rectified crop → split at the
-  divider bar (deterministic, §5.3) → a small CNN classifies each half's pip count
-  as **0–12 (13-way softmax per half)**. Trained on synthetic crops. Counting
-  generalizes better than identity memorization.
+  divider bar (edge-detection-first, learned fallback, §5.3) → a small CNN
+  classifies each half's pip count as **0–12 (13-way softmax per half)**, and
+  opportunistically doubles as the §5.3 bar-centre fallback regressor. Trained
+  on synthetic crops. Counting generalizes better than identity memorization.
 - **Target (more robust):** a **pip detector** (detect each pip as an object, or
   as keypoints) across the tile; assign pips to halves by geometry and count.
   Elegant because a "pip" is a uniform, trivial object synthetic data saturates,
@@ -282,21 +311,44 @@ the baseline plateaus below the per-half accuracy gate.
 ### 5.3 Orientation & ordering — deterministic, not learned
 
 The value model does **not** learn orientation. Geometry handles it:
-- Orientation comes from the **OBB angle** (the tile is a 2:1 rectangle; the long
-  axis is unambiguous).
+- Orientation comes from the **4 corner keypoints** (§5.1): the long edge
+  between two adjacent corners gives the long axis directly (the tile is a 2:1
+  rectangle; the long axis is unambiguous) — no angle value to decode, no
+  periodicity to handle.
 - **Split at the physical divider bar, not at pips.** Every tile has a real centre
   line (the "bar") dividing it into two square ends, present regardless of pip
   count — so blank halves (0 pips) split cleanly. This step is **critical**:
   a misplaced bar shifts both halves' pip counts, so bar-localization error
-  propagates directly into the product metric. Approach: on the perspective-rectified
-  crop, scan intensity perpendicular to the long axis — the bar is a dark
-  horizontal/vertical line at the tile centre. Fit a peak in the intensity profile
-  along the long axis; validate it's centred within a tolerance (domino bars are
-  manufactured at the geometric midpoint). **Fallback:** if the bar isn't detected
-  (e.g. extreme glare or wear), default to the geometric midpoint of the rectified
-  crop and flag the reading as lower-confidence. **Eval metric:** bar-localization
-  error in pixels (distance between detected bar position and true centre) — track
-  this to catch regressions that silently degrade pip accuracy.
+  propagates directly into the product metric.
+  **Approach — layered, not a single deterministic pass:**
+  1. **Primary: edge detection, not raw intensity averaging.** A plain 1D
+     intensity-profile average is fooled by anything merely darker-than-average
+     (a shadow, a worn patch, a dark-toned pip near the centre) even though the
+     bar's real signature is a sharp light→dark→light *transition*, not just
+     low brightness. Run a lightweight edge-detection pass (a **Sobel filter**)
+     perpendicular to the long axis and find the strongest gradient-magnitude
+     peak along the long axis — this targets the bar's actual edge signature
+     directly, rather than "whatever's darkest." Contrast is still
+     **guaranteed, not merely typical** (tile body always white, divider
+     always black — universal domino fact, §4.1), which is exactly what makes
+     the Sobel peak reliably strong. Validate the found peak is centred within
+     a tolerance (domino bars are manufactured at the geometric midpoint).
+  2. **Secondary fallback — learned, opportunistic:** if the deterministic
+     Sobel pass doesn't find a confident peak (e.g. extreme glare, heavy wear,
+     an occluding shadow), let Stage 2's per-crop CNN (already running for pip
+     counting, §5.2) also regress the bar's centre position as a cheap
+     auxiliary output — negligible extra inference cost since the crop is
+     already being processed. Used only when the deterministic pass is
+     inconclusive, never as the primary source.
+  3. **Tertiary fallback — geometric default:** if both the deterministic pass
+     and the learned fallback are inconclusive, default to the geometric
+     midpoint of the rectified crop and flag the reading as lower-confidence.
+  **Eval metric:** bar-localization error in pixels (distance between detected
+  bar position and true centre), **tracked separately per tier** (Sobel edge
+  detection vs. learned fallback vs. geometric-midpoint default) — this
+  catches regressions that silently degrade pip accuracy, and surfaces how
+  often each fallback tier actually fires (a rising fallback rate signals a
+  data/domain-randomization gap worth investigating).
 - Ordered halves: **left→right** when horizontal, **top→bottom** when vertical.
 - **180° ambiguity doesn't matter for scoring:** the hand's pip total is
   order-invariant (§7), so which end is "first" only affects observed-order
@@ -309,9 +361,26 @@ This shrinks what Stage 2 must learn to just "how many pips in this half."
 **Detector (Stage 1) — per tile**
 ```json
 { "detectionId": "det_001", "sourceImageId": "img_001",
-  "bbox": { "x": 120, "y": 240, "width": 88, "height": 176, "rotationDegrees": 3 },
+  "bbox": { "x": 120, "y": 240, "width": 88, "height": 176 },
+  "corners": [ { "x": 128, "y": 242 }, { "x": 200, "y": 248 },
+               { "x": 196, "y": 408 }, { "x": 124, "y": 402 } ],
   "detectionConfidence": 0.95 }
 ```
+`bbox` is the axis-aligned box (NMS operates on this); `corners` are the 4
+keypoints. **Winding order must be rigid and deterministic, not arbitrary** —
+without a fixed, consistent semantic per keypoint index, the training signal
+contradicts itself across examples (the same physical corner landing at a
+different index depending on how a given synthesis run happened to enumerate
+it), and keypoint-regression heads can't learn cleanly from that. **Rule,
+enforced by the data-synthesis pipeline (§4.1), not left for the model to
+discover:** sort the 4 corners by polar angle relative to the tile's bounding
+box centre, starting from a fixed reference (e.g. index 0 = smallest angle
+from centre, proceeding clockwise). Apply this identically to every synthetic
+training label, so keypoint index has a consistent geometric meaning across
+the whole dataset regardless of the tile's actual rotation. §5.3 still derives
+orientation from the resulting ordered corners; this rule only fixes *which*
+corner is index 0, not what orientation means. Replaces the earlier OBB
+`rotationDegrees` field.
 
 **Crop (Stage 2 input) — per tile**
 ```json
@@ -341,9 +410,10 @@ that says "90% sure" is often right only ~70–75% of the time
 app will fail to flag exactly the tiles the user needed to check. The fix is
 **temperature scaling**, the standard one-parameter method:
 1. Set aside a **calibration set** — a few hundred real tile readings that are
-   in **neither** training **nor** the eval set. Concretely: when capturing the
-   Tier-3 fine-tune scenes (§4.2/§4.3), reserve ~20% of those photos for
-   calibration instead of fine-tuning.
+   in **neither** training **nor** the eval set. Concretely: reserve ~15–20% of
+   each eval-set-growth capture batch (§4.3 item 2) for calibration — this
+   happens unconditionally as eval-set growth proceeds, so it doesn't depend on
+   whether Tier-3 fine-tuning ends up triggered.
 2. After training, run the model on the calibration set and fit the single
    constant **T** that makes stated confidence match observed accuracy. A few
    lines of scipy; no retraining.
@@ -356,7 +426,7 @@ Track calibration error (ECE) in eval (§7) to confirm the fix holds.
 ### 5.5 Training & compute
 
 - **Framework:** **Ultralytics YOLO** — the standard, well-documented package for
-  object detection; has the **OBB head** (§5.1) and **one-line ONNX export** (§8).
+  object detection; has the **Pose head** (§5.1) and **one-line ONNX export** (§8).
   The Stage-2 pip counter is a small CNN, trivial to train.
 - **Compute is free for Phase 1** (satisfies the cost rule — no paid compute
   without approval). A nano model trains fast — **YOLOv8n ≈ 2.5 h / 100 epochs on a
@@ -393,6 +463,14 @@ Track calibration error (ECE) in eval (§7) to confirm the fix holds.
 Every gate is numeric and measured on the **real held-out eval set** (§7).
 Targets below are proposed starting points — adjust once M0 gives a baseline.
 
+**Statistical power note:** eval metrics are point estimates over a finite
+sample; report a 95% confidence interval (Wilson score interval for
+proportions) alongside every recall/precision/accuracy figure. A gate is
+**provisionally met** if the point estimate clears the target; **confirmed
+met** requires the CI lower bound to clear it. Per-identity metrics (exact-tile
+accuracy) are directional only until the eval set clears the §7 growth target
+(every identity ≥3–5 occurrences) — don't treat them as pass/fail before that.
+
 ### M-1 — Eval infrastructure (prerequisite to M0)
 You cannot measure a gate without a held-out set and a scorer, and industry
 guidance is explicit that test images must never leak into training (Ultralytics,
@@ -402,17 +480,28 @@ Deliverables, before any training:
   from zero.** It already has real photos + verified pip identities; it's
   missing bounding boxes and orientation. Extend it:
   - **Annotation tool chosen and set up.** Recommended: **Roboflow** free tier
-    (SAM-2 AI-assisted labeling, dataset versioning, YOLO/COCO export); **CVAT**
-    as the fully self-hosted open-source alternative. Import the 49 photos and
-    add boxes + orientation on top of the existing pip-identity labels (don't
-    relabel identities that are already verified). **Verify before committing to
-    a tool** that it supports *oriented* boxes and exports a format the
-    YOLO-OBB trainer accepts (§5.1 depends on OBB labels).
+    (AI-assisted labeling, dataset versioning, YOLO/COCO export); **CVAT** as
+    the fully self-hosted open-source alternative. **Note:** Roboflow's free
+    "Public" tier requires datasets to be open-sourced on Roboflow
+    Universe — publicly visible/downloadable — unlike a paid tier's
+    private-to-workspace storage. Accepted for this project (domino tile
+    photos aren't sensitive); revisit CVAT if that changes. Import the 49
+    photos and add boxes + 4 corner keypoints on top of the existing
+    pip-identity labels (don't relabel identities that are already verified).
+    **Corner keypoints must follow the same deterministic winding order as
+    the synthetic labels (§5.4)** — sorted by polar angle from the box
+    centre, fixed starting reference — whether the annotation tool assigns
+    that automatically or a post-processing script re-sorts its raw export;
+    mixing winding conventions between real and synthetic labels would
+    reintroduce the exact inconsistency §5.4 exists to prevent. **Verify
+    before committing to a tool** that it supports keypoint/pose annotation
+    (4 points per tile) and exports a format the YOLO-Pose trainer accepts
+    (§5.1 depends on corner-keypoint labels).
   - **Combine the two label files (small script — schedule it).** After
     annotation we'll have two files describing the same 49 photos: the old
     `eval/corpus_truth.json` says **what** is in each photo (pip values per
-    tile), and the annotation tool's export says **where** (box + rotation per
-    tile). The scoring harness needs both merged into one record per photo
+    tile), and the annotation tool's export says **where** (box + 4 corner
+    keypoints per tile). The scoring harness needs both merged into one record per photo
     (the §11 format). Write a ~50-line script that pairs each box with a
     pip-value label (same photo; flag any count mismatch for manual fix) and
     emits the §11 JSON. About half a day — and it's on the critical path to
@@ -431,7 +520,9 @@ Deliverables, before any training:
 ### M0 — Sim-to-real spike (the kill-gate) · target: days, not weeks
 Build the minimal copy-paste/render pipeline (§4) + train a small tile detector on
 **synthetic only** → measure on the real eval scenes.
-- **Pass:** tile detection **recall ≥ 0.70 @ IoU 0.5** on real photos.
+- **Pass:** tile detection **recall ≥ 0.70 @ IoU 0.5** on real photos. (n≈190
+  tile instances at current eval-set size — treat as directional pass/fail per
+  the statistical power note above, re-confirm after eval-set growth, §7.)
 - **Fail → pivot decision**, not more grinding: add a real fine-tune set (§4.2),
   improve rendering realism (§4.1), or reconsider the approach.
 - This tests the single riskiest assumption (transfer) before any app work.
@@ -439,7 +530,8 @@ Build the minimal copy-paste/render pipeline (§4) + train a small tile detector
 ### M1 — Accuracy proven (anywhere; no app integration)
 - Tile detection **recall ≥ 0.95 @ IoU 0.5**, precision reported (recall-biased OK).
 - **Per-half pip accuracy ≥ 0.97.**
-- **Exact-tile (identity) accuracy ≥ 0.90.**
+- **Exact-tile (identity) accuracy ≥ 0.90.** (Provisional until eval-set
+  growth, §7 — see statistical power note above.)
 - **Hand-total (product gate): ≥ 65% of hands with the exact correct pip total
   pre-correction; ≥ 99% post-correction.** (Provisional: 65% follows from the
   per-half math below for a 7-tile hand; revise once M0/M1 give a real
@@ -453,14 +545,18 @@ Build the minimal copy-paste/render pipeline (§4) + train a small tile detector
 0.94⁷ ≈ **0.65**. So even a strong model gets a full hand perfectly only ~2 of 3
 times — **the correction UX (§9.2) is a first-class part of the product, not an
 admission of failure.** This is why detection is recall-biased and every result
-is editable.
+is editable. **Caveat:** this treats per-tile errors as independent draws; in
+practice errors correlate within a photo (shared lighting/blur/angle), so real
+hand-accuracy may run below this naive estimate — this is why §7 measures the
+hand total directly and empirically per photo rather than deriving it from the
+per-half math.
 
 ### M2 — On-device deployment
 Port M1 models to **ONNX Runtime Web**; verify:
 - Output parity with the M1 (server) models on the eval crops.
 - **§8 target budgets met** on a real mid-range phone (end-to-end ≤ ~2 s, model
   download ≤ ~10–15 MB, plus cold-load/memory), via the WASM baseline path with
-  WebGPU benchmarked opportunistically. (A nano-OBB feasibility probe already ran
+  WebGPU benchmarked opportunistically. (A nano-pose feasibility probe already ran
   in M1, so this confirms rather than discovers.)
 
 ### M3 — Quick Scan integration
@@ -495,7 +591,10 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
     total**, **% of hands with the exact correct total**, and **% within ±N pips**
     — measured both **pre-correction** (raw model) and **post-correction** (what
     the user submits). Per-tile errors can cancel or compound, so this is not
-    implied by per-tile accuracy.
+    implied by per-tile accuracy. **Stratify** hand-total accuracy by capture
+    condition (lighting bucket, tile count, background type) in addition to
+    the aggregate — this distinguishes uniform per-tile noise from a
+    systematic per-photo failure mode that tanks whole hands at once.
   - Detection: recall & precision @ IoU 0.5; count of missed tiles / false positives.
   - Value: per-half pip accuracy; **exact-tile identity accuracy** (`12/2` ==
     `2/12` for identity); orientation/order accuracy (scored *separately* from
@@ -517,12 +616,23 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
 
 - **Where:** client-side, in-browser, on the phone. No required inference server
   for the scan path (privacy + no backend cost + offline-capable).
-- **Runtime:** export to **ONNX**, run via **ONNX Runtime Web**. **WASM
-  (SIMD + multithread) is the *required baseline* path** — many phones have no
-  WebGPU (Android Chrome 121+ / Android 12+ only, ~78% of Chrome-Android by Q1 2026;
-  **iOS Safari only from iOS 26+**). **WebGPU is opportunistic** and must be
-  **benchmarked per model, never assumed faster** — the wrong backend is a 10–15×
-  swing and WebGPU is sometimes *slower*.
+- **Runtime:** export to **ONNX**, run via **ONNX Runtime Web**. **WASM +
+  SIMD, single-threaded, is the *required baseline* path.** Deliberately
+  **not** multithreaded: multithreaded WASM needs `SharedArrayBuffer`, which
+  needs `Cross-Origin-Opener-Policy`/`Cross-Origin-Embedder-Policy` response
+  headers — and **GitHub Pages cannot set custom response headers** (verified;
+  no ETA on GitHub's side). SIMD alone needs no special headers and works on
+  GitHub Pages natively. This is a safe trade: multithreading typically buys
+  roughly a 2–4x speedup over single-threaded SIMD, but the int8 nano-model
+  anchor below (~40ms) already has 7–12x headroom against the ≤300–500ms
+  detection budget — single-threaded is expected to clear it comfortably.
+  **Multithreading is opportunistic**, benchmarked only if the deployment
+  environment happens to support the required headers (same treatment as
+  WebGPU below) — never assumed, never required. Many phones also have no
+  WebGPU (Android Chrome 121+ / Android 12+ only, ~78% of Chrome-Android by Q1
+  2026; **iOS Safari only from iOS 26+**). **WebGPU is opportunistic** and
+  must be **benchmarked per model, never assumed faster** — the wrong backend
+  is a 10–15× swing and WebGPU is sometimes *slower*.
   ([web.dev](https://web.dev/blog/webgpu-supported-major-browsers),
   [SitePoint](https://www.sitepoint.com/webgpu-vs-webasm-transformers-js/))
 - **Quantize to int8.** Hard anchor: YOLOv8-nano ~40 ms int8 vs ~110 ms fp32 on a
@@ -533,9 +643,16 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
   - Total model download: **≤ ~10–15 MB**. Plus cold-load and memory within mobile
     limits. Smaller variants preferred even at some accuracy cost if they're what
     fits.
-- **Early feasibility probe (in M1):** time a **nano OBB** model in ORT-Web **WASM**
-  on a real mid-range phone *before* locking the two-model + OBB architecture, so a
-  perf dead-end (esp. OBB, §5.1) surfaces early rather than at M2.
+- **Early feasibility probe (in M1):** time a **nano Pose** model in ORT-Web
+  **WASM+SIMD, single-threaded** (the required baseline, above) on a real
+  mid-range phone *before* locking the two-model + Pose architecture, so a
+  perf dead-end surfaces early rather than at M2. Confirms the 7–12x headroom
+  assumption actually holds for this specific model/phone combination. The
+  probe should also confirm the keypoint-decode + standard axis-aligned NMS
+  path (§5.1) works end-to-end in JS — this is expected to be low-risk (it's
+  the same well-documented pattern plain-YOLO browser demos already use, just
+  carrying 4 extra corner points through surviving boxes), unlike the rotated
+  NMS the earlier OBB approach would have required.
 - **Explicitly deferred, not decided:** a server-side inference fallback remains a
   possible *later* pivot if phone performance proves unacceptable — a deliberate
   change, not the default.
@@ -559,7 +676,16 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
   install-to-homescreen
   ([MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Caching)).
   Large blobs (images, history) live in **IndexedDB** (§10); the model lives in
-  Cache Storage.
+  Cache Storage. **Robust fallback required, not just the happy path:** mobile
+  Cache Storage isn't guaranteed to have the model — quota pressure, more
+  aggressive eviction on some browsers, or a precache interrupted mid-install
+  (e.g. a flaky connection) can all leave it missing or unreadable at scan
+  time. On a Cache Storage read/precache failure, don't fail silently or show
+  a frozen/broken UI: fall back to fetching the model directly from static
+  hosting, with an explicit **loading indicator + progress bar** — the model
+  is ~10–15 MB (§8), large enough on mobile data that a bare spinner reads as
+  a hang, not a fetch. Re-attempt the precache in the background after a
+  successful fallback fetch so the *next* scan is offline-capable again.
 
 **Softer call (reversible preference):**
 - Build with **Vite**; keep the UI **lightweight** (vanilla or a small library such
@@ -587,9 +713,23 @@ After a scan:
   phone).
 - **Not Tile:** explicit action to invalidate a false positive (normalized
   internally to `status: "not_tile"`); a `.` placeholder may also mark invalid.
+- **Possibly-cut-off tiles flagged deterministically, not just by confidence:**
+  if a detection's box touches the source image boundary, flag it
+  `reviewFlags.possiblyPartial` (§11) and show a specific message — "Tile may
+  be cut off — check this one or rescan" — instead of a generic low-confidence
+  flag. Purely geometric (boundary-coordinate comparison), no model change
+  needed; gives the user actionable guidance (reframe) rather than ambiguous
+  uncertainty.
 - False positives stay visible in history — they are valuable hard cases (§12).
 - **Review preserves observed order** — never normalized to a canonical sort for
   display (canonical identity exists only for matching/eval).
+- **Known, accepted quirk:** the 180° orientation ambiguity (§5.3) means
+  re-scanning the same unmoved tile can display it as `2/12` one time and
+  `12/2` another — both correct (order-invariant for scoring), but it can
+  read as a bug. Not fixed by changing the ordering logic (would contradict
+  the "preserve observed order" decision above); mitigated with user-facing
+  microcopy near the review UI, e.g. "Which end shows first can vary between
+  scans of the same tile — both are correct; only the total matters."
 
 ### 9.3 Minimal round/game flow (M4, secondary)
 Local only: typed display names remembered on-device; numbered rounds; each
@@ -624,8 +764,11 @@ Planning drafts, not final code. (Stage outputs are in §5.4.)
                    "orderedSidesMeaning": ["top", "bottom"] },
   "predicted": { "first": 2, "second": 12, "display": "2/12", "confidence": 0.90 },
   "userCorrection": { "first": 2, "second": 12, "display": "2/12", "status": "confirmed" },
-  "reviewFlags": { "notTile": false, "manuallyAdded": false } }
+  "reviewFlags": { "notTile": false, "manuallyAdded": false, "possiblyPartial": false } }
 ```
+`reviewFlags.possiblyPartial` — set when the detection's `bbox` touches the
+source image boundary (§9.2); drives the "tile may be cut off" review message,
+distinct from a generic low-confidence flag.
 
 **Not-tile / invalid** — `status: "not_tile"`, `reviewFlags.notTile: true`,
 `userCorrection.display: "."` (kept in history as a hard negative).
@@ -698,7 +841,8 @@ gap over time.
 - Final numeric gates (M1 targets are proposals; phone budgets set in M2).
 
 *Resolved during review:* data strategy (§4, copy-paste-first) · eval infra &
-annotation tooling (§M-1, Roboflow/CVAT) · oriented boxes (§5.1, OBB chosen) ·
+annotation tooling (§M-1, Roboflow/CVAT) · tile orientation (§5.1, YOLO-Pose +
+4 corner keypoints chosen over OBB — no JS library exists for rotated NMS) ·
 training framework & free compute (§5.5) · two-phase scope split (§1/§14,
 Phase 1 scanner / Phase 2 multiplayer per `README.md`) · eval-corpus reuse
 (§4.2/M-1, extend the existing 49-photo corpus rather than rebuild).
@@ -712,3 +856,17 @@ sessions, game manager) · Postgres · any feature that doesn't improve detectio
 accuracy, pip-reading accuracy, or scanner validation. These are the Phase 2
 product (`README.md`'s vision), not rejected — just sequenced after Phase 1.
 Do not expand Phase 1 scope until the M1 accuracy gate is met.
+
+**Notes for Phase 2 design (not designed now, scope boundary above):**
+- Round-finalization concurrency (a player disconnecting mid-round,
+  simultaneous submissions across separate devices) has no analog in Phase 1's
+  single-device §9.3 flow — it only becomes a real concern once Phase 2's
+  networked join-code sync exists.
+- Mid-game joiner scoring: `README.md` says players can join at any point, but
+  doesn't say what a late joiner's cumulative score is for rounds missed
+  (zero, null, or counting starts from whenever they joined) — needs a
+  decision when Phase 2's scoring model is designed.
+- Backend choice for join-code sync + live cross-device standings: a managed
+  realtime store (Firebase/Firestore, Supabase) may fit this project's
+  "no infra to run" spirit better than hand-rolled Postgres + WebSocket —
+  worth weighing when Phase 2 tech stack is decided (§1), not before.

@@ -103,10 +103,16 @@ verify before you write.
 ## Domino facts (first principles — do not revisit without instruction)
 
 - **Pip color is NEVER a signal.** Sets use many pip colors (yellow, orange, green,
-  blue, purple, black, …). Count every pip regardless of color; never base
-  detection, counting, thresholds, or training labels on a color. Everything must
-  be fully color-agnostic — randomize pip color in synthetic data; never condition
-  on it.
+  blue, purple, dark tones near-black, …) but never literal pure black — the
+  divider is always the true black on the tile. Count every pip regardless of
+  color; never base detection, counting, thresholds, or training labels on a
+  color. Everything must be fully color-agnostic — randomize pip color
+  (excluding pure black) in synthetic data; never condition on it.
+- **Tile body is always white; the divider bar is always black.** This is a
+  fixed, universal fact across domino sets — not a variable. Do not randomize
+  body color in synthetic data. It gives bar-detection
+  (`docs/build-plan-v2.md` §5.3) a guaranteed-contrast target, not merely a
+  typical one.
 - **These are DOUBLE-12 tiles.** Each half holds **0–12 pips**. 91 unique tiles.
   Counting logic must handle the full 0–12 range per half — never assume ≤6.
 - **The pip-grid layout is deterministic and known.** Every half lays pips on one
