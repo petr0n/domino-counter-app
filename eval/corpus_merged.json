@@ -2326,47 +2326,6 @@
    {
     "tileId": "t01",
     "identity": {
-     "first": 0,
-     "second": 0,
-     "display": "0/0",
-     "unorderedKey": "0-0"
-    },
-    "observedOrder": {
-     "firstMeaning": "left",
-     "secondMeaning": "right"
-    },
-    "bbox": {
-     "x": 1899.2431077694234,
-     "y": 759.1328320802005,
-     "width": 541.8345864661653,
-     "height": 431.77443609022555
-    },
-    "corners": [
-     {
-      "x": 2003.7,
-      "y": 1190.9
-     },
-     {
-      "x": 1899.2,
-      "y": 976.4
-     },
-     {
-      "x": 2328.2,
-      "y": 759.1
-     },
-     {
-      "x": 2441.1,
-      "y": 965.1
-     }
-    ],
-    "orientation": {
-     "layout": "horizontal",
-     "rotationDegrees": 153.1
-    }
-   },
-   {
-    "tileId": "t02",
-    "identity": {
      "first": 1,
      "second": 6,
      "display": "1/6",
@@ -2406,7 +2365,7 @@
     }
    },
    {
-    "tileId": "t03",
+    "tileId": "t02",
     "identity": {
      "first": 1,
      "second": 5,
@@ -2447,7 +2406,7 @@
     }
    },
    {
-    "tileId": "t04",
+    "tileId": "t03",
     "identity": {
      "first": 2,
      "second": 8,
@@ -2488,7 +2447,7 @@
     }
    },
    {
-    "tileId": "t05",
+    "tileId": "t04",
     "identity": {
      "first": 1,
      "second": 9,

@@ -607,6 +607,13 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
 - **Scope note:** the scanner reports actual pip counts (blank half = 0);
   house-rule scoring (e.g. double-blank = 50) lives in the app's scoring layer, not
   the scanner.
+- **Face-down tiles are NOT tiles (truth-set convention, decided 2026-07-13):**
+  a face-down tile shows a bar-less white back; a genuine face-up 0/0 always
+  shows the black divider bar. Face-down backs are excluded from eval truth
+  (photos `1000012930`/`1000012936` each contain one) — a detector that boxes
+  one scores a false positive, consistent with training data containing only
+  faces. If real-world scans hit this often, promote backs as explicit hard
+  negatives via §12 rather than relabeling them as 0/0.
 - **Regression rule:** no change ships that lowers a gate metric without an
   explicit, measured justification.
 
