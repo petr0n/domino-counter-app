@@ -1,0 +1,318 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Domino eval annotator</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px -apple-system, sans-serif; background: #1e1e22; color: #eee;
+         display: flex; flex-direction: column; height: 100vh; }
+  header { padding: 8px; background: #2a2a30; display: flex; gap: 8px; align-items: center;
+           flex-wrap: wrap; }
+  button { background: #3a3a44; color: #eee; border: 1px solid #555; border-radius: 6px;
+           padding: 6px 12px; cursor: pointer; font-size: 14px; }
+  button:hover { background: #4a4a58; }
+  button.primary { background: #2c6e49; border-color: #3a9; }
+  #main { flex: 1; display: flex; min-height: 0; }
+  #viewer { flex: 1; overflow: auto; position: relative; background: #111; }
+  canvas { display: block; cursor: crosshair; }
+  #side { width: 260px; background: #26262c; padding: 10px; overflow-y: auto; }
+  #side h3 { margin: 6px 0; font-size: 13px; color: #aaa; text-transform: uppercase; }
+  .exp { padding: 3px 6px; border-radius: 4px; }
+  .exp.done { color: #7c7; text-decoration: line-through; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { display: flex; justify-content: space-between; padding: 3px 6px; }
+  li button { padding: 0 8px; }
+  #picker { position: fixed; top: 50%; left: 40%; transform: translate(-50%,-50%);
+            background: #2e2e38; border: 1px solid #888; border-radius: 10px; padding: 14px;
+            z-index: 10; max-width: 420px; box-shadow: 0 8px 30px #000a; }
+  #picker button { margin: 4px; font-size: 16px; }
+  #hint { padding: 4px 10px; color: #9ad; }
+  .warn { color: #fa6; }
+</style>
+</head>
+<body>
+<header>
+  <button id="loadBtn" class="primary">1. Load photos…</button>
+  <input type="file" id="fileInput" multiple accept="image/*" hidden>
+  <button id="prevBtn">&#9664; Prev</button>
+  <span id="photoLabel">no photos loaded</span>
+  <button id="nextBtn">Next &#9654;</button>
+  <button id="undoBtn">Undo corner</button>
+  <button id="exportBtn" class="primary">Export annotations</button>
+  <span id="globalProgress"></span>
+</header>
+<div id="hint">Click the 4 corners of a tile (any order) &rarr; pick its value.
+  Zoom: pinch trackpad (or Ctrl+scroll). Pan: two-finger scroll. &larr;/&rarr; keys switch photos.</div>
+<div id="main">
+  <div id="viewer"><canvas id="canvas"></canvas></div>
+  <aside id="side">
+    <h3>Expected in this photo</h3>
+    <div id="expected"></div>
+    <h3>Marked tiles</h3>
+    <ul id="tileList"></ul>
+  </aside>
+</div>
+<div id="picker" hidden></div>
+<script>
+'use strict';
+// Injected from eval/corpus_truth.json ('truth' key): filename -> [[a,b],...]
+const TRUTH = {"1000012917.jpg":[[9,10],[3,11],[7,2],[4,3],[12,5],[1,0],[12,6],[2,11],[9,4]],"1000012918.jpg":[[3,11],[7,2],[4,3],[1,0],[9,4],[12,6],[9,10],[2,11],[12,5]],"1000012919.jpg":[[1,3],[3,7]],"1000012920.jpg":[[5,2]],"1000012921.jpg":[[10,5],[8,8]],"1000012922.jpg":[[0,5],[1,12],[1,1],[0,0]],"1000012923.jpg":[[0,0],[2,3],[5,0],[11,6]],"1000012924.jpg":[[2,3],[5,0],[11,6],[0,0]],"1000012925.jpg":[[7,9],[7,6],[0,0]],"1000012926.jpg":[[5,5],[2,9],[1,6]],"1000012927.jpg":[[5,5],[9,2],[6,1]],"1000012928.jpg":[[6,1],[7,0],[5,4]],"1000012929.jpg":[[1,6],[1,9],[1,0],[2,8],[1,5],[7,2]],"1000012930.jpg":[[1,0],[0,0],[1,6],[1,5],[2,8],[1,9]],"1000012931.jpg":[[1,5],[1,9],[9,11],[8,9],[5,8],[7,9]],"1000012932.jpg":[[6,4],[1,5],[4,7],[8,4]],"1000012933.jpg":[[8,1],[7,1],[6,4],[5,3],[4,7],[2,6]],"1000012934.jpg":[[8,1],[6,6],[1,7],[7,3]],"1000012935.jpg":[[0,3],[8,1],[4,4],[4,12]],"1000012936.jpg":[[8,1],[2,5],[6,9],[2,2],[0,0]],"1000012937.jpg":[[6,9],[1,3],[8,1],[3,0],[12,6],[9,5],[9,4]],"1000012938.jpg":[[3,0],[8,8],[9,5],[12,6],[9,4]],"1000012939.jpg":[[8,6],[9,5],[12,6],[9,4],[3,0]],"1000012940.jpg":[[3,0],[1,1],[9,0]],"1000012941.jpg":[[3,9],[12,2],[8,3],[0,3]],"1000012942.jpg":[[8,11],[1,12],[0,9],[9,9],[3,6],[7,11]],"1000012943.jpg":[[3,3],[0,2],[4,0],[12,11]],"1000012944.jpg":[[3,12],[12,12],[4,3],[2,1]],"1000012945.jpg":[[3,12],[12,12],[8,6],[5,7],[10,10]],"1000012946.jpg":[[7,10],[12,12],[11,12],[10,6],[3,10],[12,6]],"1000012947.jpg":[[10,5],[10,0],[10,8],[12,7]],"1000012948.jpg":[[10,0],[10,5]],"1000012949.jpg":[],"1000012950.jpg":[[9,10]],"1000012951.jpg":[[12,5],[11,0]],"1000012952.jpg":[[11,3],[2,10],[11,5]],"1000012953.jpg":[[10,11],[11,3],[11,5]],"1000012954.jpg":[[10,11],[11,11],[12,8],[12,10],[1,11]],"1000012955.jpg":[[10,11],[11,11],[12,10],[11,1],[12,8]],"1000012956.jpg":[[4,11],[11,11],[12,10],[1,11]],"1000012957.jpg":[[4,10],[10,4],[9,12]],"1000012958.jpg":[[0,10],[4,10]],"1000012959.jpg":[[9,9],[8,8]],"1000012960.jpg":[[1,10],[5,3],[5,9]],"1000012961.jpg":[[1,10],[5,9]],"1000012962.jpg":[[1,10],[9,6],[3,2]],"1000012963.jpg":[[1,10],[9,6],[6,6],[6,7]],"1000012964.jpg":[[1,10],[1,8],[6,6]],"1000012965.jpg":[[3,3],[0,1]]};
+
+const $ = id => document.getElementById(id);
+const canvas = $('canvas'), ctx = canvas.getContext('2d');
+const viewer = $('viewer'), picker = $('picker');
+
+let files = [];          // File objects, sorted by name
+let idx = -1;
+let img = null;          // current Image
+let zoom = 1;
+let pending = [];        // corner points clicked so far, image coords
+// tiles per photo: { corners: [[x,y]*4], first, second }
+const store = {};        // filename -> tiles[]   (mirrored to localStorage)
+
+const key = f => 'domino-annot:' + f;
+function tiles() { return store[files[idx].name] || []; }
+function save() {
+  localStorage.setItem(key(files[idx].name), JSON.stringify(tiles()));
+  refresh();
+}
+
+$('loadBtn').onclick = () => $('fileInput').click();
+$('fileInput').onchange = e => {
+  files = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name));
+  files.forEach(f => {
+    const saved = localStorage.getItem(key(f.name));
+    store[f.name] = saved ? JSON.parse(saved) : (store[f.name] || []);
+  });
+  idx = -1;
+  next(1);
+};
+
+function next(step) {
+  if (!files.length) return;
+  idx = Math.min(files.length - 1, Math.max(0, idx + step));
+  pending = [];
+  hidePicker();
+  img = new Image();
+  img.onload = () => {
+    zoom = Math.min(viewer.clientWidth / img.width, viewer.clientHeight / img.height);
+    redraw();
+    refresh();
+  };
+  img.src = URL.createObjectURL(files[idx]);
+}
+$('prevBtn').onclick = () => next(-1);
+$('nextBtn').onclick = () => next(1);
+document.addEventListener('keydown', e => {
+  if (picker.hidden && e.key === 'ArrowLeft') next(-1);
+  if (picker.hidden && e.key === 'ArrowRight') next(1);
+});
+
+$('undoBtn').onclick = () => { pending.pop(); hidePicker(); redraw(); };
+
+viewer.addEventListener('wheel', e => {
+  if (!e.ctrlKey || !img) return;   // pinch/Ctrl+scroll zooms; plain scroll pans
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const ix = (e.clientX - rect.left) / zoom, iy = (e.clientY - rect.top) / zoom;
+  zoom = Math.min(8, Math.max(0.05, zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+  redraw();
+  viewer.scrollLeft = ix * zoom - (e.clientX - viewer.getBoundingClientRect().left);
+  viewer.scrollTop = iy * zoom - (e.clientY - viewer.getBoundingClientRect().top);
+}, { passive: false });
+
+canvas.addEventListener('click', e => {
+  if (!img || !picker.hidden) return;
+  pending.push([e.offsetX / zoom, e.offsetY / zoom]);
+  redraw();
+  if (pending.length === 4) showPicker();
+});
+
+function wind(pts) {   // polar-angle sort for sane quad drawing
+  const cx = pts.reduce((s, p) => s + p[0], 0) / 4;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / 4;
+  return [...pts].sort((a, b) =>
+    Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx));
+}
+
+function redraw() {
+  if (!img) return;
+  canvas.width = Math.round(img.width * zoom);
+  canvas.height = Math.round(img.height * zoom);
+  ctx.setTransform(zoom, 0, 0, zoom, 0, 0);
+  ctx.drawImage(img, 0, 0);
+  ctx.lineWidth = 3 / zoom;
+  ctx.font = `${28 / zoom}px sans-serif`;
+  for (const t of tiles()) {
+    const q = wind(t.corners);
+    ctx.strokeStyle = '#3f6';
+    ctx.fillStyle = '#3f63';
+    ctx.beginPath();
+    q.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    const cx = q.reduce((s, p) => s + p[0], 0) / 4;
+    const cy = q.reduce((s, p) => s + p[1], 0) / 4;
+    ctx.fillStyle = '#3f6';
+    ctx.fillText(`${t.first}/${t.second}`, cx, cy);
+  }
+  ctx.fillStyle = '#f33';
+  for (const [x, y] of pending) {
+    ctx.beginPath(); ctx.arc(x, y, 6 / zoom, 0, 7); ctx.fill();
+  }
+}
+
+// ---- value picker -------------------------------------------------------
+const pairKey = (a, b) => Math.min(a, b) + '-' + Math.max(a, b);
+
+function remainingPairs() {
+  const want = {};
+  for (const [a, b] of (TRUTH[files[idx].name] || [])) {
+    want[pairKey(a, b)] = (want[pairKey(a, b)] || 0) + 1;
+  }
+  for (const t of tiles()) {
+    const k = pairKey(t.first, t.second);
+    if (want[k]) want[k]--;
+  }
+  return Object.entries(want).filter(([, n]) => n > 0).map(([k]) => k.split('-').map(Number));
+}
+
+function showPicker() {
+  const rem = remainingPairs();
+  picker.innerHTML = '<b>Which tile is this?</b><br>' +
+    (rem.length ? '' : '<span class="warn">All expected tiles already marked — extra tile?</span><br>');
+  for (const [a, b] of rem) {
+    const btn = document.createElement('button');
+    btn.textContent = a + '/' + b;
+    btn.onclick = () => a === b ? finish(a, b) : askOrder(a, b);
+    picker.appendChild(btn);
+  }
+  picker.appendChild(document.createElement('br'));
+  const inp = document.createElement('input');
+  inp.placeholder = 'other, e.g. 9/10';
+  inp.size = 10;
+  inp.onkeydown = e => {
+    const m = /^(\d{1,2})\/(\d{1,2})$/.exec(inp.value.trim());
+    if (e.key === 'Enter' && m) finish(+m[1], +m[2]);
+  };
+  picker.appendChild(inp);
+  const cancel = document.createElement('button');
+  cancel.textContent = 'Cancel (re-click corners)';
+  cancel.onclick = () => { pending = []; hidePicker(); redraw(); };
+  picker.appendChild(cancel);
+  picker.hidden = false;
+}
+
+function askOrder(a, b) {
+  picker.innerHTML = `<b>${a}/${b}: which number is on the TOP half?</b>` +
+    '<br><small>(If the tile lies sideways: which is on the LEFT half?)</small><br>';
+  for (const [f, s] of [[a, b], [b, a]]) {
+    const btn = document.createElement('button');
+    btn.textContent = `${f} on top → ${f}/${s}`;
+    btn.onclick = () => finish(f, s);
+    picker.appendChild(btn);
+  }
+}
+
+function finish(first, second) {
+  tiles().length || (store[files[idx].name] = []);
+  store[files[idx].name].push({ corners: pending, first, second });
+  pending = [];
+  hidePicker();
+  save();
+  redraw();
+}
+function hidePicker() { picker.hidden = true; picker.innerHTML = ''; }
+
+// ---- side panel / progress ---------------------------------------------
+function photoDone(name) {
+  if (!(name in TRUTH)) return false;
+  const want = TRUTH[name].map(p => pairKey(p[0], p[1])).sort();
+  const got = (store[name] || []).map(t => pairKey(t.first, t.second)).sort();
+  return want.join() === got.join();   // a truly tile-less photo counts as done
+}
+
+function refresh() {
+  if (idx < 0) return;
+  const name = files[idx].name;
+  const want = TRUTH[name] || [];
+  $('photoLabel').textContent =
+    `${idx + 1}/${files.length} — ${name} — ${tiles().length}/${want.length} tiles`;
+  if (!TRUTH[name]) $('photoLabel').textContent += ' (NOT IN TRUTH FILE)';
+  const gotCount = {};
+  for (const t of tiles()) {
+    const k = pairKey(t.first, t.second);
+    gotCount[k] = (gotCount[k] || 0) + 1;
+  }
+  const seen = {};
+  $('expected').innerHTML = want.map(([a, b]) => {
+    const k = pairKey(a, b);
+    seen[k] = (seen[k] || 0) + 1;
+    const done = (gotCount[k] || 0) >= seen[k];
+    return `<div class="exp${done ? ' done' : ''}">${a}/${b}</div>`;
+  }).join('');
+  $('tileList').innerHTML = '';
+  tiles().forEach((t, i) => {
+    const li = document.createElement('li');
+    li.textContent = `${t.first}/${t.second}`;
+    const del = document.createElement('button');
+    del.textContent = '✕';
+    del.onclick = () => { store[name].splice(i, 1); save(); redraw(); };
+    li.appendChild(del);
+    $('tileList').appendChild(li);
+  });
+  const complete = files.filter(f => photoDone(f.name)).length;
+  $('globalProgress').textContent = `photos complete: ${complete}/${files.length}`;
+}
+
+// ---- export -------------------------------------------------------------
+$('exportBtn').onclick = async () => {
+  const incomplete = files.filter(f => !photoDone(f.name)).map(f => f.name);
+  if (incomplete.length &&
+      !confirm(`${incomplete.length} photo(s) don't match the expected tile list yet:\n` +
+               incomplete.slice(0, 12).join('\n') + '\nExport anyway?')) return;
+  const images = [], annotations = [], catIds = {}, categories = [];
+  let annId = 1;
+  for (let i = 0; i < files.length; i++) {
+    const ts = store[files[i].name] || [];
+    // export tile-less photos too when truth says they're empty (FP measurement)
+    if (!ts.length && (TRUTH[files[i].name] || [1]).length) continue;
+    const dims = await imageDims(files[i]);
+    images.push({ id: i + 1, file_name: files[i].name,
+                  width: dims[0], height: dims[1] });
+    for (const t of ts) {
+      const cname = t.first + '_' + t.second;
+      if (!(cname in catIds)) {
+        catIds[cname] = categories.length + 1;
+        categories.push({ id: categories.length + 1, name: cname,
+                          keypoints: ['c0', 'c1', 'c2', 'c3'] });
+      }
+      const xs = t.corners.map(p => p[0]), ys = t.corners.map(p => p[1]);
+      annotations.push({
+        id: annId++, image_id: i + 1, category_id: catIds[cname],
+        bbox: [Math.min(...xs), Math.min(...ys),
+               Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)],
+        keypoints: t.corners.flatMap(p => [p[0], p[1], 2]),
+        num_keypoints: 4,
+      });
+    }
+  }
+  const blob = new Blob(
+    [JSON.stringify({ images, annotations, categories }, null, 1)],
+    { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'corpus_annotations.json';
+  a.click();
+};
+
+function imageDims(file) {
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => res([im.naturalWidth, im.naturalHeight]);
+    im.src = URL.createObjectURL(file);
+  });
+}
+</script>
+</body>
+</html>

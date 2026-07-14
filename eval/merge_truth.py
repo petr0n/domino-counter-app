@@ -62,8 +62,8 @@ def merge(truth, coco):
 
     records, problems = [], []
     seen_files = set()
-    for img_id, anns in sorted(by_img.items()):
-        info = imgs[img_id]
+    for img_id, info in sorted(imgs.items()):
+        anns = by_img.get(img_id, [])  # zero-tile photos still count (FP measurement)
         fname = Path(info["file_name"]).name
         seen_files.add(fname)
         if fname not in truth:

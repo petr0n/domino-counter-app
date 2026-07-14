@@ -167,7 +167,9 @@ still valuable:
   + `generate.py` (YOLO-Pose dataset CLI). Setup/usage: `train/README.md`.
 - `eval/score.py` — §7 scoring harness (`--self-test` runs its fixtures);
   `eval/merge_truth.py` — merges `eval/corpus_truth.json` (recovered, tracked)
-  with the annotation-tool export into the §11 eval JSON.
+  with the annotation export into the §11 eval JSON; `eval/annotate.html` —
+  local browser tool for that annotation (replaces the Roboflow route: value
+  labels there would need 169 hand-made classes).
 - `.claude/` — Stop hook (`hooks/js-check.sh`) that syntax-checks changed JS/HTML.
 - `.gitignore` and repo config.
 
