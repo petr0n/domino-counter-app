@@ -1,0 +1,6 @@
+# Synthetic-data generation (local, free)
+pillow
+numpy
+opencv-python-headless
+# Training (Kaggle/Colab GPU — not needed locally for generation):
+# ultralytics

@@ -6,3 +6,6 @@ eval/sessions/
 eval/scan-log.json
 docs/
 eval/corpus_photos/
+.venv/
+train/data/
+__pycache__/
