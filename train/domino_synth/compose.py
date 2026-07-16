@@ -45,7 +45,7 @@ def _overlaps(quad, placed):
     return False
 
 
-def _dest_quad(rng, sw, sh, scale, canvas_w, canvas_h):
+def _dest_quad(rng, sw, sh, scale, canvas_w, canvas_h, center=None):
     """Random destination quad: scale + rotation + mild perspective jitter."""
     w, h = sw * scale, sh * scale
     theta = rng.uniform(0, 2 * math.pi)
@@ -55,10 +55,11 @@ def _dest_quad(rng, sw, sh, scale, canvas_w, canvas_h):
     rot = base @ np.array([[cos, -sin], [sin, cos]]).T
     jitter = rng.uniform(-0.04, 0.04, (4, 2)) * [w, h]  # mild perspective
     quad = rot + jitter
-    margin = 0.1 * max(w, h)  # some tiles may hang off the frame edge (§4.4)
-    cx = rng.uniform(-margin, canvas_w + margin)
-    cy = rng.uniform(-margin, canvas_h + margin)
-    return (quad + [cx, cy]).astype(np.float32)
+    if center is None:
+        margin = 0.1 * max(w, h)  # some tiles may hang off the frame edge (§4.4)
+        center = (rng.uniform(-margin, canvas_w + margin),
+                  rng.uniform(-margin, canvas_h + margin))
+    return (quad + center).astype(np.float32)
 
 
 def _paste(canvas, sprite_rgba, src_corners, dst_quad):
