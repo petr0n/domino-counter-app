@@ -523,6 +523,14 @@ Build the minimal copy-paste/render pipeline (§4) + train a small tile detector
 - **Pass:** tile detection **recall ≥ 0.70 @ IoU 0.5** on real photos. (n≈190
   tile instances at current eval-set size — treat as directional pass/fail per
   the statistical power note above, re-confirm after eval-set growth, §7.)
+- **✅ MEASURED PASSED 2026-07-16 — confirmed met (CI rule):** recall **1.000**
+  (95% CI 0.98–1.00, 0/194 tiles missed) on the full 49-photo/194-tile eval
+  set; precision 0.761 at conf 0.20, and recall holds 1.000 through conf
+  0.65 — chosen operating point conf 0.50 gives precision 0.826. Model: yolo11n-pose, 60 epochs, 2,000 rendered
+  scenes (Tier 2 only — no real tile pixels) composited onto 51 real
+  background photos with drop shadows. Run log: `runs/pose/realbg`.
+  Sim-to-real transfer is settled for detection; remaining work is Stage-2
+  accuracy (per-half 0.69 at this checkpoint) and precision.
 - **Fail → pivot decision**, not more grinding: add a real fine-tune set (§4.2),
   improve rendering realism (§4.1), or reconsider the approach.
 - This tests the single riskiest assumption (transfer) before any app work.

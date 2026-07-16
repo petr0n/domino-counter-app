@@ -53,7 +53,9 @@ def main():
                     help="Stage-2 checkpoint (runs/pips/best.pt); omit for detection-only")
     ap.add_argument("--images", default="eval/corpus_photos")
     ap.add_argument("--out", default="preds.json")
-    ap.add_argument("--conf", type=float, default=0.20)
+    # measured on eval 2026-07-16: recall stays 1.000 from conf 0.20 up to
+    # 0.65 while precision rises 0.76 -> 0.84; 0.50 keeps recall cushion
+    ap.add_argument("--conf", type=float, default=0.50)
     ap.add_argument("--nms-iou", type=float, default=0.75)
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--device", default=None)

@@ -16,12 +16,19 @@ _SS = 2  # supersampling factor for antialiasing
 
 
 def _pip_color(rng):
-    """Random pip color: any hue/darkness except pure black or near-white."""
+    """Random pip color: any hue/darkness except pure black or near-white.
+
+    The luminance cap must stay HIGH: real sets use bright yellow / light
+    blue pips (luminance ~0.8) that remain visible via saturation and the
+    embossed outline, and capping at 0.72 made the pip CNN blind to them
+    (measured on eval 2026-07-16: yellow/light-blue 10-halves read as 6).
+    """
     while True:
-        h, s, v = rng.random(), rng.uniform(0.2, 1.0), rng.uniform(0.06, 0.95)
+        h, s, v = rng.random(), rng.uniform(0.2, 1.0), rng.uniform(0.06, 0.97)
         r, g, b = colorsys.hsv_to_rgb(h, s, v)
-        # must contrast against the white body; dark near-black tones are fine
-        if 0.299 * r + 0.587 * g + 0.114 * b <= 0.72:
+        lum = 0.299 * r + 0.587 * g + 0.114 * b
+        # exclude only near-white/unsaturated-light (invisible on white body)
+        if lum <= 0.88 and not (lum > 0.72 and s < 0.45):
             return (int(r * 255), int(g * 255), int(b * 255))
 
 
