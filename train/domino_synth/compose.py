@@ -62,7 +62,9 @@ def _dest_quad(rng, sw, sh, scale, canvas_w, canvas_h, center=None):
     return (quad + center).astype(np.float32)
 
 
-def _paste(canvas, sprite_rgba, src_corners, dst_quad):
+def _paste(canvas, sprite_rgba, src_corners, dst_quad, shadow=None):
+    """shadow: optional (dx, dy, strength) — soft drop shadow so pasted tiles
+    don't float; missing shadows are a classic paste artifact (§4.5)."""
     h, w = canvas.shape[:2]
     H = cv2.getPerspectiveTransform(np.array(src_corners, np.float32), dst_quad)
     warped = cv2.warpPerspective(sprite_rgba, H, (w, h),
@@ -70,6 +72,13 @@ def _paste(canvas, sprite_rgba, src_corners, dst_quad):
                                  borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     alpha = warped[:, :, 3].astype(np.float64) / 255.0
     alpha = cv2.GaussianBlur(alpha, (3, 3), 0)  # blend paste boundary
+    if shadow is not None:
+        dx, dy, strength = shadow
+        side = float(np.sqrt(cv2.contourArea(dst_quad.astype(np.float32))) + 1)
+        M = np.float32([[1, 0, dx * side], [0, 1, dy * side]])
+        sh = cv2.warpAffine(alpha, M, (w, h))
+        sh = cv2.GaussianBlur(sh, (0, 0), max(1.0, side * 0.03))
+        canvas[:] = (canvas * (1 - strength * sh[:, :, None])).astype(np.uint8)
     alpha = alpha[:, :, None]
     canvas[:] = (warped[:, :, :3] * alpha + canvas * (1 - alpha)).astype(np.uint8)
 
@@ -115,6 +124,11 @@ def compose_scene(rng, tiles, background, canvas_w=1024, canvas_h=768,
     else:
         canvas = cv2.resize(background, (canvas_w, canvas_h)).copy()
 
+    # one light direction per scene: consistent soft shadows for every tile
+    ang = rng.uniform(0, 2 * math.pi)
+    mag = rng.uniform(0.005, 0.03)
+    shadow = (mag * math.cos(ang), mag * math.sin(ang), rng.uniform(0.15, 0.45))
+
     placed, labels = [], []
     for tile in tiles:
         sprite = np.array(tile["image"])  # RGBA, RGB order
@@ -136,7 +150,7 @@ def compose_scene(rng, tiles, background, canvas_w=1024, canvas_h=768,
         if quad is None:
             continue
         placed.append(quad)
-        _paste(canvas, sprite, tile["corners"], quad)
+        _paste(canvas, sprite, tile["corners"], quad, shadow=shadow)
 
         wound = wind_corners([tuple(p) for p in quad])
         clipped = bool((quad[:, 0].min() < 0) or (quad[:, 1].min() < 0) or
