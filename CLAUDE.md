@@ -162,9 +162,13 @@ still valuable:
 - `README.md` — Phase 2 product vision.
 - `docs/build-plan-v2.md` — the Phase 1 build plan (source of truth).
 - `docs/web-first-phased-ml-plan-checklist.md` — operator checklist companion.
-- `train/` — Tier-2 synthetic-data pipeline (Python): `domino_synth/`
-  (canonical pip grids, tile renderer, scene compositor, §5.4 corner winding)
-  + `generate.py` (YOLO-Pose dataset CLI). Setup/usage: `train/README.md`.
+- `train/` — Tier-2 synthetic-data pipeline + both model stages (Python):
+  `domino_synth/` (canonical pip grids, tile renderer, scene compositor,
+  §5.4 corner winding, §5.3 rectify/bar-split, Stage-2 crop generator),
+  `generate.py` (YOLO-Pose dataset CLI), `train_m0.py` (detector; pins
+  mirror/rotate augs to 0 — winding is image-frame-dependent),
+  `train_pips.py` (13-way per-half CNN), `predict.py` (full pipeline →
+  scorer-format JSON). Setup/usage: `train/README.md`.
 - `eval/score.py` — §7 scoring harness (`--self-test` runs its fixtures);
   `eval/merge_truth.py` — merges `eval/corpus_truth.json` (recovered, tracked)
   with the annotation export into the §11 eval JSON; `eval/annotate.html` —
