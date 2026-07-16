@@ -14,7 +14,30 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from domino_synth.crops import make_half_pair
+from domino_synth.crops import make_half_pair, _aug
+
+
+def real_halves(rng, faces_dir, reps):
+    """Tier-1 halves: labeled real face crops -> jittered half images."""
+    import json
+    from domino_synth.rectify import split_halves, RECT_W, RECT_H
+    d = Path(faces_dir)
+    labels = json.loads((d / "labels.json").read_text())
+    xs, ys = [], []
+    for name, val in labels.items():
+        crop = cv2.resize(cv2.imread(str(d / name)), (RECT_W, RECT_H))
+        first, second = map(int, val.split("/"))
+        for _ in range(reps):
+            # jitter the split point like the synthetic path does
+            split = int(RECT_H * (0.5 + rng.uniform(-0.03, 0.03)))
+            top, bot, _ = split_halves(crop, split)
+            for img, c in ((top, first), (bot, second)):
+                img = _aug(rng, img)
+                f = rng.uniform(0.75, 1.25)
+                img = np.clip(img.astype(np.float64) * f, 0, 255).astype(np.uint8)
+                xs.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+                ys.append(c)
+    return xs, ys
 
 
 class PipNet(nn.Module):
@@ -65,6 +88,9 @@ def main():
     ap.add_argument("--tiles", type=int, default=8000)
     ap.add_argument("--val-tiles", type=int, default=800)
     ap.add_argument("--backgrounds", default=None)
+    ap.add_argument("--faces", default=None,
+                    help="labeled face-crop dir (Tier 1) mixed into training")
+    ap.add_argument("--face-reps", type=int, default=20)
     ap.add_argument("--epochs", type=int, default=15)
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--seed", type=int, default=0)
@@ -83,6 +109,11 @@ def main():
 
     xtr, ytr = gen_split(rng, py_rng, args.tiles, bgs, "train")
     xva, yva = gen_split(rng, py_rng, args.val_tiles, bgs, "val")
+    if args.faces:
+        rx, ry = real_halves(rng, args.faces, args.face_reps)
+        print(f"Tier-1 real halves: {len(ry)}")
+        xtr = torch.cat([xtr, torch.from_numpy(np.stack(rx)).permute(0, 3, 1, 2)])
+        ytr = torch.cat([ytr, torch.tensor(ry)])
 
     dev = ("mps" if torch.backends.mps.is_available()
            else "cuda" if torch.cuda.is_available() else "cpu")

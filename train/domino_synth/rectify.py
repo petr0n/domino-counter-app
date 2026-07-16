@@ -13,8 +13,8 @@ PAD_FRAC = 0.06             # §5.2: pad so tight corners don't clip edge pips
 HALF_SIZE = 96              # CNN input: one half, square
 
 
-def rectify(image, corners):
-    """Perspective-rectify a tile to upright RECT_W x RECT_H.
+def rectify(image, corners, out_w=RECT_W, out_h=RECT_H):
+    """Perspective-rectify a tile to an upright out_w x out_h crop.
 
     corners: 4 (x, y) in source-image coords (any order). The end of the tile
     nearer the image top (or left, for horizontal tiles) is mapped to the TOP
@@ -52,11 +52,11 @@ def rectify(image, corners):
               if float(np.cross(axis, ends[1][0] - m1)) > 0 else
               (ends[1][1], ends[1][0]))
     src = np.array([tl, tr, br, bl], np.float32)
-    p = PAD_FRAC * RECT_W
-    dst = np.array([[p, p], [RECT_W - p, p],
-                    [RECT_W - p, RECT_H - p], [p, RECT_H - p]], np.float32)
+    p = PAD_FRAC * out_w
+    dst = np.array([[p, p], [out_w - p, p],
+                    [out_w - p, out_h - p], [p, out_h - p]], np.float32)
     H = cv2.getPerspectiveTransform(src, dst)
-    return cv2.warpPerspective(image, H, (RECT_W, RECT_H)), layout
+    return cv2.warpPerspective(image, H, (out_w, out_h)), layout
 
 
 def bar_split(crop_gray):

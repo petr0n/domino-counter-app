@@ -56,12 +56,21 @@ def main():
     ap.add_argument("--max-tiles", type=int, default=10)
     ap.add_argument("--bg-frac", type=float, default=0.05,
                     help="fraction of images with no tiles (cuts false positives)")
+    ap.add_argument("--faces", default=None,
+                    help="face-crop dir (Tier 1); tiles are drawn from real "
+                         "crops with this probability, rendered otherwise")
+    ap.add_argument("--face-frac", type=float, default=0.5)
     ap.add_argument("--preview", type=int, default=0,
                     help="also write N label-overlay previews for sanity checks")
     args = ap.parse_args()
 
     rng = np.random.default_rng(args.seed)
     py_rng = random.Random(args.seed)
+    faces = []
+    if args.faces:
+        from domino_synth.faces import load_face_sprites
+        faces = load_face_sprites(args.faces)
+        print(f"{len(faces)} Tier-1 face sprites")
     bgs = load_backgrounds(args.backgrounds)
     if not bgs:
         print("WARNING: no backgrounds given — using procedural fallback "
@@ -80,8 +89,13 @@ def main():
             tiles = []
         else:
             n_tiles = int(rng.integers(1, args.max_tiles + 1))
-            tiles = [render_tile(py_rng, *py_rng.choice([(a, b), (b, a)]))
-                     for a, b in (py_rng.choice(ALL_TILES) for _ in range(n_tiles))]
+            tiles = []
+            for _ in range(n_tiles):
+                if faces and rng.random() < args.face_frac:
+                    tiles.append(py_rng.choice(faces))
+                else:
+                    a, b = py_rng.choice(ALL_TILES)
+                    tiles.append(render_tile(py_rng, *py_rng.choice([(a, b), (b, a)])))
         bg = bgs[int(rng.integers(len(bgs)))] if bgs else None
         w = int(rng.integers(640, 1281))
         h = int(rng.integers(480, 1025))
