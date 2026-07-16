@@ -21,11 +21,14 @@ from domino_synth import ALL_TILES, compose_scene, render_tile, to_yolo_pose_lin
 DATASET_YAML = """\
 # Synthetic domino tiles — YOLO-Pose (bbox + 4 corner keypoints, §5.1/§5.4)
 #
-# IMPORTANT: train with fliplr=0 and flipud=0. The corner winding rule
-# (polar-angle sort, §5.4) is chiral: a mirrored image cannot be relabeled by
-# any fixed flip_idx permutation, so flip augmentation would corrupt keypoint
-# semantics. Rotation/scale/translate/mosaic augs are all fine.
-path: .
+# IMPORTANT: train with fliplr=0, flipud=0, degrees=0, shear=0, perspective=0
+# (train/train_m0.py pins these). The corner winding rule (polar-angle sort,
+# §5.4) is an image-frame property: any aug that mirrors OR rotates the image
+# moves corners without re-sorting indices, corrupting keypoint semantics.
+# Rotation variety comes from this generator, which winds labels after
+# transforming. Scale/translate/mosaic/HSV augs are fine.
+path: {root}  # absolute path — Ultralytics resolves relative paths against its
+              # global datasets_dir, not this file; regenerated per machine
 train: images/train
 val: images/val
 kpt_shape: [4, 3]
@@ -68,7 +71,7 @@ def main():
     for split in ("train", "val"):
         (out / "images" / split).mkdir(parents=True, exist_ok=True)
         (out / "labels" / split).mkdir(parents=True, exist_ok=True)
-    (out / "dataset.yaml").write_text(DATASET_YAML)
+    (out / "dataset.yaml").write_text(DATASET_YAML.format(root=out.resolve()))
 
     n_val = max(1, int(args.num * args.val_frac))
     tile_total = 0

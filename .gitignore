@@ -9,3 +9,5 @@ eval/corpus_photos/
 .venv/
 train/data/
 __pycache__/
+runs/
+*.pt
