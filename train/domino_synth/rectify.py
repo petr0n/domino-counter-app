@@ -11,6 +11,13 @@ import numpy as np
 RECT_W, RECT_H = 128, 256   # canonical upright tile crop (2:1)
 PAD_FRAC = 0.06             # §5.2: pad so tight corners don't clip edge pips
 HALF_SIZE = 96              # CNN input: one half, square
+# Tested 192x384/128 (2026-07-17) hoping more resolution would fix the
+# dominant true-11-read-as-7 confusion (dense, low-contrast, all-black
+# pips). Measured result: NO improvement on that confusion (17 cases before
+# and after) and a net regression elsewhere (per-half 0.918 -> 0.900,
+# identity 0.851 -> 0.82) — reverted. Resolution was not the bottleneck;
+# the 11-vs-7 gap looks like a harder discriminative problem (see PR
+# discussion) than pixel count alone can fix.
 
 
 def rectify(image, corners, out_w=RECT_W, out_h=RECT_H):
