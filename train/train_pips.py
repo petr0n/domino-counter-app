@@ -18,20 +18,38 @@ from domino_synth.crops import make_half_pair, _aug
 
 
 def real_halves(rng, faces_dir, reps):
-    """Tier-1 halves: labeled real face crops -> jittered half images."""
+    """Tier-1 halves: labeled real face crops -> jittered half images.
+
+    Reps are balanced PER PIP-COUNT CLASS, not per crop. Real crop coverage
+    is naturally uneven (measured 2026-07-17: count 11 has 14 labeled halves
+    vs 40 for count 7 — a ~3x gap), so a uniform per-crop rep count gives
+    rare classes ~3x less real-data training weight, not because they're
+    harder, purely as an artifact of how many source photos exist. Every
+    class gets driven to the same total real-half count instead.
+    """
     import json
+    from collections import defaultdict
     from domino_synth.rectify import split_halves, RECT_W, RECT_H
     d = Path(faces_dir)
     labels = json.loads((d / "labels.json").read_text())
-    xs, ys = [], []
+    by_class = defaultdict(list)  # pip count -> [(crop_path, which_half)]
     for name, val in labels.items():
-        crop = cv2.resize(cv2.imread(str(d / name)), (RECT_W, RECT_H))
         first, second = map(int, val.split("/"))
-        for _ in range(reps):
-            # jitter the split point like the synthetic path does
-            split = int(RECT_H * (0.5 + rng.uniform(-0.03, 0.03)))
-            top, bot, _ = split_halves(crop, split)
-            for img, c in ((top, first), (bot, second)):
+        by_class[first].append((name, "first"))
+        by_class[second].append((name, "second"))
+
+    target = reps * max(len(v) for v in by_class.values())
+    crops = {}  # cache resized crops
+    xs, ys = [], []
+    for c, instances in by_class.items():
+        class_reps = max(1, round(target / len(instances)))
+        for _ in range(class_reps):
+            for name, which in instances:
+                if name not in crops:
+                    crops[name] = cv2.resize(cv2.imread(str(d / name)), (RECT_W, RECT_H))
+                split = int(RECT_H * (0.5 + rng.uniform(-0.03, 0.03)))
+                top, bot, _ = split_halves(crops[name], split)
+                img = top if which == "first" else bot
                 img = _aug(rng, img)
                 f = rng.uniform(0.75, 1.25)
                 img = np.clip(img.astype(np.float64) * f, 0, 255).astype(np.uint8)
