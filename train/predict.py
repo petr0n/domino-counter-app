@@ -40,8 +40,14 @@ def load_pip_reader(weights, device):
         x = torch.from_numpy(x).permute(0, 3, 1, 2).float().div(255).to(device)
         with torch.no_grad():
             p = torch.softmax(net(x), dim=1).cpu()
-        if n_classes > 13 and int(p[0].argmax()) == 13 and int(p[1].argmax()) == 13:
-            return None
+        # confident junk in both halves: DON'T drop the detection (recall
+        # priority §5.1 — and review §9.2 can only fix what it can see).
+        # Read it as 0/0 at ~zero confidence: phantom pips vanish from the
+        # hand total, triage flags it, the user gets the final say.
+        if n_classes > 13 and float(p[0][13]) > 0.7 and float(p[1][13]) > 0.7:
+            return {"first": 0, "second": 0, "firstConfidence": 0.01,
+                    "secondConfidence": 0.01, "confidence": 0.01,
+                    "layout": layout, "barTier": tier, "junk": True}
         counts = p[:, :13]  # a kept detection reads pip counts only
         conf, cnt = counts.max(dim=1)
         return {"first": int(cnt[0]), "second": int(cnt[1]),
@@ -86,8 +92,6 @@ def main():
             predicted = {"first": 0, "second": 0, "confidence": round(conf, 4)}
             if read_pips and len(corners) == 4:
                 pip = read_pips(image, corners)
-                if pip is None:      # both halves junk -> drop false positive
-                    continue
                 predicted = {"first": pip["first"], "second": pip["second"],
                              "firstConfidence": pip["firstConfidence"],
                              "secondConfidence": pip["secondConfidence"],

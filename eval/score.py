@@ -47,24 +47,29 @@ def wilson_ci(k, n, z=1.96):
 
 
 def match_image(gt_tiles, pred_tiles, iou_thr):
-    """Greedy match: predictions in confidence order take the best unmatched GT."""
-    order = sorted(range(len(pred_tiles)),
-                   key=lambda i: -pred_tiles[i]["predicted"].get("confidence", 0))
-    taken, pairs, fps = set(), [], []
-    for pi in order:
-        best, best_iou = None, iou_thr
-        for gi, gt in enumerate(gt_tiles):
-            if gi in taken:
-                continue
-            v = iou(pred_tiles[pi]["bbox"], gt["bbox"])
-            if v >= best_iou:
-                best, best_iou = gi, v
-        if best is None:
-            fps.append(pi)
-        else:
-            taken.add(best)
-            pairs.append((best, pi))
-    return pairs, fps, [gi for gi in range(len(gt_tiles)) if gi not in taken]
+    """Optimal one-to-one matching (max total IoU over pairs with IoU >= thr).
+
+    Deliberately NOT greedy-by-confidence: greedy makes recall depend on
+    confidence ordering, so unrelated confidence changes between model
+    versions can flip which box 'steals' a ground truth (observed 2026-07-17).
+    Matching must measure geometry only.
+    """
+    if not gt_tiles or not pred_tiles:
+        return [], list(range(len(pred_tiles))), list(range(len(gt_tiles)))
+    import numpy as np
+    from scipy.optimize import linear_sum_assignment
+    m = np.zeros((len(gt_tiles), len(pred_tiles)))
+    for gi, gt in enumerate(gt_tiles):
+        for pi, pr in enumerate(pred_tiles):
+            v = iou(pr["bbox"], gt["bbox"])
+            m[gi, pi] = v if v >= iou_thr else 0.0
+    ri, ci = linear_sum_assignment(-m)
+    pairs = [(gi, pi) for gi, pi in zip(ri, ci) if m[gi, pi] > 0]
+    matched_g = {gi for gi, _ in pairs}
+    matched_p = {pi for _, pi in pairs}
+    return (pairs,
+            [pi for pi in range(len(pred_tiles)) if pi not in matched_p],
+            [gi for gi in range(len(gt_tiles)) if gi not in matched_g])
 
 
 def score(truth, preds, iou_thr=0.5, near=3):
