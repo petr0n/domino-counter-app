@@ -40,10 +40,14 @@ def real_halves(rng, faces_dir, reps):
     return xs, ys
 
 
-class PipNet(nn.Module):
-    """~220k params; input 3x96x96, output 13 logits."""
+JUNK = 13  # 14th class: "not a tile half" — false-positive suppression
 
-    def __init__(self):
+
+class PipNet(nn.Module):
+    """~220k params; input 3x96x96, output n_classes logits
+    (13 pip counts + optional junk class)."""
+
+    def __init__(self, n_classes=14):
         super().__init__()
         layers, cin = [], 3
         for cout in (24, 48, 96, 192):
@@ -52,11 +56,49 @@ class PipNet(nn.Module):
                        nn.MaxPool2d(2)]
             cin = cout
         self.features = nn.Sequential(*layers)
-        self.head = nn.Linear(192, 13)
+        self.head = nn.Linear(192, n_classes)
 
     def forward(self, x):
         f = self.features(x).mean(dim=(2, 3))
         return self.head(f)
+
+
+def gen_junk(rng, n, bgs):
+    """96x96 'not a tile half' images: background patches + tile-edge slivers
+    (what false-positive boxes actually contain)."""
+    import random as _random
+    from domino_synth.compose import _fallback_background, _photometric
+    from domino_synth.render import render_tile
+    py = _random.Random(int(rng.integers(1 << 30)))
+    xs = []
+    while len(xs) < n:
+        if bgs and rng.random() < 0.85:
+            bg = bgs[int(rng.integers(len(bgs)))]
+        else:
+            bg = _fallback_background(rng, 400, 400)
+        H, W = bg.shape[:2]
+        s = int(rng.integers(60, min(H, W) // 2))
+        y = int(rng.integers(0, H - s))
+        x = int(rng.integers(0, W - s))
+        patch = bg[y:y + s, x:x + s]
+        if rng.random() < 0.3:  # tile-edge sliver: paste a tile mostly outside
+            tile = render_tile(py, py.randint(0, 12), py.randint(0, 12), 192)
+            spr = cv2.cvtColor(np.array(tile["image"]), cv2.COLOR_RGBA2BGRA)
+            patch = cv2.resize(patch, (192, 192))
+            ox = int(rng.integers(120, 200)) * (1 if rng.random() < 0.5 else -1)
+            oy = int(rng.integers(-40, 40))
+            h0, w0 = spr.shape[:2]
+            x0, y0 = 96 + ox - w0 // 2, 96 + oy - h0 // 2
+            xa, ya = max(0, x0), max(0, y0)
+            xb, yb = min(192, x0 + w0), min(192, y0 + h0)
+            if xb > xa and yb > ya:
+                sub = spr[ya - y0:yb - y0, xa - x0:xb - x0]
+                a = sub[:, :, 3:4].astype(np.float64) / 255
+                patch[ya:yb, xa:xb] = (sub[:, :, :3] * a +
+                                       patch[ya:yb, xa:xb] * (1 - a)).astype(np.uint8)
+        patch = _photometric(rng, cv2.resize(patch, (96, 96)))
+        xs.append(cv2.cvtColor(cv2.resize(patch, (96, 96)), cv2.COLOR_BGR2RGB))
+    return torch.from_numpy(np.stack(xs)).permute(0, 3, 1, 2).contiguous()
 
 
 def gen_split(rng, py_rng, n_tiles, bgs, label):
@@ -91,6 +133,8 @@ def main():
     ap.add_argument("--faces", default=None,
                     help="labeled face-crop dir (Tier 1) mixed into training")
     ap.add_argument("--face-reps", type=int, default=20)
+    ap.add_argument("--junk-frac", type=float, default=0.10,
+                    help="junk halves as a fraction of the training set")
     ap.add_argument("--epochs", type=int, default=15)
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--seed", type=int, default=0)
@@ -115,6 +159,17 @@ def main():
               f"x{args.face_reps} reps)")
         xtr = torch.cat([xtr, torch.from_numpy(np.stack(rx)).permute(0, 3, 1, 2)])
         ytr = torch.cat([ytr, torch.tensor(ry)])
+
+    # junk halves: what a false-positive detection's crop looks like (§9.2
+    # review shows FPs; the CNN must say "not a tile", not hallucinate pips)
+    n_junk = int(len(ytr) * args.junk_frac)
+    jx = gen_junk(rng, n_junk, bgs)
+    xtr = torch.cat([xtr, jx])
+    ytr = torch.cat([ytr, torch.full((len(jx),), JUNK)])
+    jv = gen_junk(rng, max(50, n_junk // 10), bgs)
+    xva = torch.cat([xva, jv])
+    yva = torch.cat([yva, torch.full((len(jv),), JUNK)])
+    print(f"junk halves: {len(jx)} train / {len(jv)} val")
     if args.faces:
         rx, ry = real_halves(rng, args.faces, args.face_reps)
         print(f"Tier-1 real halves: {len(ry)}")
@@ -154,7 +209,8 @@ def main():
         print(f"epoch {ep}/{args.epochs} loss {tot/len(ytr):.4f} val-half-acc {acc:.4f}")
         if acc >= best:
             best = acc
-            torch.save({"state_dict": model.state_dict(), "half_size": 96},
+            torch.save({"state_dict": model.state_dict(), "half_size": 96,
+                        "n_classes": 14},
                        out / "best.pt")
     print(f"best synthetic val per-half accuracy: {best:.4f} -> {out/'best.pt'}")
 

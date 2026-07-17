@@ -26,18 +26,24 @@ def load_pip_reader(weights, device):
     from train_pips import PipNet
     from domino_synth.rectify import rectify, split_halves
     ckpt = torch.load(weights, map_location=device, weights_only=True)
-    net = PipNet().to(device)
+    n_classes = ckpt.get("n_classes", 13)
+    net = PipNet(n_classes).to(device)
     net.load_state_dict(ckpt["state_dict"])
     net.eval()
 
     def read(image_bgr, corners):
+        """Returns pip reading, or None when both halves read as junk
+        (false-positive suppression — the detection should be dropped)."""
         crop, layout = rectify(image_bgr, corners)
         top, bot, tier = split_halves(crop)
         x = np.stack([cv2.cvtColor(h, cv2.COLOR_BGR2RGB) for h in (top, bot)])
         x = torch.from_numpy(x).permute(0, 3, 1, 2).float().div(255).to(device)
         with torch.no_grad():
             p = torch.softmax(net(x), dim=1).cpu()
-        conf, cnt = p.max(dim=1)
+        if n_classes > 13 and int(p[0].argmax()) == 13 and int(p[1].argmax()) == 13:
+            return None
+        counts = p[:, :13]  # a kept detection reads pip counts only
+        conf, cnt = counts.max(dim=1)
         return {"first": int(cnt[0]), "second": int(cnt[1]),
                 "firstConfidence": round(float(conf[0]), 4),
                 "secondConfidence": round(float(conf[1]), 4),
@@ -80,6 +86,8 @@ def main():
             predicted = {"first": 0, "second": 0, "confidence": round(conf, 4)}
             if read_pips and len(corners) == 4:
                 pip = read_pips(image, corners)
+                if pip is None:      # both halves junk -> drop false positive
+                    continue
                 predicted = {"first": pip["first"], "second": pip["second"],
                              "firstConfidence": pip["firstConfidence"],
                              "secondConfidence": pip["secondConfidence"],
