@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 
 from domino_synth.crops import make_half_pair, _aug
+from domino_synth.rectify import HALF_SIZE
 
 
 def real_halves(rng, faces_dir, reps):
@@ -62,8 +63,9 @@ JUNK = 13  # 14th class: "not a tile half" — false-positive suppression
 
 
 class PipNet(nn.Module):
-    """~220k params; input 3x96x96, output n_classes logits
-    (13 pip counts + optional junk class)."""
+    """~220k params; input 3xHALF_SIZExHALF_SIZE (global-avg-pooled head, so
+    any spatial size works), output n_classes logits (13 pip counts +
+    optional junk class)."""
 
     def __init__(self, n_classes=14):
         super().__init__()
@@ -82,11 +84,13 @@ class PipNet(nn.Module):
 
 
 def gen_junk(rng, n, bgs):
-    """96x96 'not a tile half' images: background patches + tile-edge slivers
-    (what false-positive boxes actually contain)."""
+    """HALF_SIZE^2 'not a tile half' images: background patches + tile-edge
+    slivers (what false-positive boxes actually contain)."""
     import random as _random
     from domino_synth.compose import _fallback_background, _photometric
     from domino_synth.render import render_tile
+    from domino_synth.rectify import HALF_SIZE
+    S = HALF_SIZE * 2  # working canvas for the sliver-paste step, halved after
     py = _random.Random(int(rng.integers(1 << 30)))
     xs = []
     while len(xs) < n:
@@ -100,22 +104,22 @@ def gen_junk(rng, n, bgs):
         x = int(rng.integers(0, W - s))
         patch = bg[y:y + s, x:x + s]
         if rng.random() < 0.3:  # tile-edge sliver: paste a tile mostly outside
-            tile = render_tile(py, py.randint(0, 12), py.randint(0, 12), 192)
+            tile = render_tile(py, py.randint(0, 12), py.randint(0, 12), S)
             spr = cv2.cvtColor(np.array(tile["image"]), cv2.COLOR_RGBA2BGRA)
-            patch = cv2.resize(patch, (192, 192))
-            ox = int(rng.integers(120, 200)) * (1 if rng.random() < 0.5 else -1)
-            oy = int(rng.integers(-40, 40))
+            patch = cv2.resize(patch, (S, S))
+            ox = int(rng.integers(int(S * 0.625), int(S * 1.04))) * (1 if rng.random() < 0.5 else -1)
+            oy = int(rng.integers(int(-S * 0.21), int(S * 0.21)))
             h0, w0 = spr.shape[:2]
-            x0, y0 = 96 + ox - w0 // 2, 96 + oy - h0 // 2
+            x0, y0 = S // 2 + ox - w0 // 2, S // 2 + oy - h0 // 2
             xa, ya = max(0, x0), max(0, y0)
-            xb, yb = min(192, x0 + w0), min(192, y0 + h0)
+            xb, yb = min(S, x0 + w0), min(S, y0 + h0)
             if xb > xa and yb > ya:
                 sub = spr[ya - y0:yb - y0, xa - x0:xb - x0]
                 a = sub[:, :, 3:4].astype(np.float64) / 255
                 patch[ya:yb, xa:xb] = (sub[:, :, :3] * a +
                                        patch[ya:yb, xa:xb] * (1 - a)).astype(np.uint8)
-        patch = _photometric(rng, cv2.resize(patch, (96, 96)))
-        xs.append(cv2.cvtColor(cv2.resize(patch, (96, 96)), cv2.COLOR_BGR2RGB))
+        patch = _photometric(rng, cv2.resize(patch, (HALF_SIZE, HALF_SIZE)))
+        xs.append(cv2.cvtColor(patch, cv2.COLOR_BGR2RGB))
     return torch.from_numpy(np.stack(xs)).permute(0, 3, 1, 2).contiguous()
 
 
@@ -227,7 +231,7 @@ def main():
         print(f"epoch {ep}/{args.epochs} loss {tot/len(ytr):.4f} val-half-acc {acc:.4f}")
         if acc >= best:
             best = acc
-            torch.save({"state_dict": model.state_dict(), "half_size": 96,
+            torch.save({"state_dict": model.state_dict(), "half_size": HALF_SIZE,
                         "n_classes": 14},
                        out / "best.pt")
     print(f"best synthetic val per-half accuracy: {best:.4f} -> {out/'best.pt'}")
