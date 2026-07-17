@@ -111,6 +111,12 @@ def main():
     xva, yva = gen_split(rng, py_rng, args.val_tiles, bgs, "val")
     if args.faces:
         rx, ry = real_halves(rng, args.faces, args.face_reps)
+        print(f"Tier-1 real halves: {len(rx)} ({len(rx)//(2*args.face_reps)} crops "
+              f"x{args.face_reps} reps)")
+        xtr = torch.cat([xtr, torch.from_numpy(np.stack(rx)).permute(0, 3, 1, 2)])
+        ytr = torch.cat([ytr, torch.tensor(ry)])
+    if args.faces:
+        rx, ry = real_halves(rng, args.faces, args.face_reps)
         print(f"Tier-1 real halves: {len(ry)}")
         xtr = torch.cat([xtr, torch.from_numpy(np.stack(rx)).permute(0, 3, 1, 2)])
         ytr = torch.cat([ytr, torch.tensor(ry)])

@@ -28,20 +28,23 @@ _LAYOUTS_3X3 = {
     9: [0, 1, 2, 3, 4, 5, 6, 7, 8],
 }
 
-# 4x3 grid: 4 column x-positions, 3 row y-positions
-_C4X = (0.16, 0.44 - 0.06, 0.56 + 0.06, 0.84)  # (0.16, 0.38, 0.62, 0.84)
-_C4Y = (0.25, 0.5, 0.75)
+# 4x3 grid for 10-12. Orientation measured from the real set (2026-07-16,
+# Tier-1 crops): the 4-axis runs ALONG the tile's long axis — an upright
+# vertical half shows 4 rows x 3 columns. (First render had it rotated 90°,
+# which made the pip CNN systematically misread real dense halves.)
+_C4Y = (0.16, 0.44 - 0.06, 0.56 + 0.06, 0.84)  # 4 positions along the length
+_C4X = (0.25, 0.5, 0.75)                        # 3 positions across the width
 
 
-def _row4(y):
-    return [(x, y) for x in _C4X]
+def _col4(x):
+    return [(x, y) for y in _C4Y]
 
 
 _LAYOUTS_4X3 = {
-    10: _row4(_C4Y[0]) + [(_C4X[0], _C4Y[1]), (_C4X[3], _C4Y[1])] + _row4(_C4Y[2]),
-    # 11: middle row left / true centre (0.5, not a column) / right
-    11: _row4(_C4Y[0]) + [(_C4X[0], _C4Y[1]), (0.5, _C4Y[1]), (_C4X[3], _C4Y[1])] + _row4(_C4Y[2]),
-    12: _row4(_C4Y[0]) + _row4(_C4Y[1]) + _row4(_C4Y[2]),
+    10: _col4(_C4X[0]) + [(_C4X[1], _C4Y[0]), (_C4X[1], _C4Y[3])] + _col4(_C4X[2]),
+    # 11: middle column top / true centre (0.5, not row-aligned) / bottom
+    11: _col4(_C4X[0]) + [(_C4X[1], _C4Y[0]), (0.5, 0.5), (_C4X[1], _C4Y[3])] + _col4(_C4X[2]),
+    12: _col4(_C4X[0]) + _col4(_C4X[1]) + _col4(_C4X[2]),
 }
 
 
