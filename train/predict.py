@@ -21,6 +21,16 @@ import numpy as np
 from ultralytics import YOLO
 
 
+JUNK_CLASS = 13  # keep in sync with train_pips.JUNK
+
+# Confidence floor for treating a half as junk. Picked ad hoc while
+# diagnosing a 2026-07-17 regression (checked 0.7 vs 0.9 on the EVAL set,
+# which is exactly the eval-set leakage §5.4's calibration-set rule exists
+# to prevent) — NOT validated on a held-out calibration set. Revisit once
+# §5.4 temperature scaling / a real calibration split exists.
+JUNK_CONFIDENCE_THRESHOLD = 0.7
+
+
 def load_pip_reader(weights, device):
     import torch
     from train_pips import PipNet
@@ -32,23 +42,38 @@ def load_pip_reader(weights, device):
     net.eval()
 
     def read(image_bgr, corners):
-        """Returns pip reading, or None when both halves read as junk
-        (false-positive suppression — the detection should be dropped)."""
+        """Returns pip reading; sets reviewFlags.possiblyJunk when both
+        halves confidently read as the junk class (false-positive signal)."""
         crop, layout = rectify(image_bgr, corners)
         top, bot, tier = split_halves(crop)
         x = np.stack([cv2.cvtColor(h, cv2.COLOR_BGR2RGB) for h in (top, bot)])
         x = torch.from_numpy(x).permute(0, 3, 1, 2).float().div(255).to(device)
         with torch.no_grad():
             p = torch.softmax(net(x), dim=1).cpu()
-        if n_classes > 13 and int(p[0].argmax()) == 13 and int(p[1].argmax()) == 13:
-            return None
+        # argmax check is mathematically redundant here (softmax sums to 1,
+        # so p[JUNK_CLASS] > 0.7 already forces it to be the max — no other
+        # class can hold > 0.3 of the remaining mass) but kept explicit as
+        # self-documenting intent.
+        is_junk = (n_classes > 13
+                  and int(p[0].argmax()) == JUNK_CLASS
+                  and int(p[1].argmax()) == JUNK_CLASS
+                  and float(p[0][JUNK_CLASS]) > JUNK_CONFIDENCE_THRESHOLD
+                  and float(p[1][JUNK_CLASS]) > JUNK_CONFIDENCE_THRESHOLD)
+        if is_junk:
+            # DON'T drop the detection (recall priority §5.1 — and review
+            # §9.2 can only fix what it can see). Read as 0/0 at ~zero
+            # confidence: phantom pips vanish from the hand total, triage
+            # flags it, the user gets the final say.
+            return {"first": 0, "second": 0, "firstConfidence": 0.01,
+                    "secondConfidence": 0.01, "confidence": 0.01,
+                    "layout": layout, "barTier": tier, "possiblyJunk": True}
         counts = p[:, :13]  # a kept detection reads pip counts only
         conf, cnt = counts.max(dim=1)
         return {"first": int(cnt[0]), "second": int(cnt[1]),
                 "firstConfidence": round(float(conf[0]), 4),
                 "secondConfidence": round(float(conf[1]), 4),
                 "confidence": round(float(conf.min()), 4),
-                "layout": layout, "barTier": tier}
+                "layout": layout, "barTier": tier, "possiblyJunk": False}
     return read
 
 
@@ -84,20 +109,24 @@ def main():
             x0, y0, x1, y1 = xyxy
             corners = kps[i] if i < len(kps) else []
             predicted = {"first": 0, "second": 0, "confidence": round(conf, 4)}
+            review_flags = {}
             if read_pips and len(corners) == 4:
                 pip = read_pips(image, corners)
-                if pip is None:      # both halves junk -> drop false positive
-                    continue
                 predicted = {"first": pip["first"], "second": pip["second"],
                              "firstConfidence": pip["firstConfidence"],
                              "secondConfidence": pip["secondConfidence"],
                              # overall = detection conf x weakest half conf
                              "confidence": round(conf * pip["confidence"], 4)}
+                # §11 reviewFlags convention (cf. possiblyPartial) — not yet
+                # consumed by a review UI (§9.2 unbuilt), but visible in
+                # preds.json for error analysis and ready when it lands.
+                review_flags["possiblyJunk"] = pip["possiblyJunk"]
             tiles.append({
                 "bbox": {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0},
                 "corners": [{"x": round(x, 1), "y": round(y, 1)}
                             for x, y in corners],
                 "predicted": predicted,
+                "reviewFlags": review_flags,
             })
         preds.append({"imageId": p.stem, "tiles": tiles})
         print(f"{p.name}: {len(tiles)} detections")
