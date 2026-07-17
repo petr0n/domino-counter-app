@@ -523,6 +523,14 @@ Build the minimal copy-paste/render pipeline (§4) + train a small tile detector
 - **Pass:** tile detection **recall ≥ 0.70 @ IoU 0.5** on real photos. (n≈190
   tile instances at current eval-set size — treat as directional pass/fail per
   the statistical power note above, re-confirm after eval-set growth, §7.)
+- **✅ MEASURED PASSED 2026-07-16 — confirmed met (CI rule):** recall **1.000**
+  (95% CI 0.98–1.00, 0/194 tiles missed) on the full 49-photo/194-tile eval
+  set; precision 0.761 at conf 0.20, and recall holds 1.000 through conf
+  0.65 — chosen operating point conf 0.50 gives precision 0.826. Model: yolo11n-pose, 60 epochs, 2,000 rendered
+  scenes (Tier 2 only — no real tile pixels) composited onto 51 real
+  background photos with drop shadows. Run log: `runs/pose/realbg`.
+  Sim-to-real transfer is settled for detection; remaining work is Stage-2
+  accuracy (per-half 0.69 at this checkpoint) and precision.
 - **Fail → pivot decision**, not more grinding: add a real fine-tune set (§4.2),
   improve rendering realism (§4.1), or reconsider the approach.
 - This tests the single riskiest assumption (transfer) before any app work.
@@ -607,6 +615,13 @@ Lightweight local rounds (§9.3). Only after the scanner is stable.
 - **Scope note:** the scanner reports actual pip counts (blank half = 0);
   house-rule scoring (e.g. double-blank = 50) lives in the app's scoring layer, not
   the scanner.
+- **Face-down tiles are NOT tiles (truth-set convention, decided 2026-07-13):**
+  a face-down tile shows a bar-less white back; a genuine face-up 0/0 always
+  shows the black divider bar. Face-down backs are excluded from eval truth
+  (photos `1000012930`/`1000012936` each contain one) — a detector that boxes
+  one scores a false positive, consistent with training data containing only
+  faces. If real-world scans hit this often, promote backs as explicit hard
+  negatives via §12 rather than relabeling them as 0/0.
 - **Regression rule:** no change ships that lowers a gate metric without an
   explicit, measured justification.
 

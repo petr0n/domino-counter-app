@@ -133,9 +133,12 @@ not started) is the multiplayer game app described in `README.md` — join-code
 sessions, game manager, cross-device standings. Don't build Phase 2 features
 while Phase 1's accuracy gates are open.
 
-The Phase 1 scanner (ML detector + pip reader, Quick Scan UI, local storage,
-eval harness) is **to be built** per the plan on `main` — nothing scanner-side
-is implemented on `main` yet.
+Phase 1 build status: **M-1 (eval infrastructure) code is in place** — the
+`train/` synthetic pipeline and the `eval/` scoring/merge scripts (see the
+"Present on `main`" list below). Still open for M-1: box+corner annotation of
+the 49 eval photos (Roboflow, user-assisted) and the Tier-1 capture session
+(§4.3). The ML models, Quick Scan UI, and local storage are **to be built**
+(M0 onward).
 
 **But `main` is not the whole history — check other branches before assuming
 something doesn't exist.** A prior OpenCV-heuristic scanner (pre-pivot) was
@@ -159,6 +162,18 @@ still valuable:
 - `README.md` — Phase 2 product vision.
 - `docs/build-plan-v2.md` — the Phase 1 build plan (source of truth).
 - `docs/web-first-phased-ml-plan-checklist.md` — operator checklist companion.
+- `train/` — Tier-2 synthetic-data pipeline + both model stages (Python):
+  `domino_synth/` (canonical pip grids, tile renderer, scene compositor,
+  §5.4 corner winding, §5.3 rectify/bar-split, Stage-2 crop generator),
+  `generate.py` (YOLO-Pose dataset CLI), `train_m0.py` (detector; pins
+  mirror/rotate augs to 0 — winding is image-frame-dependent),
+  `train_pips.py` (13-way per-half CNN), `predict.py` (full pipeline →
+  scorer-format JSON). Setup/usage: `train/README.md`.
+- `eval/score.py` — §7 scoring harness (`--self-test` runs its fixtures);
+  `eval/merge_truth.py` — merges `eval/corpus_truth.json` (recovered, tracked)
+  with the annotation export into the §11 eval JSON; `eval/annotate.html` —
+  local browser tool for that annotation (replaces the Roboflow route: value
+  labels there would need 169 hand-made classes).
 - `.claude/` — Stop hook (`hooks/js-check.sh`) that syntax-checks changed JS/HTML.
 - `.gitignore` and repo config.
 
