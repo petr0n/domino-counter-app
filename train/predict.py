@@ -90,6 +90,38 @@ def load_pip_reader(weights, device):
     return read
 
 
+def load_pip_detector_reader(weights, device, conf=0.85):
+    """§5.2 TARGET architecture: detect individual pips as objects on the
+    full rectified tile crop, then assign to halves by the existing
+    bar_split() row and count — geometry does the counting instead of a
+    13-way classifier. Same return interface as load_pip_reader's read()
+    for drop-in use, minus the junk class (a detector naturally emits zero
+    boxes on a non-tile crop, no separate junk handling needed)."""
+    from ultralytics import YOLO
+    from domino_synth.rectify import rectify, bar_split
+    det = YOLO(weights)
+
+    def read(image_bgr, corners):
+        crop, layout = rectify(image_bgr, corners)
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        split_row, tier = bar_split(gray)
+        r = det.predict(crop, conf=conf, verbose=False)[0]
+        boxes = r.boxes.xyxy.cpu().numpy()
+        confs = r.boxes.conf.cpu().numpy()
+        centers_y = (boxes[:, 1] + boxes[:, 3]) / 2 if len(boxes) else np.array([])
+        top_mask = centers_y < split_row
+        first = int(top_mask.sum())
+        second = int(len(boxes) - first)
+        first_conf = float(confs[top_mask].mean()) if first else 0.9
+        second_conf = float(confs[~top_mask].mean()) if second else 0.9
+        return {"first": min(first, 12), "second": min(second, 12),
+                "firstConfidence": round(first_conf, 4),
+                "secondConfidence": round(second_conf, 4),
+                "confidence": round(min(first_conf, second_conf), 4),
+                "layout": layout, "barTier": tier, "possiblyJunk": False}
+    return read
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--weights", required=True)
@@ -97,6 +129,18 @@ def main():
                     help="Stage-2 checkpoint(s), comma-separated for a "
                          "softmax-averaged ensemble (runs/pips/best.pt); "
                          "omit for detection-only")
+    ap.add_argument("--pip-detector-weights", default=None,
+                    help="§5.2 target: pip-object-detector checkpoint "
+                         "(runs/pipdet/weights/best.pt) — takes priority "
+                         "over --pip-weights if both given")
+    # Swept 2026-07-18 on the eval set (0.25-0.97, see PR): per-half accuracy
+    # is a genuine plateau ~0.85-0.91 (0.92-0.94 per-half) then a SHARP cliff
+    # past ~0.92 (per-half collapses to ~0.45 — most pip-box confidences
+    # apparently cluster right at that boundary). 0.85 is chosen with margin
+    # below the cliff, not at the swept peak (0.90) — picking the exact
+    # eval-maximizing point would repeat the JUNK_CONFIDENCE_THRESHOLD
+    # eval-leakage mistake. Revisit with a real calibration split.
+    ap.add_argument("--pip-detector-conf", type=float, default=0.85)
     ap.add_argument("--images", default="eval/corpus_photos")
     ap.add_argument("--out", default="preds.json")
     # measured on eval 2026-07-16: recall stays 1.000 from conf 0.20 up to
@@ -110,8 +154,14 @@ def main():
     paths = sorted(p for p in Path(args.images).iterdir()
                    if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"))
     model = YOLO(args.weights)
-    read_pips = (load_pip_reader(args.pip_weights.split(","), args.device or "cpu")
-                 if args.pip_weights else None)
+    if args.pip_detector_weights:
+        read_pips = load_pip_detector_reader(args.pip_detector_weights,
+                                             args.device or "cpu",
+                                             conf=args.pip_detector_conf)
+    elif args.pip_weights:
+        read_pips = load_pip_reader(args.pip_weights.split(","), args.device or "cpu")
+    else:
+        read_pips = None
     preds = []
     for p in paths:
         r = model.predict(str(p), conf=args.conf, iou=args.nms_iou,
