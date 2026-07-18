@@ -60,6 +60,11 @@ def main():
                     help="face-crop dir (Tier 1); tiles are drawn from real "
                          "crops with this probability, rendered otherwise")
     ap.add_argument("--face-frac", type=float, default=0.5)
+    ap.add_argument("--touch-frac", type=float, default=0.0,
+                    help="probability each non-first tile is placed touching "
+                         "a random already-placed tile (§1: may touch, never "
+                         "overlap) — trains corner-keypoint precision at "
+                         "touching seams, rare under pure random placement")
     ap.add_argument("--preview", type=int, default=0,
                     help="also write N label-overlay previews for sanity checks")
     args = ap.parse_args()
@@ -99,7 +104,8 @@ def main():
         bg = bgs[int(rng.integers(len(bgs)))] if bgs else None
         w = int(rng.integers(640, 1281))
         h = int(rng.integers(480, 1025))
-        img, labels = compose_scene(rng, tiles, bg, canvas_w=w, canvas_h=h)
+        img, labels = compose_scene(rng, tiles, bg, canvas_w=w, canvas_h=h,
+                                    touch_frac=args.touch_frac)
         tile_total += len(labels)
 
         split = "val" if i < n_val else "train"
