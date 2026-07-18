@@ -32,7 +32,7 @@ def _pip_color(rng):
             return (int(r * 255), int(g * 255), int(b * 255))
 
 
-def _draw_half(draw, count, x0, y0, size, rng, mirror_x, mirror_y):
+def _draw_half(draw, count, x0, y0, size, rng, mirror_x, mirror_y, pip_boxes):
     r = size * rng.uniform(0.085, 0.12)
     color = _pip_color(rng)
     outline = tuple(int(c * 0.55) for c in color)
@@ -50,6 +50,7 @@ def _draw_half(draw, count, x0, y0, size, rng, mirror_x, mirror_y):
             gx, gy = cx - r * 0.35, cy - r * 0.35
             hi = tuple(min(255, int(c + 90)) for c in color)
             draw.ellipse([gx - gr, gy - gr, gx + gr, gy + gr], fill=hi)
+        pip_boxes.append((cx - r, cy - r, cx + r, cy + r))
 
 
 def render_tile(rng, first, second, long_px=512):
@@ -86,10 +87,11 @@ def render_tile(rng, first, second, long_px=512):
 
     # Pips: each half is a square of side w, inset slightly from the bar
     pad = H * 0.01
+    pip_boxes_ss = []  # supersampled-space boxes; scaled to output px below
     _draw_half(draw, first, 0, pad, W, rng,
-               rng.random() < 0.5, rng.random() < 0.5)
+               rng.random() < 0.5, rng.random() < 0.5, pip_boxes_ss)
     _draw_half(draw, second, 0, H - W - pad, W, rng,
-               rng.random() < 0.5, rng.random() < 0.5)
+               rng.random() < 0.5, rng.random() < 0.5, pip_boxes_ss)
 
     if rng.random() < 0.3:  # mild gloss sheen across the tile
         sheen = Image.new("L", (W, H), 0)
@@ -103,4 +105,7 @@ def render_tile(rng, first, second, long_px=512):
 
     img = img.resize((w, h), Image.LANCZOS)
     corners = [(0.0, 0.0), (float(w), 0.0), (float(w), float(h)), (0.0, float(h))]
-    return {"image": img, "corners": corners, "first": first, "second": second}
+    pip_boxes = [(x0 / _SS, y0 / _SS, x1 / _SS, y1 / _SS)
+                for x0, y0, x1, y1 in pip_boxes_ss]
+    return {"image": img, "corners": corners, "first": first, "second": second,
+           "pip_boxes": pip_boxes}
