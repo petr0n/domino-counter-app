@@ -62,6 +62,44 @@ def _dest_quad(rng, sw, sh, scale, canvas_w, canvas_h, center=None):
     return (quad + center).astype(np.float32)
 
 
+def _touching_quad(rng, sw, sh, scale, prev_quad):
+    """A destination quad placed edge-to-edge against a random edge of
+    prev_quad (build-plan §1: tiles may touch but never overlap).
+
+    Measured 2026-07-18: touching only ever happened by accident under
+    uniform random placement (rare given typical canvas/tile size ratios),
+    so the tile-detector's corner keypoints were never specifically trained
+    on touching seams — the observed failure (corner bleed into a touching
+    neighbor) traces directly to that training-data gap.
+    """
+    w, h = sw * scale, sh * scale
+    edge = rng.integers(4)
+    p0, p1 = prev_quad[edge], prev_quad[(edge + 1) % 4]
+    edge_vec = p1 - p0
+    edge_len = float(np.linalg.norm(edge_vec))
+    if edge_len < 1e-3:
+        return None
+    edge_dir = edge_vec / edge_len
+    normal = np.array([-edge_dir[1], edge_dir[0]])
+    centroid = prev_quad.mean(axis=0)
+    # outward normal: point away from the tile's own centroid
+    if np.dot(normal, (p0 + p1) / 2 - centroid) < 0:
+        normal = -normal
+    delta_theta = math.radians(rng.uniform(-15, 15))  # slight angle variety
+    # theta: new tile's rotation so its local bottom edge (0,+h/2), which R
+    # maps to (-sin theta, cos theta), points along `normal` — i.e. the new
+    # tile's near edge faces back toward the seed tile, touching it.
+    theta = math.atan2(-normal[0], normal[1]) + delta_theta
+    cos_t, sin_t = math.cos(theta), math.sin(theta)
+    R = np.array([[cos_t, -sin_t], [sin_t, cos_t]])
+    base = np.array([[-w / 2, -h / 2], [w / 2, -h / 2],
+                     [w / 2, h / 2], [-w / 2, h / 2]])
+    quad = base @ R.T
+    mid = (p0 + p1) / 2
+    center = mid + normal * (h / 2 * 0.999)  # 0.999: touch, avoid true overlap
+    return (quad + center).astype(np.float32)
+
+
 def _paste(canvas, sprite_rgba, src_corners, dst_quad, shadow=None):
     """shadow: optional (dx, dy, strength) — soft drop shadow so pasted tiles
     don't float; missing shadows are a classic paste artifact (§4.5)."""
@@ -111,7 +149,7 @@ def _photometric(rng, img):
 
 
 def compose_scene(rng, tiles, background, canvas_w=1024, canvas_h=768,
-                  max_attempts=40):
+                  max_attempts=40, touch_frac=0.0):
     """Composite tiles (render_tile dicts) onto a background.
 
     background: HxWx3 uint8 BGR or None (procedural fallback).
@@ -136,17 +174,27 @@ def compose_scene(rng, tiles, background, canvas_w=1024, canvas_h=768,
         sh, sw = sprite.shape[:2]
         scale = rng.uniform(0.12, 0.35) * canvas_h / sh
         quad = None
-        for _ in range(max_attempts):
-            q = _dest_quad(rng, sw, sh, scale, canvas_w, canvas_h)
-            clip = np.clip(q, [0, 0], [canvas_w, canvas_h])
-            vis, _ = cv2.intersectConvexConvex(
-                q, np.array([[0, 0], [canvas_w, 0], [canvas_w, canvas_h],
-                             [0, canvas_h]], np.float32))
-            if vis < MIN_VISIBLE_AREA_FRAC * _quad_area(q):
-                continue
-            if not _overlaps(q, placed):
-                quad = q
-                break
+        frame = np.array([[0, 0], [canvas_w, 0], [canvas_w, canvas_h],
+                          [0, canvas_h]], np.float32)
+        if placed and rng.random() < touch_frac:
+            for _ in range(8):  # a few tries: different neighbour/edge/angle
+                q = _touching_quad(rng, sw, sh, scale, placed[int(rng.integers(len(placed)))])
+                if q is None:
+                    continue
+                vis, _ = cv2.intersectConvexConvex(q, frame)
+                if (vis >= MIN_VISIBLE_AREA_FRAC * _quad_area(q)
+                        and not _overlaps(q, placed)):
+                    quad = q
+                    break
+        if quad is None:
+            for _ in range(max_attempts):
+                q = _dest_quad(rng, sw, sh, scale, canvas_w, canvas_h)
+                vis, _ = cv2.intersectConvexConvex(q, frame)
+                if vis < MIN_VISIBLE_AREA_FRAC * _quad_area(q):
+                    continue
+                if not _overlaps(q, placed):
+                    quad = q
+                    break
         if quad is None:
             continue
         placed.append(quad)
