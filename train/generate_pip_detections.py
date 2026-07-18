@@ -72,10 +72,42 @@ def jitter_crop(rng, img_bgr, pip_boxes, out_size):
     return warped, boxes
 
 
+def real_negative_halves(faces_dir, out_w, out_h):
+    """Real, guaranteed-pip-free image patches for hard-negative training.
+
+    Uses labeled Tier-1 crops with a 0-count half (verified in labels.json —
+    a half with 0 pips has none, by definition, no per-pip annotation
+    needed). Real photo glare/gloss/sensor noise on these patches is exactly
+    the distribution the synthetic-only detector was found to false-positive
+    on (2026-07-18: synthetic val had zero FPs, real eval overcounted almost
+    everywhere) — teaching "this real texture has no pips" directly targets
+    that gap. The OTHER half of these crops is never used (real pip
+    positions aren't annotated, so treating it as background would be a
+    false negative)."""
+    import json
+    d = Path(faces_dir)
+    labels = json.loads((d / "labels.json").read_text())
+    patches = []
+    for name, val in labels.items():
+        first, second = map(int, val.split("/"))
+        if 0 not in (first, second):
+            continue
+        img = cv2.imread(str(d / name))
+        if img is None:
+            continue
+        img = cv2.resize(img, (out_w, out_h))
+        half = img[: out_h // 2] if first == 0 else img[out_h // 2:]
+        patches.append(half)
+    return patches
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--num", type=int, default=6000)
     ap.add_argument("--out", default="train/data/pips_yolo")
+    ap.add_argument("--real-negatives", default=None,
+                    help="face-crop dir (labels.json) to pull guaranteed "
+                         "pip-free real halves from as hard negatives")
     ap.add_argument("--val-frac", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=0)
     # Defaults MUST match domino_synth.rectify.RECT_W/RECT_H: the detector
@@ -129,7 +161,26 @@ def main():
             (out / "previews").mkdir(exist_ok=True)
             cv2.imwrite(str(out / "previews" / f"{name}.jpg"), vis)
 
-    print(f"wrote {args.num} images ({n_val} val) -> {out}")
+    n_neg = 0
+    if args.real_negatives:
+        patches = real_negative_halves(args.real_negatives, args.out_w, args.out_h)
+        print(f"{len(patches)} real pip-free half patches found")
+        reps = max(1, args.num // max(1, len(patches)) // 4)  # ~25% of synth volume
+        neg_val = max(1, int(len(patches) * reps * args.val_frac))
+        k = 0
+        for _ in range(reps):
+            for patch in patches:
+                img = _photometric(rng, patch.copy())
+                split = "val" if k < neg_val else "train"
+                name = f"realneg_{k:05d}"
+                cv2.imwrite(str(out / "images" / split / f"{name}.jpg"), img)
+                (out / "labels" / split / f"{name}.txt").write_text("")
+                k += 1
+        n_neg = k
+        print(f"wrote {n_neg} real hard-negative images")
+
+    print(f"wrote {args.num} synthetic images ({n_val} val) + "
+          f"{n_neg} real negatives -> {out}")
 
 
 if __name__ == "__main__":
