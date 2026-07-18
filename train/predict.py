@@ -32,14 +32,27 @@ JUNK_CONFIDENCE_THRESHOLD = 0.7
 
 
 def load_pip_reader(weights, device):
+    """weights: a single checkpoint path, or a list of paths for an ensemble
+    (softmax-averaged — cheap variance reduction given Stage-2's measured
+    seed-to-seed noise, build-plan §6 statistical-power spirit applied to
+    the model itself rather than just the eval metric)."""
     import torch
     from train_pips import PipNet
     from domino_synth.rectify import rectify, split_halves
-    ckpt = torch.load(weights, map_location=device, weights_only=True)
-    n_classes = ckpt.get("n_classes", 13)
-    net = PipNet(n_classes).to(device)
-    net.load_state_dict(ckpt["state_dict"])
-    net.eval()
+    paths = weights if isinstance(weights, (list, tuple)) else [weights]
+    nets, n_classes = [], None
+    for wp in paths:
+        ckpt = torch.load(wp, map_location=device, weights_only=True)
+        nc = ckpt.get("n_classes", 13)
+        if n_classes is None:
+            n_classes = nc
+        elif nc != n_classes:
+            raise ValueError(f"ensemble checkpoints disagree on n_classes: "
+                             f"{wp} has {nc}, expected {n_classes}")
+        net = PipNet(nc).to(device)
+        net.load_state_dict(ckpt["state_dict"])
+        net.eval()
+        nets.append(net)
 
     def read(image_bgr, corners):
         """Returns pip reading; sets reviewFlags.possiblyJunk when both
@@ -49,7 +62,7 @@ def load_pip_reader(weights, device):
         x = np.stack([cv2.cvtColor(h, cv2.COLOR_BGR2RGB) for h in (top, bot)])
         x = torch.from_numpy(x).permute(0, 3, 1, 2).float().div(255).to(device)
         with torch.no_grad():
-            p = torch.softmax(net(x), dim=1).cpu()
+            p = torch.stack([torch.softmax(net(x), dim=1) for net in nets]).mean(dim=0).cpu()
         # argmax check is mathematically redundant here (softmax sums to 1,
         # so p[JUNK_CLASS] > 0.7 already forces it to be the max — no other
         # class can hold > 0.3 of the remaining mass) but kept explicit as
@@ -81,7 +94,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--weights", required=True)
     ap.add_argument("--pip-weights", default=None,
-                    help="Stage-2 checkpoint (runs/pips/best.pt); omit for detection-only")
+                    help="Stage-2 checkpoint(s), comma-separated for a "
+                         "softmax-averaged ensemble (runs/pips/best.pt); "
+                         "omit for detection-only")
     ap.add_argument("--images", default="eval/corpus_photos")
     ap.add_argument("--out", default="preds.json")
     # measured on eval 2026-07-16: recall stays 1.000 from conf 0.20 up to
@@ -95,7 +110,7 @@ def main():
     paths = sorted(p for p in Path(args.images).iterdir()
                    if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"))
     model = YOLO(args.weights)
-    read_pips = (load_pip_reader(args.pip_weights, args.device or "cpu")
+    read_pips = (load_pip_reader(args.pip_weights.split(","), args.device or "cpu")
                  if args.pip_weights else None)
     preds = []
     for p in paths:
