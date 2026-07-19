@@ -20,7 +20,7 @@ import numpy as np
 from ultralytics import YOLO
 
 from domino_synth.rectify import rectify
-from predict import load_pip_reader
+from predict import dedup_confident_duplicates, load_pip_reader
 
 CROP_W, CROP_H = 256, 512
 
@@ -49,6 +49,8 @@ def main():
                           device=args.device, verbose=False)[0]
         im = cv2.imread(str(p))
         kps = r.keypoints.xy.tolist() if r.keypoints is not None else []
+        _, _, kps = dedup_confident_duplicates(
+            r.boxes.xyxy.tolist(), r.boxes.conf.tolist(), kps)
         row = []
         for i, corners in enumerate(kps):
             if len(corners) != 4:
