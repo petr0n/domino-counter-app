@@ -46,11 +46,30 @@ def load_backgrounds(dir_path):
     return [cv2.imread(str(p)) for p in sorted(paths)]
 
 
+def load_hard_neg_backgrounds(dir_path):
+    """Real photos containing shapes that look tile-like but are NOT tiles
+    (e.g. face-down tile backs: blank rounded rectangle, no divider bar —
+    §7's face-down convention). Used exactly like a normal background: no
+    tile gets pasted to specifically avoid them, so the compositor's usual
+    scene-fill just leaves them unlabeled in whatever training images they
+    land in, teaching the detector these shapes aren't detection targets."""
+    return load_backgrounds(dir_path)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--num", type=int, default=200)
     ap.add_argument("--out", default="train/data/synth")
     ap.add_argument("--backgrounds", default=None)
+    ap.add_argument("--hard-neg-backgrounds", default=None,
+                    help="real photos of tile-like-but-not-tile shapes (e.g. "
+                         "face-down tile backs) mixed into the background "
+                         "pool, so those shapes end up unlabeled in whatever "
+                         "scenes they land in")
+    ap.add_argument("--hard-neg-reps", type=int, default=10,
+                    help="repeat each hard-neg background this many times in "
+                         "the pool — with only a few source photos, gives "
+                         "them meaningful sampling frequency")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--val-frac", type=float, default=0.1)
     ap.add_argument("--max-tiles", type=int, default=10)
@@ -77,6 +96,11 @@ def main():
         faces = load_face_sprites(args.faces)
         print(f"{len(faces)} Tier-1 face sprites")
     bgs = load_backgrounds(args.backgrounds)
+    if args.hard_neg_backgrounds:
+        hard_negs = load_hard_neg_backgrounds(args.hard_neg_backgrounds)
+        print(f"{len(hard_negs)} hard-negative background photos "
+              f"(x{args.hard_neg_reps} reps)")
+        bgs += hard_negs * args.hard_neg_reps
     if not bgs:
         print("WARNING: no backgrounds given — using procedural fallback "
               "textures (smoke-test only, not for M0 training)")
