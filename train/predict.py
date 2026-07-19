@@ -20,6 +20,50 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
+# Confident-duplicate cleanup (2026-07-19): the permissive NMS above (needed
+# so two genuinely touching tiles don't suppress each other) lets some
+# duplicate detections of the SAME physical tile survive too, when a
+# touching-cluster confuses the detector into proposing multiple boxes for
+# one tile. Measured directly off r.boxes.xyxy on 3 real eval photos with
+# confirmed duplicates: genuine touching-tile pairs sit at axis-aligned IoU
+# ~0.05-0.09 (they only share an edge); confirmed same-tile duplicate pairs
+# measured 0.65-0.73. 0.65 sits right at that boundary, so it only removes
+# confident duplicates and never touched a real touching-tile pair in the
+# cases checked — but it's a pairwise heuristic, not a fix for the
+# underlying detector confusion: one messy 3-box cluster (one real tile,
+# two bad duplicate boxes) had its worst box at only ~0.47-0.49 IoU against
+# its siblings, below this threshold, so one extra box survived uncaught
+# even after this pass (7 raw boxes -> 6, not the true 5). That residual
+# case needs better touching-tile training data (or the not-yet-built
+# review UI, §9.2) to fully resolve — going looser here risks merging real
+# distinct touching tiles instead.
+DUPLICATE_IOU_THRESHOLD = 0.65
+
+
+def _box_iou(a, b):
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    ix0, iy0 = max(ax0, bx0), max(ay0, by0)
+    ix1, iy1 = min(ax1, bx1), min(ay1, by1)
+    inter = max(0.0, ix1 - ix0) * max(0.0, iy1 - iy0)
+    union = (ax1 - ax0) * (ay1 - ay0) + (bx1 - bx0) * (by1 - by0) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def dedup_confident_duplicates(boxes, confs, keypoints, threshold=DUPLICATE_IOU_THRESHOLD):
+    """Drop the lower-confidence box of any pair whose axis-aligned IoU
+    exceeds `threshold` — see module-level comment for why this threshold
+    and its known limits."""
+    order = sorted(range(len(boxes)), key=lambda i: -confs[i])
+    kept = []
+    for i in order:
+        if any(_box_iou(boxes[i], boxes[j]) > threshold for j in kept):
+            continue
+        kept.append(i)
+    kept.sort()
+    return ([boxes[i] for i in kept], [confs[i] for i in kept],
+            [keypoints[i] for i in kept] if keypoints else [])
+
 
 JUNK_CLASS = 13  # keep in sync with train_pips.JUNK
 
@@ -169,8 +213,9 @@ def main():
         image = cv2.imread(str(p)) if read_pips else None
         tiles = []
         kps = r.keypoints.xy.tolist() if r.keypoints is not None else []
-        for i, (xyxy, conf) in enumerate(zip(r.boxes.xyxy.tolist(),
-                                             r.boxes.conf.tolist())):
+        boxes, confs, kps = dedup_confident_duplicates(
+            r.boxes.xyxy.tolist(), r.boxes.conf.tolist(), kps)
+        for i, (xyxy, conf) in enumerate(zip(boxes, confs)):
             x0, y0, x1, y1 = xyxy
             corners = kps[i] if i < len(kps) else []
             predicted = {"first": 0, "second": 0, "confidence": round(conf, 4)}
