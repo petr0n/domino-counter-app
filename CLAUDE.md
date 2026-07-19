@@ -136,13 +136,14 @@ while Phase 1's accuracy gates are open.
 Phase 1 build status: **M-1 through M1 gates are measured** (see
 `docs/build-plan-v2.md` §6 status notes) — M0 detection recall passed
 2026-07-16; M1's four targets (detection recall, per-half pip accuracy,
-identity, hand-total) are measured as of 2026-07-19 on a 59-photo/272-tile
+identity, hand-total) are measured as of 2026-07-19 on a 70-photo/350-tile
 eval corpus (grown from the original 49/194 floor via `eval/corpus_photos/`
 + `eval/corpus_truth.json` + `eval/corpus_merged.json`, same annotation
 schema as `eval/merge_truth.py` expects). Per-half pip accuracy is
-provisionally met (0.974 point estimate; CI lower bound not yet past 0.97 —
-more eval growth would confirm it). The ML models are built and iterating;
-Quick Scan UI and local storage are **still to be built** (M2 onward).
+provisionally met (0.978 point estimate; CI lower bound 0.965, not yet past
+0.97 — more eval growth would confirm it). The ML models are built and
+iterating; Quick Scan UI and local storage are **still to be built** (M2
+onward).
 
 **But `main` is not the whole history — check other branches before assuming
 something doesn't exist.** A prior OpenCV-heuristic scanner (pre-pivot) was

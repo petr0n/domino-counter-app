@@ -548,21 +548,24 @@ Build the minimal copy-paste/render pipeline (§4) + train a small tile detector
   actually uses.
 - Orientation/order accuracy reported.
 
-**Status 2026-07-19 (eval set grown to 59 photos/272 tiles, up from the 49/194
-floor):**
-- Detection recall **0.993** (CI 0.974–0.998, n=272) — **confirmed met** (≥0.95).
-- Per-half pip accuracy **0.974** (CI 0.957–0.985, n=540) — **provisionally
-  met** (point estimate clears 0.97; CI lower bound doesn't yet — not
-  confirmed met by the §6 CI rule).
-- Exact-tile identity **0.959** (CI 0.929–0.977, n=270) — clears 0.90 on both
+**Status 2026-07-19 (eval set grown to 70 photos/350 tiles, up from the 49/194
+floor, in two passes):**
+- Detection recall **0.994** (CI 0.979–0.998, n=350) — **confirmed met** (≥0.95).
+- Per-half pip accuracy **0.978** (CI 0.965–0.987, n=696) — **provisionally
+  met** (point estimate clears 0.97; CI lower bound (0.965) still just under
+  it — not confirmed met by the §6 CI rule, but the gap is narrowing as the
+  set grows).
+- Exact-tile identity **0.966** (CI 0.941–0.980, n=348) — clears 0.90 on both
   point estimate and CI, still directional per §6 until every identity has
   3–5+ occurrences.
-- Hand-total exact rate **0.814** (CI 0.696–0.893, n=59) — **confirmed met**
+- Hand-total exact rate **0.829** (CI 0.724–0.899, n=70) — **confirmed met**
   (≥0.65 pre-correction).
-- Caveat: the 10 newly-added photos' box/corner ground truth came from the
+- Caveat: the 21 newly-added photos' box/corner ground truth came from the
   trained tile detector's own output (spot-checked by eye, not an independent
-  method) — valid for pip-value accuracy (values were read independently) but
-  not a fresh independent check of detection recall/precision specifically.
+  method) — valid for pip-value accuracy (values were read independently
+  against the tile's color + dot-count, one confirmed correction found and
+  applied: a yellow/6 the model misread as navy/5) but not a fresh
+  independent check of detection recall/precision specifically.
 
 **Accuracy math — why review is load-bearing, not optional.** Exact-tile ≈
 (per-half)². At 0.97/half → ~0.94/tile. For a 7-tile hand, P(all correct) ≈
