@@ -14908,5 +14908,1627 @@
     }
    }
   ]
+ },
+ {
+  "imageId": "20260718_182750",
+  "imagePath": "eval/corpus_photos/20260718_182750.jpg",
+  "imageWidth": 2252,
+  "imageHeight": 4000,
+  "tiles": [
+   {
+    "tileId": "t00",
+    "identity": {
+     "first": 4,
+     "second": 1,
+     "display": "4/1",
+     "unorderedKey": "1-4"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1005.2352905273438,
+     "y": 2167.569091796875,
+     "width": 177.68658447265625,
+     "height": 358.7333984375
+    },
+    "corners": [
+     {
+      "x": 1165.9,
+      "y": 2525.6
+     },
+     {
+      "x": 1005.2,
+      "y": 2526.3
+     },
+     {
+      "x": 1022.4,
+      "y": 2167.6
+     },
+     {
+      "x": 1182.9,
+      "y": 2175.3
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 92.7
+    }
+   },
+   {
+    "tileId": "t01",
+    "identity": {
+     "first": 0,
+     "second": 6,
+     "display": "0/6",
+     "unorderedKey": "0-6"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1409.820068359375,
+     "y": 1800.905029296875,
+     "width": 166.814208984375,
+     "height": 327.756591796875
+    },
+    "corners": [
+     {
+      "x": 1576.6,
+      "y": 2128.7
+     },
+     {
+      "x": 1424.3,
+      "y": 2126.6
+     },
+     {
+      "x": 1409.8,
+      "y": 1802.7
+     },
+     {
+      "x": 1576.1,
+      "y": 1800.9
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 87.4
+    }
+   },
+   {
+    "tileId": "t02",
+    "identity": {
+     "first": 6,
+     "second": 6,
+     "display": "6/6",
+     "unorderedKey": "6-6"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 651.5877685546875,
+     "y": 1901.73779296875,
+     "width": 234.5408935546875,
+     "height": 360.804443359375
+    },
+    "corners": [
+     {
+      "x": 804.3,
+      "y": 2262.5
+     },
+     {
+      "x": 651.6,
+      "y": 2219.7
+     },
+     {
+      "x": 752.6,
+      "y": 1901.7
+     },
+     {
+      "x": 886.1,
+      "y": 1940.0
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 107.6
+    }
+   },
+   {
+    "tileId": "t03",
+    "identity": {
+     "first": 6,
+     "second": 10,
+     "display": "6/10",
+     "unorderedKey": "6-10"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 794.8510131835938,
+     "y": 2229.111328125,
+     "width": 193.84222412109375,
+     "height": 354.738037109375
+    },
+    "corners": [
+     {
+      "x": 969.1,
+      "y": 2574.3
+     },
+     {
+      "x": 794.9,
+      "y": 2583.8
+     },
+     {
+      "x": 806.8,
+      "y": 2229.1
+     },
+     {
+      "x": 988.7,
+      "y": 2230.4
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 91.9
+    }
+   },
+   {
+    "tileId": "t04",
+    "identity": {
+     "first": 7,
+     "second": 0,
+     "display": "7/0",
+     "unorderedKey": "0-7"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 862.5538330078125,
+     "y": 1868.9781494140625,
+     "width": 194.8851318359375,
+     "height": 343.4317626953125
+    },
+    "corners": [
+     {
+      "x": 998.2,
+      "y": 2212.4
+     },
+     {
+      "x": 862.6,
+      "y": 2185.4
+     },
+     {
+      "x": 929.7,
+      "y": 1869.0
+     },
+     {
+      "x": 1057.4,
+      "y": 1898.7
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 102.0
+    }
+   },
+   {
+    "tileId": "t05",
+    "identity": {
+     "first": 12,
+     "second": 12,
+     "display": "12/12",
+     "unorderedKey": "12-12"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 1174.1737060546875,
+     "y": 2143.363525390625,
+     "width": 343.033447265625,
+     "height": 175.30419921875
+    },
+    "corners": [
+     {
+      "x": 1517.2,
+      "y": 2303.5
+     },
+     {
+      "x": 1186.3,
+      "y": 2318.7
+     },
+     {
+      "x": 1174.2,
+      "y": 2173.7
+     },
+     {
+      "x": 1503.0,
+      "y": 2143.4
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 177.4
+    }
+   },
+   {
+    "tileId": "t06",
+    "identity": {
+     "first": 8,
+     "second": 3,
+     "display": "8/3",
+     "unorderedKey": "3-8"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1037.9898681640625,
+     "y": 1844.8065185546875,
+     "width": 202.9835205078125,
+     "height": 334.5687255859375
+    },
+    "corners": [
+     {
+      "x": 1200.1,
+      "y": 2179.4
+     },
+     {
+      "x": 1038.0,
+      "y": 2162.7
+     },
+     {
+      "x": 1092.9,
+      "y": 1844.8
+     },
+     {
+      "x": 1241.0,
+      "y": 1856.3
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 99.8
+    }
+   },
+   {
+    "tileId": "t07",
+    "identity": {
+     "first": 6,
+     "second": 5,
+     "display": "6/5",
+     "unorderedKey": "5-6"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1225.7655029296875,
+     "y": 1807.3692626953125,
+     "width": 197.7763671875,
+     "height": 363.9344482421875
+    },
+    "corners": [
+     {
+      "x": 1423.5,
+      "y": 2128.6
+     },
+     {
+      "x": 1254.8,
+      "y": 2171.3
+     },
+     {
+      "x": 1225.8,
+      "y": 1826.4
+     },
+     {
+      "x": 1396.5,
+      "y": 1807.4
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 85.2
+    }
+   }
+  ]
+ },
+ {
+  "imageId": "20260718_182756",
+  "imagePath": "eval/corpus_photos/20260718_182756.jpg",
+  "imageWidth": 2252,
+  "imageHeight": 4000,
+  "tiles": [
+   {
+    "tileId": "t00",
+    "identity": {
+     "first": 6,
+     "second": 10,
+     "display": "6/10",
+     "unorderedKey": "6-10"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 340.82147216796875,
+     "y": 2010.758056640625,
+     "width": 520.2334594726562,
+     "height": 692.66748046875
+    },
+    "corners": [
+     {
+      "x": 715.4,
+      "y": 2703.4
+     },
+     {
+      "x": 340.8,
+      "y": 2654.9
+     },
+     {
+      "x": 526.6,
+      "y": 2010.8
+     },
+     {
+      "x": 861.1,
+      "y": 2055.9
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 106.1
+    }
+   },
+   {
+    "tileId": "t01",
+    "identity": {
+     "first": 6,
+     "second": 6,
+     "display": "6/6",
+     "unorderedKey": "6-6"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 185.03897094726562,
+     "y": 1553.577392578125,
+     "width": 523.3459777832031,
+     "height": 540.640380859375
+    },
+    "corners": [
+     {
+      "x": 453.5,
+      "y": 2094.2
+     },
+     {
+      "x": 185.0,
+      "y": 2010.5
+     },
+     {
+      "x": 462.1,
+      "y": 1553.6
+     },
+     {
+      "x": 708.4,
+      "y": 1623.0
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 121.2
+    }
+   },
+   {
+    "tileId": "t02",
+    "identity": {
+     "first": 0,
+     "second": 6,
+     "display": "0/6",
+     "unorderedKey": "0-6"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1650.9420166015625,
+     "y": 1380.394775390625,
+     "width": 417.5499267578125,
+     "height": 475.918212890625
+    },
+    "corners": [
+     {
+      "x": 2068.5,
+      "y": 1808.2
+     },
+     {
+      "x": 1746.1,
+      "y": 1856.3
+     },
+     {
+      "x": 1650.9,
+      "y": 1407.4
+     },
+     {
+      "x": 1968.2,
+      "y": 1380.4
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 78.0
+    }
+   },
+   {
+    "tileId": "t03",
+    "identity": {
+     "first": 4,
+     "second": 1,
+     "display": "4/1",
+     "unorderedKey": "1-4"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 851.4851684570312,
+     "y": 1900.637451171875,
+     "width": 421.51727294921875,
+     "height": 668.44091796875
+    },
+    "corners": [
+     {
+      "x": 1206.7,
+      "y": 2569.1
+     },
+     {
+      "x": 851.5,
+      "y": 2541.5
+     },
+     {
+      "x": 932.9,
+      "y": 1900.6
+     },
+     {
+      "x": 1273.0,
+      "y": 1925.1
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 97.2
+    }
+   },
+   {
+    "tileId": "t04",
+    "identity": {
+     "first": 8,
+     "second": 3,
+     "display": "8/3",
+     "unorderedKey": "3-8"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 959.7074584960938,
+     "y": 1477.151611328125,
+     "width": 399.82525634765625,
+     "height": 445.0843505859375
+    },
+    "corners": [
+     {
+      "x": 1257.4,
+      "y": 1922.2
+     },
+     {
+      "x": 959.7,
+      "y": 1905.1
+     },
+     {
+      "x": 1070.9,
+      "y": 1477.2
+     },
+     {
+      "x": 1359.5,
+      "y": 1510.7
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 104.6
+    }
+   },
+   {
+    "tileId": "t05",
+    "identity": {
+     "first": 12,
+     "second": 12,
+     "display": "12/12",
+     "unorderedKey": "12-12"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 1241.7078857421875,
+     "y": 1813.6351318359375,
+     "width": 757.4300537109375,
+     "height": 375.3575439453125
+    },
+    "corners": [
+     {
+      "x": 1999.1,
+      "y": 2113.5
+     },
+     {
+      "x": 1269.3,
+      "y": 2189.0
+     },
+     {
+      "x": 1241.7,
+      "y": 1873.5
+     },
+     {
+      "x": 1949.7,
+      "y": 1813.6
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 174.1
+    }
+   },
+   {
+    "tileId": "t06",
+    "identity": {
+     "first": 6,
+     "second": 5,
+     "display": "6/5",
+     "unorderedKey": "5-6"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1350.6824951171875,
+     "y": 1417.539794921875,
+     "width": 379.43359375,
+     "height": 442.8182373046875
+    },
+    "corners": [
+     {
+      "x": 1730.1,
+      "y": 1829.5
+     },
+     {
+      "x": 1420.5,
+      "y": 1860.4
+     },
+     {
+      "x": 1350.7,
+      "y": 1445.0
+     },
+     {
+      "x": 1642.0,
+      "y": 1417.5
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 80.5
+    }
+   },
+   {
+    "tileId": "t07",
+    "identity": {
+     "first": 7,
+     "second": 0,
+     "display": "7/0",
+     "unorderedKey": "0-7"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 594.6531982421875,
+     "y": 1494.1387939453125,
+     "width": 450.0867919921875,
+     "height": 482.270263671875
+    },
+    "corners": [
+     {
+      "x": 866.8,
+      "y": 1976.4
+     },
+     {
+      "x": 594.7,
+      "y": 1930.6
+     },
+     {
+      "x": 769.2,
+      "y": 1494.1
+     },
+     {
+      "x": 1044.7,
+      "y": 1539.3
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 111.8
+    }
+   }
+  ]
+ },
+ {
+  "imageId": "20260718_182822",
+  "imagePath": "eval/corpus_photos/20260718_182822.jpg",
+  "imageWidth": 2252,
+  "imageHeight": 4000,
+  "tiles": [
+   {
+    "tileId": "t00",
+    "identity": {
+     "first": 11,
+     "second": 1,
+     "display": "11/1",
+     "unorderedKey": "1-11"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1581.62255859375,
+     "y": 1387.1651611328125,
+     "width": 532.44677734375,
+     "height": 1018.5894775390625
+    },
+    "corners": [
+     {
+      "x": 2087.8,
+      "y": 2405.8
+     },
+     {
+      "x": 1596.7,
+      "y": 2400.5
+     },
+     {
+      "x": 1581.6,
+      "y": 1401.7
+     },
+     {
+      "x": 2114.1,
+      "y": 1387.2
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 89.1
+    }
+   },
+   {
+    "tileId": "t01",
+    "identity": {
+     "first": 3,
+     "second": 7,
+     "display": "3/7",
+     "unorderedKey": "3-7"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1096.8919677734375,
+     "y": 1420.1417236328125,
+     "width": 500.4630126953125,
+     "height": 1006.5401611328125
+    },
+    "corners": [
+     {
+      "x": 1597.4,
+      "y": 2426.7
+     },
+     {
+      "x": 1096.9,
+      "y": 2416.0
+     },
+     {
+      "x": 1105.2,
+      "y": 1440.8
+     },
+     {
+      "x": 1595.6,
+      "y": 1420.1
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 90.5
+    }
+   },
+   {
+    "tileId": "t02",
+    "identity": {
+     "first": 12,
+     "second": 7,
+     "display": "12/7",
+     "unorderedKey": "7-12"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 582.3279418945312,
+     "y": 1411.39306640625,
+     "width": 535.4866333007812,
+     "height": 1015.58740234375
+    },
+    "corners": [
+     {
+      "x": 1077.5,
+      "y": 2427.0
+     },
+     {
+      "x": 582.3,
+      "y": 2400.0
+     },
+     {
+      "x": 623.7,
+      "y": 1411.4
+     },
+     {
+      "x": 1117.8,
+      "y": 1414.2
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 92.4
+    }
+   },
+   {
+    "tileId": "t03",
+    "identity": {
+     "first": 10,
+     "second": 3,
+     "display": "10/3",
+     "unorderedKey": "3-10"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 110.56053924560547,
+     "y": 1416.495361328125,
+     "width": 520.531379699707,
+     "height": 1012.6630859375
+    },
+    "corners": [
+     {
+      "x": 590.6,
+      "y": 2429.2
+     },
+     {
+      "x": 110.6,
+      "y": 2417.4
+     },
+     {
+      "x": 175.4,
+      "y": 1416.5
+     },
+     {
+      "x": 631.1,
+      "y": 1453.6
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 93.7
+    }
+   }
+  ]
+ },
+ {
+  "imageId": "20260718_182832",
+  "imagePath": "eval/corpus_photos/20260718_182832.jpg",
+  "imageWidth": 2252,
+  "imageHeight": 4000,
+  "tiles": [
+   {
+    "tileId": "t00",
+    "identity": {
+     "first": 5,
+     "second": 8,
+     "display": "5/8",
+     "unorderedKey": "5-8"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 359.28460693359375,
+     "y": 1275.12255859375,
+     "width": 748.8588256835938,
+     "height": 1486.056396484375
+    },
+    "corners": [
+     {
+      "x": 1069.7,
+      "y": 2723.5
+     },
+     {
+      "x": 359.3,
+      "y": 2761.2
+     },
+     {
+      "x": 432.2,
+      "y": 1328.7
+     },
+     {
+      "x": 1108.1,
+      "y": 1275.1
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 92.9
+    }
+   },
+   {
+    "tileId": "t01",
+    "identity": {
+     "first": 0,
+     "second": 0,
+     "display": "0/0",
+     "unorderedKey": "0-0"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1206.7130126953125,
+     "y": 1431.5194091796875,
+     "width": 709.7564697265625,
+     "height": 1446.6351318359375
+    },
+    "corners": [
+     {
+      "x": 1916.5,
+      "y": 2878.2
+     },
+     {
+      "x": 1251.7,
+      "y": 2878.0
+     },
+     {
+      "x": 1206.7,
+      "y": 1476.6
+     },
+     {
+      "x": 1854.5,
+      "y": 1431.5
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 88.2
+    }
+   }
+  ]
+ },
+ {
+  "imageId": "20260718_182847",
+  "imagePath": "eval/corpus_photos/20260718_182847.jpg",
+  "imageWidth": 2252,
+  "imageHeight": 4000,
+  "tiles": [
+   {
+    "tileId": "t00",
+    "identity": {
+     "first": 8,
+     "second": 12,
+     "display": "8/12",
+     "unorderedKey": "8-12"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1667.302490234375,
+     "y": 1579.90966796875,
+     "width": 349.9443359375,
+     "height": 593.568603515625
+    },
+    "corners": [
+     {
+      "x": 2017.2,
+      "y": 2169.2
+     },
+     {
+      "x": 1709.3,
+      "y": 2173.5
+     },
+     {
+      "x": 1667.3,
+      "y": 1579.9
+     },
+     {
+      "x": 1993.6,
+      "y": 1581.7
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 86.0
+    }
+   },
+   {
+    "tileId": "t01",
+    "identity": {
+     "first": 6,
+     "second": 7,
+     "display": "6/7",
+     "unorderedKey": "6-7"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1354.5889892578125,
+     "y": 1544.3653564453125,
+     "width": 323.5860595703125,
+     "height": 639.8856201171875
+    },
+    "corners": [
+     {
+      "x": 1678.2,
+      "y": 2164.9
+     },
+     {
+      "x": 1355.7,
+      "y": 2184.3
+     },
+     {
+      "x": 1354.6,
+      "y": 1565.9
+     },
+     {
+      "x": 1651.7,
+      "y": 1544.4
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 89.9
+    }
+   },
+   {
+    "tileId": "t02",
+    "identity": {
+     "first": 10,
+     "second": 10,
+     "display": "10/10",
+     "unorderedKey": "10-10"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1022.533447265625,
+     "y": 1590.7662353515625,
+     "width": 322.554443359375,
+     "height": 602.9693603515625
+    },
+    "corners": [
+     {
+      "x": 1345.1,
+      "y": 2185.5
+     },
+     {
+      "x": 1022.5,
+      "y": 2193.7
+     },
+     {
+      "x": 1041.7,
+      "y": 1596.6
+     },
+     {
+      "x": 1341.2,
+      "y": 1590.8
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 91.8
+    }
+   },
+   {
+    "tileId": "t03",
+    "identity": {
+     "first": 11,
+     "second": 9,
+     "display": "11/9",
+     "unorderedKey": "9-11"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 16.5797119140625,
+     "y": 1585.3497314453125,
+     "width": 421.5558776855469,
+     "height": 631.6468505859375
+    },
+    "corners": [
+     {
+      "x": 341.5,
+      "y": 2217.0
+     },
+     {
+      "x": 16.6,
+      "y": 2196.8
+     },
+     {
+      "x": 112.3,
+      "y": 1585.3
+     },
+     {
+      "x": 438.1,
+      "y": 1611.7
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 98.9
+    }
+   },
+   {
+    "tileId": "t04",
+    "identity": {
+     "first": 6,
+     "second": 4,
+     "display": "6/4",
+     "unorderedKey": "4-6"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 358.24566650390625,
+     "y": 1585.298583984375,
+     "width": 381.88665771484375,
+     "height": 602.35400390625
+    },
+    "corners": [
+     {
+      "x": 683.9,
+      "y": 2187.7
+     },
+     {
+      "x": 358.2,
+      "y": 2178.3
+     },
+     {
+      "x": 424.2,
+      "y": 1585.3
+     },
+     {
+      "x": 740.1,
+      "y": 1590.1
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 96.3
+    }
+   },
+   {
+    "tileId": "t05",
+    "identity": {
+     "first": 2,
+     "second": 1,
+     "display": "2/1",
+     "unorderedKey": "1-2"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 685.1311645507812,
+     "y": 1594.1610107421875,
+     "width": 362.48846435546875,
+     "height": 605.8494873046875
+    },
+    "corners": [
+     {
+      "x": 1009.1,
+      "y": 2200.0
+     },
+     {
+      "x": 685.1,
+      "y": 2190.2
+     },
+     {
+      "x": 720.2,
+      "y": 1594.2
+     },
+     {
+      "x": 1047.6,
+      "y": 1598.2
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 93.4
+    }
+   }
+  ]
+ },
+ {
+  "imageId": "20260718_182913",
+  "imagePath": "eval/corpus_photos/20260718_182913.jpg",
+  "imageWidth": 2252,
+  "imageHeight": 4000,
+  "tiles": [
+   {
+    "tileId": "t00",
+    "identity": {
+     "first": 3,
+     "second": 9,
+     "display": "3/9",
+     "unorderedKey": "3-9"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 838.3526000976562,
+     "y": 1718.8984375,
+     "width": 596.2511596679688,
+     "height": 302.7960205078125
+    },
+    "corners": [
+     {
+      "x": 1397.8,
+      "y": 2021.7
+     },
+     {
+      "x": 838.4,
+      "y": 1982.6
+     },
+     {
+      "x": 876.0,
+      "y": 1718.9
+     },
+     {
+      "x": 1434.6,
+      "y": 1746.1
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 4.0
+    }
+   },
+   {
+    "tileId": "t01",
+    "identity": {
+     "first": 4,
+     "second": 8,
+     "display": "4/8",
+     "unorderedKey": "4-8"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 783.87890625,
+     "y": 1952.6920166015625,
+     "width": 591.0028076171875,
+     "height": 314.8580322265625
+    },
+    "corners": [
+     {
+      "x": 1346.6,
+      "y": 2267.6
+     },
+     {
+      "x": 783.9,
+      "y": 2229.9
+     },
+     {
+      "x": 847.7,
+      "y": 1952.7
+     },
+     {
+      "x": 1374.9,
+      "y": 1979.2
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 3.8
+    }
+   }
+  ]
+ },
+ {
+  "imageId": "20260718_182942",
+  "imagePath": "eval/corpus_photos/20260718_182942.jpg",
+  "imageWidth": 4000,
+  "imageHeight": 2252,
+  "tiles": [
+   {
+    "tileId": "t00",
+    "identity": {
+     "first": 1,
+     "second": 1,
+     "display": "1/1",
+     "unorderedKey": "1-1"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 1803.1025390625,
+     "y": 1150.6197509765625,
+     "width": 1241.1259765625,
+     "height": 1038.0223388671875
+    },
+    "corners": [
+     {
+      "x": 2041.3,
+      "y": 2188.6
+     },
+     {
+      "x": 1803.1,
+      "y": 1768.6
+     },
+     {
+      "x": 2763.4,
+      "y": 1150.6
+     },
+     {
+      "x": 3044.2,
+      "y": 1644.6
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 147.2
+    }
+   },
+   {
+    "tileId": "t01",
+    "identity": {
+     "first": 6,
+     "second": 8,
+     "display": "6/8",
+     "unorderedKey": "6-8"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 748.8060302734375,
+     "y": 0.0,
+     "width": 1027.6641845703125,
+     "height": 1076.860595703125
+    },
+    "corners": [
+     {
+      "x": 998.7,
+      "y": 1076.9
+     },
+     {
+      "x": 748.8,
+      "y": 692.4
+     },
+     {
+      "x": 1516.5,
+      "y": 0.0
+     },
+     {
+      "x": 1776.5,
+      "y": 394.9
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 138.0
+    }
+   },
+   {
+    "tileId": "t02",
+    "identity": {
+     "first": 7,
+     "second": 9,
+     "display": "7/9",
+     "unorderedKey": "7-9"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1520.305908203125,
+     "y": 583.6847534179688,
+     "width": 1045.56689453125,
+     "height": 1099.6847534179688
+    },
+    "corners": [
+     {
+      "x": 1856.7,
+      "y": 1683.4
+     },
+     {
+      "x": 1520.3,
+      "y": 1342.0
+     },
+     {
+      "x": 2252.3,
+      "y": 583.7
+     },
+     {
+      "x": 2565.9,
+      "y": 1047.0
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 134.0
+    }
+   },
+   {
+    "tileId": "t03",
+    "identity": {
+     "first": 0,
+     "second": 12,
+     "display": "0/12",
+     "unorderedKey": "0-12"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 1163.4310302734375,
+     "y": 320.6426086425781,
+     "width": 1289.8341064453125,
+     "height": 1217.6246032714844
+    },
+    "corners": [
+     {
+      "x": 1496.8,
+      "y": 1538.3
+     },
+     {
+      "x": 1163.4,
+      "y": 1093.0
+     },
+     {
+      "x": 2051.9,
+      "y": 320.6
+     },
+     {
+      "x": 2453.3,
+      "y": 845.9
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 139.0
+    }
+   }
+  ]
+ },
+ {
+  "imageId": "20260718_183003",
+  "imagePath": "eval/corpus_photos/20260718_183003.jpg",
+  "imageWidth": 2252,
+  "imageHeight": 4000,
+  "tiles": [
+   {
+    "tileId": "t00",
+    "identity": {
+     "first": 9,
+     "second": 1,
+     "display": "9/1",
+     "unorderedKey": "1-9"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 893.5106201171875,
+     "y": 2220.091796875,
+     "width": 428.8116455078125,
+     "height": 197.088623046875
+    },
+    "corners": [
+     {
+      "x": 1322.3,
+      "y": 2416.4
+     },
+     {
+      "x": 893.5,
+      "y": 2417.2
+     },
+     {
+      "x": 913.8,
+      "y": 2220.1
+     },
+     {
+      "x": 1309.2,
+      "y": 2238.4
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 179.9
+    }
+   },
+   {
+    "tileId": "t01",
+    "identity": {
+     "first": 7,
+     "second": 8,
+     "display": "7/8",
+     "unorderedKey": "7-8"
+    },
+    "observedOrder": {
+     "firstMeaning": "top",
+     "secondMeaning": "bottom"
+    },
+    "bbox": {
+     "x": 1308.1920166015625,
+     "y": 1926.4169921875,
+     "width": 204.96923828125,
+     "height": 381.1611328125
+    },
+    "corners": [
+     {
+      "x": 1503.4,
+      "y": 2307.6
+     },
+     {
+      "x": 1308.2,
+      "y": 2290.5
+     },
+     {
+      "x": 1314.8,
+      "y": 1934.6
+     },
+     {
+      "x": 1513.2,
+      "y": 1926.4
+     }
+    ],
+    "orientation": {
+     "layout": "vertical",
+     "rotationDegrees": 91.1
+    }
+   },
+   {
+    "tileId": "t02",
+    "identity": {
+     "first": 4,
+     "second": 12,
+     "display": "4/12",
+     "unorderedKey": "4-12"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 929.362060546875,
+     "y": 1880.62744140625,
+     "width": 382.33349609375,
+     "height": 170.020263671875
+    },
+    "corners": [
+     {
+      "x": 1308.7,
+      "y": 2050.6
+     },
+     {
+      "x": 929.4,
+      "y": 2045.8
+     },
+     {
+      "x": 930.1,
+      "y": 1880.7
+     },
+     {
+      "x": 1311.7,
+      "y": 1880.6
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 0.7
+    }
+   },
+   {
+    "tileId": "t03",
+    "identity": {
+     "first": 4,
+     "second": 2,
+     "display": "4/2",
+     "unorderedKey": "2-4"
+    },
+    "observedOrder": {
+     "firstMeaning": "left",
+     "secondMeaning": "right"
+    },
+    "bbox": {
+     "x": 922.859619140625,
+     "y": 2052.742431640625,
+     "width": 393.427978515625,
+     "height": 181.78173828125
+    },
+    "corners": [
+     {
+      "x": 1316.3,
+      "y": 2234.5
+     },
+     {
+      "x": 923.2,
+      "y": 2217.4
+     },
+     {
+      "x": 922.9,
+      "y": 2052.7
+     },
+     {
+      "x": 1301.7,
+      "y": 2062.0
+     }
+    ],
+    "orientation": {
+     "layout": "horizontal",
+     "rotationDegrees": 2.5
+    }
+   }
+  ]
  }
 ]

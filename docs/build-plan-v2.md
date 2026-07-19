@@ -548,24 +548,33 @@ Build the minimal copy-paste/render pipeline (§4) + train a small tile detector
   actually uses.
 - Orientation/order accuracy reported.
 
-**Status 2026-07-19 (eval set grown to 70 photos/350 tiles, up from the 49/194
-floor, in two passes):**
-- Detection recall **0.994** (CI 0.979–0.998, n=350) — **confirmed met** (≥0.95).
-- Per-half pip accuracy **0.978** (CI 0.965–0.987, n=696) — **provisionally
-  met** (point estimate clears 0.97; CI lower bound (0.965) still just under
-  it — not confirmed met by the §6 CI rule, but the gap is narrowing as the
-  set grows).
-- Exact-tile identity **0.966** (CI 0.941–0.980, n=348) — clears 0.90 on both
+**Status 2026-07-19 (eval set grown to 78 photos/388 tiles, up from the 49/194
+floor, in three passes):**
+- Detection recall **0.995** (CI 0.981–0.999, n=388) — **confirmed met** (≥0.95).
+- Per-half pip accuracy **0.973** (CI 0.959–0.982, n=772) — **provisionally
+  met** (point estimate clears 0.97; CI lower bound 0.959 — not confirmed met
+  by the §6 CI rule). Slipped slightly from the prior pass's 0.978/0.965 —
+  the third batch got more rigorous per-tile review (full-resolution crop
+  checks, not just the compressed contact sheet) and surfaced more real
+  model errors than the shallower first two passes caught. Treat this as the
+  more trustworthy estimate, not a regression in the model.
+- Exact-tile identity **0.956** (CI 0.931–0.972, n=386) — clears 0.90 on both
   point estimate and CI, still directional per §6 until every identity has
   3–5+ occurrences.
-- Hand-total exact rate **0.829** (CI 0.724–0.899, n=70) — **confirmed met**
+- Hand-total exact rate **0.782** (CI 0.678–0.859, n=78) — **confirmed met**
   (≥0.65 pre-correction).
-- Caveat: the 21 newly-added photos' box/corner ground truth came from the
-  trained tile detector's own output (spot-checked by eye, not an independent
-  method) — valid for pip-value accuracy (values were read independently
-  against the tile's color + dot-count, one confirmed correction found and
-  applied: a yellow/6 the model misread as navy/5) but not a fresh
-  independent check of detection recall/precision specifically.
+- **Data-quality finding, not just a value-accuracy one:** rigorous per-tile
+  review of the third batch caught 2 cases the shallow pass missed —
+  a detector false positive (background wood grain boxed as a tile) and a
+  duplicate detection (two overlapping boxes for one physical tile, an NMS
+  gap on touching tiles) — both excluded from ground truth rather than
+  guessed at. Same family of issue as the touching-tile corner-precision fix
+  in #161; worth a closer look if precision/duplicate-detection matters more
+  as this moves toward product integration.
+- Caveat unchanged from prior passes: box/corner ground truth for newly-added
+  photos comes from the trained tile detector's own output (spot-checked by
+  eye), valid for pip-value accuracy but not an independent detection-recall
+  re-check.
 
 **Accuracy math — why review is load-bearing, not optional.** Exact-tile ≈
 (per-half)². At 0.97/half → ~0.94/tile. For a 7-tile hand, P(all correct) ≈

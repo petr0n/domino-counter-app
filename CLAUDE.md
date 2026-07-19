@@ -140,7 +140,7 @@ identity, hand-total) are measured as of 2026-07-19 on a 70-photo/350-tile
 eval corpus (grown from the original 49/194 floor via `eval/corpus_photos/`
 + `eval/corpus_truth.json` + `eval/corpus_merged.json`, same annotation
 schema as `eval/merge_truth.py` expects). Per-half pip accuracy is
-provisionally met (0.978 point estimate; CI lower bound 0.965, not yet past
+provisionally met (0.973 point estimate; CI lower bound 0.959, not yet past
 0.97 — more eval growth would confirm it). The ML models are built and
 iterating; Quick Scan UI and local storage are **still to be built** (M2
 onward).
