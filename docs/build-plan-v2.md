@@ -576,6 +576,39 @@ floor, in three passes):**
   eye), valid for pip-value accuracy but not an independent detection-recall
   re-check.
 
+**Grey-pip investigation, 2026-07-22 (correction of a prior misdiagnosis):**
+a single real photo (one 4/4 grey-pip tile, `20260718_183256.jpg`) read 0/0,
+which #166 attributed to a pip-detector color blind spot — the synthetic
+trainer's `_pip_color()` never sampled desaturated/grey hues (saturation
+floor 0.2), so the working theory was that grey pips needed to be added to
+the synthetic color range. Two independent widened-color-range fixes were
+built and each trained fully (4 total 60-epoch runs across MPS/CPU) — both
+collapsed real-photo per-half accuracy to ~0.13–0.16 despite perfect
+synthetic-val metrics (mAP50 0.995) every time, an unrelated regression
+introduced by the fix itself. A control retrain on the untouched dataset
+reproduced ~0.95, isolating the collapse to the color-range change, not MPS,
+not crash/resume, not other drift. Rather than abandon the pip-color theory
+as merely counterproductive, the underlying premise was checked directly:
+the *unmodified* baseline model (`runs/detect/pipdet_hn`) was run against
+all 3 real photos containing true 4/4 grey tiles. It correctly read 4/4 at
+0.88–0.89 confidence on **2 of 3** — grey pips are not a color blind spot.
+The 1 failure is `20260718_183256.jpg` specifically: a steep viewing angle
+under overhead light with strong specular glare washing the pips toward
+white, visibly different from the other two (crisp, well-shaded) photos —
+a lighting/glare problem, not a hue the model never saw. No fix was shipped;
+`render.py` is unchanged from the validated baseline. If pursued further,
+the correct lever is glare-specific (stronger/more frequent specular
+highlight simulation in synthetic training, or app-level capture guidance
+to avoid steep angles under bright overhead light), not the pip color
+range. One tile out of ~390 in the corpus; current baseline metrics above
+already account for this miss and clear/provisionally-clear their gates.
+A reusable side-effect of this investigation: `train/autoresume_pip_train.py`,
+a supervisor that health-checks a training checkpoint and auto-resumes on
+crash — added after the PyTorch MPS backend was observed to crash silently
+(no traceback, no OOM) roughly every 10–20 epochs on long training runs on
+this machine (confirmed unrelated to data/correctness: identical runs are
+stable on CPU).
+
 **Accuracy math — why review is load-bearing, not optional.** Exact-tile ≈
 (per-half)². At 0.97/half → ~0.94/tile. For a 7-tile hand, P(all correct) ≈
 0.94⁷ ≈ **0.65**. So even a strong model gets a full hand perfectly only ~2 of 3

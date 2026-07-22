@@ -173,7 +173,13 @@ still valuable:
   `generate.py` (YOLO-Pose dataset CLI), `train_m0.py` (detector; pins
   mirror/rotate augs to 0 — winding is image-frame-dependent),
   `train_pips.py` (13-way per-half CNN), `predict.py` (full pipeline →
-  scorer-format JSON). Setup/usage: `train/README.md`.
+  scorer-format JSON), `train_pip_detector.py` (pip-detector YOLO trainer),
+  `autoresume_pip_train.py` (health-checks a training checkpoint and
+  auto-resumes on crash — the PyTorch MPS backend crashes silently, no
+  traceback/OOM, roughly every 10-20 epochs on long runs on this machine;
+  confirmed unrelated to data/correctness, identical runs are stable on
+  CPU; see build-plan-v2.md's 2026-07-22 grey-pip note). Setup/usage:
+  `train/README.md`.
 - `eval/score.py` — §7 scoring harness (`--self-test` runs its fixtures);
   `eval/merge_truth.py` — merges `eval/corpus_truth.json` (recovered, tracked)
   with the annotation export into the §11 eval JSON; `eval/annotate.html` —
