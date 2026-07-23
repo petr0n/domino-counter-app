@@ -880,7 +880,7 @@ available in a browser/harness context) — it's verified end-to-end by
 Task 10's parity check. Write it directly against the exact thresholds
 verified in the Global Constraints section above.
 
-- [ ] **Step 1: Write the implementation**
+- [x] **Step 1: Write the implementation**
 
 ```js
 // scanner/index.js
@@ -999,7 +999,7 @@ export async function scanImage(imageData, canvasFactory) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add scanner/index.js
