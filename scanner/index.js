@@ -14,8 +14,20 @@ const PIP_IMGSZ = 384, PIP_CONF = 0.85, PIP_NMS_IOU = 0.7;
 let tileSession = null, pipSession = null;
 
 export async function init({ tileModelUrl, pipModelUrl }) {
-  tileSession = await ort.InferenceSession.create(tileModelUrl);
-  pipSession = await ort.InferenceSession.create(pipModelUrl);
+  // Explicitly force the WASM+SIMD, single-threaded path §8 requires (the
+  // deliberate baseline: multithreaded WASM needs SharedArrayBuffer, which
+  // needs COOP/COEP response headers GitHub Pages can't set). Without this,
+  // ort.env.wasm.numThreads defaults to 0 (auto-detect), which tries to
+  // multithread via SharedArrayBuffer and silently falls back when it's
+  // unavailable -- a real measured 2026-07-23 perf finding (~110ms/inference
+  // on a Galaxy S25+, ~2.5x the plan's ~40ms anchor) traced to this default
+  // never having been overridden, not to the surrounding JS (which measured
+  // at 15-25ms/step, not the bottleneck).
+  ort.env.wasm.numThreads = 1;
+  ort.env.wasm.simd = true;
+  const opts = { executionProviders: ['wasm'] };
+  tileSession = await ort.InferenceSession.create(tileModelUrl, opts);
+  pipSession = await ort.InferenceSession.create(pipModelUrl, opts);
 }
 
 function imageDataToTensor(imageData) {
