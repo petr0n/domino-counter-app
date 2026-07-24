@@ -1217,7 +1217,7 @@ git commit -m "Add throwaway harness.html for M2 parity check + phone perf probe
 - Consumes: `runs/parity_reference.json` (Task 8), a JSON export of the
   harness's own results (Task 9, copy-pasted or saved from the page)
 
-- [ ] **Step 1: Run the harness on the exact parity photo set**
+- [x] **Step 1: Run the harness on the exact parity photo set**
 
 Run: `.venv/bin/python3 -c "import json; print(' '.join(json.load(open('train/data/parity_photos.json'))))"`
 to list the chosen photo IDs, then in the browser (harness open at
@@ -1227,7 +1227,7 @@ to list the chosen photo IDs, then in the browser (harness open at
 Expected: the page logs a JSON blob at the end. Copy it and save as
 `runs/harness_output.json` (a plain `{imageId: [...]}` object).
 
-- [ ] **Step 2: Write the comparison script**
+- [x] **Step 2: Write the comparison script**
 
 ```python
 #!/usr/bin/env python3
@@ -1265,7 +1265,7 @@ for image_id, ref_tiles in reference.items():
 print(f"\n{mismatches} mismatches across {len(reference)} photos")
 ```
 
-- [ ] **Step 3: Run it and interpret**
+- [x] **Step 3: Run it and interpret**
 
 Run: `.venv/bin/python train/compare_parity.py`
 
@@ -1283,7 +1283,7 @@ re-run Steps 1-3 until `0 mismatches` (or a small, understood, documented
 residual — e.g. a single tile at a known-hard angle already flagged
 elsewhere in the eval corpus).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add train/compare_parity.py
