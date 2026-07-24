@@ -1301,7 +1301,7 @@ residual — do not commit with silent unexplained mismatches.)
 
 **Interfaces:** none — this task produces a measurement, not code.
 
-- [ ] **Step 1: Serve the harness reachable from a phone on the same network**
+- [x] **Step 1: Serve the harness reachable from a phone on the same network**
 
 Run: `cd /Users/peterabeln/Documents/github/petr0n/domino-counter-app && python3 -m http.server 8765 --bind 0.0.0.0`
 
@@ -1312,12 +1312,12 @@ Find the Mac's local IP (`ipconfig getifaddr en0` on macOS) and note the URL:
 file upload, not the live camera — plain HTTP over the local network is
 fine for this probe. Camera-specific HTTPS requirements are M3's concern.)
 
-- [ ] **Step 2: Open on the phone and run**
+- [x] **Step 2: Open on the phone and run**
 
 Open the URL on your phone's browser, select the same parity photo set
 (or a few representative ones) via the file input, let it run.
 
-- [ ] **Step 3: Record the results**
+- [x] **Step 3: Record the results**
 
 ```markdown
 # M2 phone performance probe — 2026-07-23
@@ -1345,7 +1345,7 @@ multi-tile photo runs the pip detector once per tile), note that in the
 write-up and estimate the per-stage breakdown from the timing if possible
 (e.g., single-tile photos isolate detection-pass-only timing cleanly).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 mkdir -p docs/superpowers/notes
