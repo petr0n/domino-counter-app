@@ -11,3 +11,4 @@ train/data/
 __pycache__/
 runs/
 *.pt
+.superpowers/
