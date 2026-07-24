@@ -105,8 +105,13 @@ function bilinear(src, x0, y0, fx, fy, ch) {
   return v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy;
 }
 
-// src: {data: Uint8ClampedArray (RGBA), width, height}. Returns a
-// RECT_W x RECT_H RGBA image in the same shape.
+// src: {data: Uint8ClampedArray (RGBA), width, height}. Returns a real
+// browser ImageData (RECT_W x RECT_H RGBA) -- NOT a plain {data,width,height}
+// lookalike. Downstream (letterboxImage -> ctx.putImageData) requires an
+// actual ImageData instance; a duck-typed object throws
+// "parameter 1 is not of type 'ImageData'" (found via manual browser
+// testing 2026-07-23 -- this function has no Node unit test since it needs
+// real pixel data, so this only surfaces when actually run in a browser).
 export function warpPerspective(src, H) {
   const out = new Uint8ClampedArray(RECT_W * RECT_H * 4);
   for (let oy = 0; oy < RECT_H; oy++) {
@@ -118,7 +123,7 @@ export function warpPerspective(src, H) {
       for (let ch = 0; ch < 4; ch++) out[oi + ch] = bilinear(src, x0, y0, fx, fy, ch);
     }
   }
-  return { data: out, width: RECT_W, height: RECT_H };
+  return new ImageData(out, RECT_W, RECT_H);
 }
 
 // Direct port of bar_split(): Sobel-Y edge-magnitude profile, strongest
