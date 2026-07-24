@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>M2 scanner harness (throwaway)</title>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
+</head>
+<body>
+<h1>M2 scanner harness</h1>
+<p>Loads the int8 ONNX models, runs scanImage() on each listed photo, and
+logs per-photo results + timing. Not part of the shipped app -- M3 builds
+the real UI separately.</p>
+<input type="file" id="files" multiple accept="image/*">
+<pre id="out"></pre>
+<script type="module">
+import { init, scanImage } from './scanner/index.js';
+
+function canvasFactory(w, h) {
+  const canvas = new OffscreenCanvas(w, h);
+  return { canvas, ctx: canvas.getContext('2d') };
+}
+
+async function fileToImageData(file) {
+  const bitmap = await createImageBitmap(file);
+  const { canvas, ctx } = canvasFactory(bitmap.width, bitmap.height);
+  ctx.drawImage(bitmap, 0, 0);
+  return ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+}
+
+const out = document.getElementById('out');
+const log = (msg) => { out.textContent += msg + '\n'; console.log(msg); };
+
+let ready = init({
+  tileModelUrl: 'runs/pose/touch/weights/best_int8.onnx',
+  pipModelUrl: 'runs/detect/pipdet_hn/weights/best_int8.onnx',
+}).then(() => log('models loaded'));
+
+document.getElementById('files').addEventListener('change', async (e) => {
+  await ready;
+  const results = {};
+  let totalMs = 0;
+  for (const file of e.target.files) {
+    const imageData = await fileToImageData(file);
+    const t0 = performance.now();
+    const tiles = await scanImage(imageData, canvasFactory);
+    const ms = performance.now() - t0;
+    totalMs += ms;
+    const imageId = file.name.replace(/\.[^.]+$/, '');
+    results[imageId] = tiles;
+    log(`${file.name}: ${tiles.length} tiles, ${ms.toFixed(0)}ms`);
+  }
+  log(`\ntotal: ${totalMs.toFixed(0)}ms over ${e.target.files.length} photos, avg ${(totalMs / e.target.files.length).toFixed(0)}ms/photo`);
+  log('\nJSON:\n' + JSON.stringify(results, null, 1));
+});
+</script>
+</body>
+</html>
